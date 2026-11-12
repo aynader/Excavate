@@ -6,6 +6,12 @@
 Press <kbd>Alt</kbd>+<kbd>S</kbd> and search for apps and files on every drive by name, the words inside your documents,
 the text in your images, what your photos and videos show, and what's said in your recordings. Within milliseconds.</p>
 
+
+
+https://github.com/user-attachments/assets/4be85b45-9b3c-4896-8222-ebeabf878860
+
+
+
 ---
 
 Excavate is a search popup for Windows 11 that opens over the taskbar from one shortcut. Each keystroke is answered in
@@ -153,6 +159,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit.
 - [PDFium](https://pdfium.googlesource.com/pdfium/) (BSD/Apache 2.0), built by
   [pdfium-binaries](https://github.com/bblanchon/pdfium-binaries), through pdfium-render: PDFs.
 - SQLite (public domain) through rusqlite: the reader's catalog.
+- Twemoji by Twitter, CC-BY 4.0
 - The BIP-39 English word list (bitcoin/bips, MIT): recognizing recovery phrases.
 - Ideas from [EverythingToolbar](https://github.com/srwi/EverythingToolbar) (taskbar placement, its key map) and
   [DigUp](https://github.com/ARahim3/DigUp) (search by what's inside files).
