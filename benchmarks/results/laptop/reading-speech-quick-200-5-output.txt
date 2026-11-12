@@ -1,0 +1,33 @@
+speech: 200 of 2620 files (a seeded sample), the quick choice, 5 runs
+warm-up (downloads the models the first time)
+  1 min: 0 of 4 done, reading
+  2 min: 0 of 4 done, reading
+  3 min: 0 of 4 done, reading
+  4 min: 0 of 4 done, reading
+  5 min: 0 of 4 done, reading
+  6 min: 0 of 4 done, reading
+  7 min: 0 of 4 done, reading
+  8 min: 0 of 4 done, reading
+  9 min: 0 of 4 done, reading
+  10 min: 0 of 4 done, reading
+  11 min: 0 of 4 done, reading
+  12 min: 0 of 4 done, reading
+  13 min: 0 of 4 done, reading
+  14 min: 0 of 4 done, reading
+  15 min: 0 of 4 done, reading
+  16 min: 0 of 4 done, reading
+  17 min: 0 of 4 done, reading
+  18 min: 0 of 4 done, reading
+  19 min: 0 of 4 done, reading
+  20 min: 0 of 4 done, reading
+  1 min: 114 of 200 done, reading
+run 1/5: 93.3 s, 200 of 200 done (0 failed), 711.0 s of CPU, peak 1694 MB
+  1 min: 126 of 200 done, reading
+run 2/5: 87.0 s, 200 of 200 done (0 failed), 666.3 s of CPU, peak 1694 MB
+  1 min: 126 of 200 done, reading
+run 3/5: 86.9 s, 200 of 200 done (0 failed), 668.5 s of CPU, peak 1694 MB
+  1 min: 128 of 200 done, reading
+run 4/5: 85.8 s, 200 of 200 done (0 failed), 663.5 s of CPU, peak 1694 MB
+  1 min: 120 of 200 done, reading
+run 5/5: 88.8 s, 200 of 200 done (0 failed), 679.5 s of CPU, peak 1694 MB
+written: reading-speech-quick-200-5.json

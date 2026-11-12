@@ -1,0 +1,5 @@
+/target/
+/dist/
+/vendor/*
+!/vendor/i-slint-backend-winit/
+*.log

@@ -1,0 +1,13 @@
+documents: 1000 of 16797 files (a seeded sample), the balanced choice, 5 runs
+warm-up (downloads the models the first time)
+  1 min: 567 of 673 done, reading
+run 1/5: 73.8 s, 673 of 673 done (1 failed), 54.8 s of CPU, peak 137 MB
+  1 min: 673 of 673 done, idle
+run 2/5: 56.6 s, 673 of 673 done (1 failed), 52.3 s of CPU, peak 140 MB
+  1 min: 673 of 673 done, idle
+run 3/5: 55.5 s, 673 of 673 done (1 failed), 52.0 s of CPU, peak 137 MB
+  1 min: 673 of 673 done, idle
+run 4/5: 52.6 s, 673 of 673 done (1 failed), 52.6 s of CPU, peak 138 MB
+  1 min: 673 of 673 done, idle
+run 5/5: 52.6 s, 673 of 673 done (1 failed), 52.2 s of CPU, peak 136 MB
+written: reading-documents-balanced-1000-5.json

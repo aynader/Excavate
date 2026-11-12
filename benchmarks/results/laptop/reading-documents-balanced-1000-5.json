@@ -1,0 +1,93 @@
+{
+  "at": 1794371521,
+  "machine": {
+    "cores": 32,
+    "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+  },
+  "measured": "reading",
+  "result": {
+    "choice": "balanced",
+    "cpu_seconds": {
+      "max": 54.828,
+      "median": 52.281,
+      "median_95": [
+        52.047,
+        54.828
+      ],
+      "min": 52.047,
+      "n": 5,
+      "p95": 54.375
+    },
+    "engine": "",
+    "errors": [
+      "binary, not text"
+    ],
+    "failed_files": {
+      "max": 1.0,
+      "median": 1.0,
+      "median_95": [
+        1.0,
+        1.0
+      ],
+      "min": 1.0,
+      "n": 5,
+      "p95": 1.0
+    },
+    "files": 1000,
+    "files_read": {
+      "max": 673.0,
+      "median": 673.0,
+      "median_95": [
+        673.0,
+        673.0
+      ],
+      "min": 673.0,
+      "n": 5,
+      "p95": 673.0
+    },
+    "finished_runs": 5,
+    "indexer_ended": [],
+    "kind": "documents",
+    "ms_per_file": {
+      "max": 109.7,
+      "median": 82.498,
+      "median_95": [
+        78.092,
+        109.7
+      ],
+      "min": 78.092,
+      "n": 5,
+      "p95": 104.6
+    },
+    "of": 16797,
+    "peak_memory_mb": {
+      "max": 140.3,
+      "median": 137.2,
+      "median_95": [
+        135.7,
+        140.3
+      ],
+      "min": 135.7,
+      "n": 5,
+      "p95": 139.8
+    },
+    "runs": 5,
+    "seconds": {
+      "max": 73.8,
+      "median": 55.521,
+      "median_95": [
+        52.556,
+        73.8
+      ],
+      "min": 52.556,
+      "n": 5,
+      "p95": 70.367
+    },
+    "seed": 1,
+    "timer_late_ms": {
+      "max": 1.627,
+      "p50": 0.4731,
+      "p99": 0.71502
+    }
+  }
+}

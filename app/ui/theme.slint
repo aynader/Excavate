@@ -1,0 +1,74 @@
+// Excavate's design tokens, taken from the mark: warm charcoal and clay strata spiralling in to an amber core.
+// A theme (themes.rs) swaps the core's color and, if it likes, the strata's family: warm, plain or cool. Lantern, the
+// first, is the mark as drawn; its strata are warm, never blue-grey, and the amber core is the one accent, used for what
+// was found. Light and dark follow Windows' app mode; `translucent` lets the acrylic backdrop through the window's base.
+
+export global Theme {
+    in property <bool> dark: true;
+    in property <bool> translucent: false;
+    in property <bool> animate: true;
+    // The last pointer was a finger: nothing hovers, so a tap does what hovering would.
+    in property <bool> touch: false;
+    // Raised when another window takes over: an open menu closes, as Windows' own do.
+    in property <int> menus-closed;
+
+    // The theme: its accent for dark and for light, what's written on each, and its surfaces (0 warm, 1 plain, 2 cool).
+    in property <color> accent-dark: #ef9b35;
+    in property <color> accent-light: #b8651f;
+    in property <color> on-accent-dark: #1d1b19;
+    in property <color> on-accent-light: #fffaf3;
+    in property <int> surfaces: 0;
+
+    // What each family's tints are made of: dark surfaces are a light tint over the base, light ones a dark ink.
+    property <color> tint: [#fff5e9, #ffffff, #e9f1ff][root.surfaces];
+    property <color> edge: [#fff2e0, #ffffff, #e2ecff][root.surfaces];
+    property <color> ink: [#3a2a1a, #1f1f1f, #1a2a3a][root.surfaces];
+    property <color> solid: root.dark ? [#1d1b19, #1b1b1b, #191c21][root.surfaces] : [#f7f3ed, #f4f4f4, #f1f4f8][root.surfaces];
+
+    // Strata: the surfaces.
+    out property <color> base: root.translucent ? root.solid.with-alpha(root.dark ? 208 / 255 : 220 / 255) : root.solid;
+    out property <color> raised: dark ? root.tint.with-alpha(15 / 255) : #ffffffd9;
+    out property <color> field: dark ? root.tint.with-alpha(12 / 255) : [#fffdfa, #fdfdfd, #fbfcfe][root.surfaces];
+    out property <color> field-focus: dark ? root.tint.with-alpha(20 / 255) : #ffffff;
+    out property <color> stroke: dark ? root.edge.with-alpha(25 / 255) : root.ink.with-alpha(28 / 255);
+    out property <color> stroke-strong: dark ? root.edge.with-alpha(46 / 255) : root.ink.with-alpha(46 / 255);
+    out property <color> divider: dark ? root.edge.with-alpha(17 / 255) : root.ink.with-alpha(20 / 255);
+    out property <color> hover: dark ? root.edge.with-alpha(11 / 255) : root.ink.with-alpha(10 / 255);
+    out property <color> selected: dark ? root.edge.with-alpha(21 / 255) : root.ink.with-alpha(16 / 255);
+    // Behind an enlarged image: a stratum below the base.
+    out property <color> backdrop: dark ? [#141210, #121212, #111418][root.surfaces] : [#ebe6de, #e8e8e8, #e3e8ef][root.surfaces];
+
+    // Ink.
+    out property <color> text: dark ? [#f3ede5, #ededed, #e8edf3][root.surfaces] : [#221c17, #1f1f1f, #18202a][root.surfaces];
+    out property <color> text-2: dark ? [#aaa197, #a3a3a3, #9aa4b0][root.surfaces] : [#5e544a, #575757, #4e5967][root.surfaces];
+    out property <color> text-3: dark ? [#7a7067, #737373, #6b7480][root.surfaces] : [#8b8075, #858585, #7d8794][root.surfaces];
+
+    // The core: amber on dark, copper on light (so it reads on paper), or the theme's.
+    out property <color> accent: dark ? root.accent-dark : root.accent-light;
+    out property <color> accent-soft: dark ? root.accent-dark.with-alpha(38 / 255) : root.accent-light.with-alpha(31 / 255);
+    out property <color> clay: [#9f7d57, #8c8c8c, #6f8199][root.surfaces];
+    // Text and marks on the accent (a primary button, a checked box).
+    out property <color> on-accent: dark ? root.on-accent-dark : root.on-accent-light;
+    // The settings window's rail: one stratum above the base.
+    out property <color> rail: dark ? root.tint.with-alpha(6 / 255) : root.ink.with-alpha(8 / 255);
+    // A calm "all is well" (Everything running), muted to sit with the strata.
+    out property <color> ok: dark ? #8fb377 : #4f7a3a;
+    // What this PC doesn't have: a warm red, same family.
+    out property <color> bad: dark ? #e07a5f : #b4472d;
+    // Above everything else (a popover): opaque.
+    out property <color> popover: dark ? [#2b2825, #2a2a2a, #262b33][root.surfaces] : [#fffdfa, #fdfdfd, #fbfcfe][root.surfaces];
+    out property <color> chip-on: dark ? root.text : [#2a221c, #262626, #1e2732][root.surfaces];
+    out property <color> chip-on-text: root.solid;
+    out property <color> warning: dark ? #e9b44c : #9a6b00;
+    // What's still being tried out (the Experimental badge): violet, apart from the amber of what was found.
+    out property <color> experimental: dark ? #b9a6ff : #6243c9;
+    out property <color> experimental-soft: dark ? #9b7dff26 : #6243c914;
+
+    out property <length> radius: 10px;
+    out property <length> row-height: 52px;
+    out property <duration> quick: animate ? 90ms : 0ms;
+
+    out property <string> font: "Segoe UI Variable Text";
+    out property <string> display-font: "Segoe UI Variable Display";
+    out property <string> mono-font: "Cascadia Mono";
+}

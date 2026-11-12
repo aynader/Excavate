@@ -1,0 +1,57 @@
+# The searches `measure names` times on Bedrock and on Everything, one a line, in Everything's syntax
+# (voidtools.com/support/everything/searching). Both are asked for the first 100 results, sorted by name.
+# Left out: functions that make Everything read every file's data or walk every folder (dc:, da:, attrib:, depth:,
+# dupe:, childcount:, child:, empty:, content:), and the kinds (audio:, pic:, doc:, ...): Everything defines those in
+# its window, and through its SDK they find nothing.
+# Plain words
+readme
+config
+setup
+report final
+zzqxj
+e
+# Operators
+readme | license
+readme !md
+"read me"
+<readme | license> ext:md
+config setup
+# Wildcards
+*.dll
+*.jp*g
+IMG_????*
+*report*.pdf
+setup.exe
+# Modifiers
+case:README
+ww:config
+path:system32 .dll
+wfn:readme.md
+file:readme
+folder:config
+nocase:README
+# Functions: names
+startwith:read
+endwith:.json
+ext:jpg;png;gif
+ext:flac;wav
+ext:mp4
+ext:pdf dm:thisyear
+regex:^[a-f0-9]{32}$
+regex:"\.(tmp|log)$"
+len:>60
+# Functions: places
+parent:C:\Windows
+infolder:C:\Windows
+nosubfolders:C:\Windows
+# Functions: dates
+dm:today
+dm:thisweek
+dm:lastmonth
+dm:>2025-01-01
+# Functions: sizes
+size:>1gb
+size:empty
+size:tiny
+size:1mb..10mb
+size:>10mb ext:mp4

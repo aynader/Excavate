@@ -1,0 +1,4180 @@
+{
+ "workload": "images-qwen",
+ "started": "2026-11-11T11:43:53+0200",
+ "environment": {
+  "gpu": "NVIDIA GeForce RTX 4080 Laptop GPU, 610.88, 12282 MiB, 00000000:01:00.0, [N/A], 3105 MHz",
+  "cuda_driver_api": "13.3",
+  "windows_driver": "610.88",
+  "cuda_toolkit": [
+   "Build cuda_12.9.r12.9/compiler.36037853_0"
+  ],
+  "cuda_runtime_libraries": [
+   "libcudart.so.12",
+   "libcudart.so.12.9.79"
+  ],
+  "llama_cpp_tag": "b12001",
+  "llama_cpp": [
+   "version: 0.8.0-dev (build 1, commit eb4e244)",
+   "built with GNU 13.3.0 for Linux x86_64"
+  ],
+  "whisper_cpp": "d1be6fde",
+  "kernel": "6.6.114.1-microsoft-standard-WSL2",
+  "os": "Ubuntu 24.04.5 LTS",
+  "wsl": [
+   "WSL version: 2.7.3.0",
+   "Kernel version: 6.6.114.1-1",
+   "WSLg version: 1.0.73"
+  ],
+  "cpu": "13th Gen Intel(R) Core(TM) i9-13900HX",
+  "cores": 32,
+  "memory_gb": 15.5,
+  "python": "3.12.3"
+ },
+ "configuration": {
+  "files": [
+   "Qwen3-VL-Embedding-8B.Q4_K_M.gguf",
+   "Qwen3-VL-Embedding-8B.mmproj-Q8_0.gguf"
+  ],
+  "items": 200,
+  "args": [
+   "--embedding",
+   "-c",
+   "8192",
+   "-b",
+   "4096",
+   "-ub",
+   "4096",
+   "-np",
+   "1",
+   "-ngl",
+   "99",
+   "--pooling",
+   "last",
+   "--image-max-tokens",
+   "256"
+  ],
+  "image_instruction": "Represent the user's input.",
+  "query_instruction": "Retrieve images relevant to the user's query.",
+  "max_side": 1024,
+  "trials": 5,
+  "model_sha256": {
+   "Qwen3-VL-Embedding-8B.Q4_K_M.gguf": "a81ec5d9211f03a51369ab1e858f750eabc84a41bec19e129f3d4a0659faf1c7",
+   "Qwen3-VL-Embedding-8B.mmproj-Q8_0.gguf": "36c44edfbe487f743128e369e53966f2e51e1641e604064f68a443c864b5bb9c"
+  }
+ },
+ "trials": [
+  {
+   "load_s": 1.821128040000076,
+   "gpu": {
+    "utilization_median_pct": 68.5,
+    "memory_peak_mib": 8546.0
+   },
+   "items": [
+    {
+     "file": "images/coco-val2017/000000000139.jpg",
+     "seconds": 0.16217345499990188
+    },
+    {
+     "file": "images/coco-val2017/000000000285.jpg",
+     "seconds": 0.16606445999991593
+    },
+    {
+     "file": "images/coco-val2017/000000000632.jpg",
+     "seconds": 0.15311795299999176
+    },
+    {
+     "file": "images/coco-val2017/000000000724.jpg",
+     "seconds": 0.13077450099990529
+    },
+    {
+     "file": "images/coco-val2017/000000000776.jpg",
+     "seconds": 0.15982975500014618
+    },
+    {
+     "file": "images/coco-val2017/000000000785.jpg",
+     "seconds": 0.16152454899997792
+    },
+    {
+     "file": "images/coco-val2017/000000000802.jpg",
+     "seconds": 0.15800448699997105
+    },
+    {
+     "file": "images/coco-val2017/000000000872.jpg",
+     "seconds": 0.1623774299998786
+    },
+    {
+     "file": "images/coco-val2017/000000000885.jpg",
+     "seconds": 0.15481309300002977
+    },
+    {
+     "file": "images/coco-val2017/000000001000.jpg",
+     "seconds": 0.15271138900016012
+    },
+    {
+     "file": "images/coco-val2017/000000001268.jpg",
+     "seconds": 0.15618370299989692
+    },
+    {
+     "file": "images/coco-val2017/000000001296.jpg",
+     "seconds": 0.15432136100002936
+    },
+    {
+     "file": "images/coco-val2017/000000001353.jpg",
+     "seconds": 0.12768622399994456
+    },
+    {
+     "file": "images/coco-val2017/000000001425.jpg",
+     "seconds": 0.1538349150000613
+    },
+    {
+     "file": "images/coco-val2017/000000001490.jpg",
+     "seconds": 0.14067591399998491
+    },
+    {
+     "file": "images/coco-val2017/000000001503.jpg",
+     "seconds": 0.08451647400011097
+    },
+    {
+     "file": "images/coco-val2017/000000001532.jpg",
+     "seconds": 0.16496827900004973
+    },
+    {
+     "file": "images/coco-val2017/000000001584.jpg",
+     "seconds": 0.18744328699995094
+    },
+    {
+     "file": "images/coco-val2017/000000001675.jpg",
+     "seconds": 0.1650512889998481
+    },
+    {
+     "file": "images/coco-val2017/000000001761.jpg",
+     "seconds": 0.16098026700001355
+    },
+    {
+     "file": "images/coco-val2017/000000001818.jpg",
+     "seconds": 0.15806923199988887
+    },
+    {
+     "file": "images/coco-val2017/000000001993.jpg",
+     "seconds": 0.15308665499992458
+    },
+    {
+     "file": "images/coco-val2017/000000002006.jpg",
+     "seconds": 0.15583026599983896
+    },
+    {
+     "file": "images/coco-val2017/000000002149.jpg",
+     "seconds": 0.15391679200001818
+    },
+    {
+     "file": "images/coco-val2017/000000002153.jpg",
+     "seconds": 0.15564217299993288
+    },
+    {
+     "file": "images/coco-val2017/000000002157.jpg",
+     "seconds": 0.1562190769998324
+    },
+    {
+     "file": "images/coco-val2017/000000002261.jpg",
+     "seconds": 0.1567318879999675
+    },
+    {
+     "file": "images/coco-val2017/000000002299.jpg",
+     "seconds": 0.11001539100016089
+    },
+    {
+     "file": "images/coco-val2017/000000002431.jpg",
+     "seconds": 0.15372297299995807
+    },
+    {
+     "file": "images/coco-val2017/000000002473.jpg",
+     "seconds": 0.15630571399992732
+    },
+    {
+     "file": "images/coco-val2017/000000002532.jpg",
+     "seconds": 0.15163812400010102
+    },
+    {
+     "file": "images/coco-val2017/000000002587.jpg",
+     "seconds": 0.11928538600000138
+    },
+    {
+     "file": "images/coco-val2017/000000002592.jpg",
+     "seconds": 0.13341829099999813
+    },
+    {
+     "file": "images/coco-val2017/000000002685.jpg",
+     "seconds": 0.15263513400009288
+    },
+    {
+     "file": "images/coco-val2017/000000002923.jpg",
+     "seconds": 0.12045182800011389
+    },
+    {
+     "file": "images/coco-val2017/000000003156.jpg",
+     "seconds": 0.15204919200004952
+    },
+    {
+     "file": "images/coco-val2017/000000003255.jpg",
+     "seconds": 0.13690133899990542
+    },
+    {
+     "file": "images/coco-val2017/000000003501.jpg",
+     "seconds": 0.15546535899989067
+    },
+    {
+     "file": "images/coco-val2017/000000003553.jpg",
+     "seconds": 0.15491405500006294
+    },
+    {
+     "file": "images/coco-val2017/000000003661.jpg",
+     "seconds": 0.14371888799996668
+    },
+    {
+     "file": "images/coco-val2017/000000003845.jpg",
+     "seconds": 0.12072246799993991
+    },
+    {
+     "file": "images/coco-val2017/000000003934.jpg",
+     "seconds": 0.12176188199987337
+    },
+    {
+     "file": "images/coco-val2017/000000004134.jpg",
+     "seconds": 0.15205689300000813
+    },
+    {
+     "file": "images/coco-val2017/000000004395.jpg",
+     "seconds": 0.15641602999994575
+    },
+    {
+     "file": "images/coco-val2017/000000004495.jpg",
+     "seconds": 0.11837335799987159
+    },
+    {
+     "file": "images/coco-val2017/000000004765.jpg",
+     "seconds": 0.15662381499987532
+    },
+    {
+     "file": "images/coco-val2017/000000004795.jpg",
+     "seconds": 0.15370869100001983
+    },
+    {
+     "file": "images/coco-val2017/000000005001.jpg",
+     "seconds": 0.14957697600016218
+    },
+    {
+     "file": "images/coco-val2017/000000005037.jpg",
+     "seconds": 0.1535169759999917
+    },
+    {
+     "file": "images/coco-val2017/000000005060.jpg",
+     "seconds": 0.1521247420000691
+    },
+    {
+     "file": "images/coco-val2017/000000005193.jpg",
+     "seconds": 0.14863774300010846
+    },
+    {
+     "file": "images/coco-val2017/000000005477.jpg",
+     "seconds": 0.13352912400000605
+    },
+    {
+     "file": "images/coco-val2017/000000005503.jpg",
+     "seconds": 0.11090404300011869
+    },
+    {
+     "file": "images/coco-val2017/000000005529.jpg",
+     "seconds": 0.15179518700006156
+    },
+    {
+     "file": "images/coco-val2017/000000005586.jpg",
+     "seconds": 0.07732277700006307
+    },
+    {
+     "file": "images/coco-val2017/000000005600.jpg",
+     "seconds": 0.13429931199993916
+    },
+    {
+     "file": "images/coco-val2017/000000005992.jpg",
+     "seconds": 0.15033510700004626
+    },
+    {
+     "file": "images/coco-val2017/000000006012.jpg",
+     "seconds": 0.16807873900006598
+    },
+    {
+     "file": "images/coco-val2017/000000006040.jpg",
+     "seconds": 0.1479782700000669
+    },
+    {
+     "file": "images/coco-val2017/000000006213.jpg",
+     "seconds": 0.14898681800013946
+    },
+    {
+     "file": "images/coco-val2017/000000006460.jpg",
+     "seconds": 0.15856123799994748
+    },
+    {
+     "file": "images/coco-val2017/000000006471.jpg",
+     "seconds": 0.11150651100001596
+    },
+    {
+     "file": "images/coco-val2017/000000006614.jpg",
+     "seconds": 0.11962048200007303
+    },
+    {
+     "file": "images/coco-val2017/000000006723.jpg",
+     "seconds": 0.13440783400005785
+    },
+    {
+     "file": "images/coco-val2017/000000006763.jpg",
+     "seconds": 0.12034200300013254
+    },
+    {
+     "file": "images/coco-val2017/000000006771.jpg",
+     "seconds": 0.1527159379998011
+    },
+    {
+     "file": "images/coco-val2017/000000006818.jpg",
+     "seconds": 0.15364544799990654
+    },
+    {
+     "file": "images/coco-val2017/000000006894.jpg",
+     "seconds": 0.15060077399994043
+    },
+    {
+     "file": "images/coco-val2017/000000006954.jpg",
+     "seconds": 0.1493513539999185
+    },
+    {
+     "file": "images/coco-val2017/000000007088.jpg",
+     "seconds": 0.15187624200007122
+    },
+    {
+     "file": "images/coco-val2017/000000007108.jpg",
+     "seconds": 0.14797136999982285
+    },
+    {
+     "file": "images/coco-val2017/000000007278.jpg",
+     "seconds": 0.15219271899991327
+    },
+    {
+     "file": "images/coco-val2017/000000007281.jpg",
+     "seconds": 0.14197632900004464
+    },
+    {
+     "file": "images/coco-val2017/000000007386.jpg",
+     "seconds": 0.15734735899991392
+    },
+    {
+     "file": "images/coco-val2017/000000007511.jpg",
+     "seconds": 0.15078628700007357
+    },
+    {
+     "file": "images/coco-val2017/000000007574.jpg",
+     "seconds": 0.1510461549999036
+    },
+    {
+     "file": "images/coco-val2017/000000007784.jpg",
+     "seconds": 0.11910033200001635
+    },
+    {
+     "file": "images/coco-val2017/000000007795.jpg",
+     "seconds": 0.1530618429999322
+    },
+    {
+     "file": "images/coco-val2017/000000007816.jpg",
+     "seconds": 0.1549309770000491
+    },
+    {
+     "file": "images/coco-val2017/000000007818.jpg",
+     "seconds": 0.14617980200000602
+    },
+    {
+     "file": "images/coco-val2017/000000007888.jpg",
+     "seconds": 0.1676843259999714
+    },
+    {
+     "file": "images/coco-val2017/000000007977.jpg",
+     "seconds": 0.16399744799991822
+    },
+    {
+     "file": "images/coco-val2017/000000007991.jpg",
+     "seconds": 0.14151813300009053
+    },
+    {
+     "file": "images/coco-val2017/000000008021.jpg",
+     "seconds": 0.16321501900006297
+    },
+    {
+     "file": "images/coco-val2017/000000008211.jpg",
+     "seconds": 0.15883830000007038
+    },
+    {
+     "file": "images/coco-val2017/000000008277.jpg",
+     "seconds": 0.1731783699999596
+    },
+    {
+     "file": "images/coco-val2017/000000008532.jpg",
+     "seconds": 0.15979161900008876
+    },
+    {
+     "file": "images/coco-val2017/000000008629.jpg",
+     "seconds": 0.1770200290000048
+    },
+    {
+     "file": "images/coco-val2017/000000008690.jpg",
+     "seconds": 0.16549550200011254
+    },
+    {
+     "file": "images/coco-val2017/000000008762.jpg",
+     "seconds": 0.15989106200004244
+    },
+    {
+     "file": "images/coco-val2017/000000008844.jpg",
+     "seconds": 0.16056544599996414
+    },
+    {
+     "file": "images/coco-val2017/000000008899.jpg",
+     "seconds": 0.15836182099997131
+    },
+    {
+     "file": "images/coco-val2017/000000009378.jpg",
+     "seconds": 0.1525814240001182
+    },
+    {
+     "file": "images/coco-val2017/000000009400.jpg",
+     "seconds": 0.1575742799998352
+    },
+    {
+     "file": "images/coco-val2017/000000009448.jpg",
+     "seconds": 0.1615024780001022
+    },
+    {
+     "file": "images/coco-val2017/000000009483.jpg",
+     "seconds": 0.16144106299998384
+    },
+    {
+     "file": "images/coco-val2017/000000009590.jpg",
+     "seconds": 0.16598299500014946
+    },
+    {
+     "file": "images/coco-val2017/000000009769.jpg",
+     "seconds": 0.1663429579998592
+    },
+    {
+     "file": "images/coco-val2017/000000009772.jpg",
+     "seconds": 0.16707728400001542
+    },
+    {
+     "file": "images/coco-val2017/000000009891.jpg",
+     "seconds": 0.16134817199986173
+    },
+    {
+     "file": "images/coco-val2017/000000009914.jpg",
+     "seconds": 0.15578227800006061
+    },
+    {
+     "file": "images/coco-val2017/000000010092.jpg",
+     "seconds": 0.15865229099995304
+    },
+    {
+     "file": "images/coco-val2017/000000010363.jpg",
+     "seconds": 0.14591458900008547
+    },
+    {
+     "file": "images/coco-val2017/000000010583.jpg",
+     "seconds": 0.16687284899990118
+    },
+    {
+     "file": "images/coco-val2017/000000010707.jpg",
+     "seconds": 0.16766881900002772
+    },
+    {
+     "file": "images/coco-val2017/000000010764.jpg",
+     "seconds": 0.15865889199994854
+    },
+    {
+     "file": "images/coco-val2017/000000010977.jpg",
+     "seconds": 0.12718754599995918
+    },
+    {
+     "file": "images/coco-val2017/000000010995.jpg",
+     "seconds": 0.1547577779999756
+    },
+    {
+     "file": "images/coco-val2017/000000011051.jpg",
+     "seconds": 0.16101445000003878
+    },
+    {
+     "file": "images/coco-val2017/000000011122.jpg",
+     "seconds": 0.16056356699982643
+    },
+    {
+     "file": "images/coco-val2017/000000011149.jpg",
+     "seconds": 0.12995839099994555
+    },
+    {
+     "file": "images/coco-val2017/000000011197.jpg",
+     "seconds": 0.16185167100002218
+    },
+    {
+     "file": "images/coco-val2017/000000011511.jpg",
+     "seconds": 0.1564588650001042
+    },
+    {
+     "file": "images/coco-val2017/000000011615.jpg",
+     "seconds": 0.15768183699992733
+    },
+    {
+     "file": "images/coco-val2017/000000011699.jpg",
+     "seconds": 0.1606968879998476
+    },
+    {
+     "file": "images/coco-val2017/000000011760.jpg",
+     "seconds": 0.1684156599999369
+    },
+    {
+     "file": "images/coco-val2017/000000011813.jpg",
+     "seconds": 0.12340273199993135
+    },
+    {
+     "file": "images/coco-val2017/000000012062.jpg",
+     "seconds": 0.16126696800006357
+    },
+    {
+     "file": "images/coco-val2017/000000012120.jpg",
+     "seconds": 0.16424720899999556
+    },
+    {
+     "file": "images/coco-val2017/000000012280.jpg",
+     "seconds": 0.16802556900006493
+    },
+    {
+     "file": "images/coco-val2017/000000012576.jpg",
+     "seconds": 0.16494314700003088
+    },
+    {
+     "file": "images/coco-val2017/000000012639.jpg",
+     "seconds": 0.16157719700004236
+    },
+    {
+     "file": "images/coco-val2017/000000012667.jpg",
+     "seconds": 0.1559557739999491
+    },
+    {
+     "file": "images/coco-val2017/000000012670.jpg",
+     "seconds": 0.15698865700005626
+    },
+    {
+     "file": "images/coco-val2017/000000012748.jpg",
+     "seconds": 0.16034911899987492
+    },
+    {
+     "file": "images/coco-val2017/000000013004.jpg",
+     "seconds": 0.1322666799999297
+    },
+    {
+     "file": "images/coco-val2017/000000013177.jpg",
+     "seconds": 0.16128359700019246
+    },
+    {
+     "file": "images/coco-val2017/000000013201.jpg",
+     "seconds": 0.16225748200008638
+    },
+    {
+     "file": "images/coco-val2017/000000013291.jpg",
+     "seconds": 0.11881897700004629
+    },
+    {
+     "file": "images/coco-val2017/000000013348.jpg",
+     "seconds": 0.1643806219999533
+    },
+    {
+     "file": "images/coco-val2017/000000013546.jpg",
+     "seconds": 0.16286345900016386
+    },
+    {
+     "file": "images/coco-val2017/000000013597.jpg",
+     "seconds": 0.15734437600008278
+    },
+    {
+     "file": "images/coco-val2017/000000013659.jpg",
+     "seconds": 0.1526939619998302
+    },
+    {
+     "file": "images/coco-val2017/000000013729.jpg",
+     "seconds": 0.16096298000002207
+    },
+    {
+     "file": "images/coco-val2017/000000013774.jpg",
+     "seconds": 0.15490917300007823
+    },
+    {
+     "file": "images/coco-val2017/000000013923.jpg",
+     "seconds": 0.16608566400009295
+    },
+    {
+     "file": "images/coco-val2017/000000014007.jpg",
+     "seconds": 0.16294147700000394
+    },
+    {
+     "file": "images/coco-val2017/000000014038.jpg",
+     "seconds": 0.15932209500010686
+    },
+    {
+     "file": "images/coco-val2017/000000014226.jpg",
+     "seconds": 0.1571594310000819
+    },
+    {
+     "file": "images/coco-val2017/000000014380.jpg",
+     "seconds": 0.1588113110001359
+    },
+    {
+     "file": "images/coco-val2017/000000014439.jpg",
+     "seconds": 0.15422664800007624
+    },
+    {
+     "file": "images/coco-val2017/000000014473.jpg",
+     "seconds": 0.15857704899985947
+    },
+    {
+     "file": "images/coco-val2017/000000014831.jpg",
+     "seconds": 0.1586476009999842
+    },
+    {
+     "file": "images/coco-val2017/000000014888.jpg",
+     "seconds": 0.15657088500006466
+    },
+    {
+     "file": "images/coco-val2017/000000015079.jpg",
+     "seconds": 0.15592492399991897
+    },
+    {
+     "file": "images/coco-val2017/000000015254.jpg",
+     "seconds": 0.15526611599989337
+    },
+    {
+     "file": "images/coco-val2017/000000015272.jpg",
+     "seconds": 0.15753989799986812
+    },
+    {
+     "file": "images/coco-val2017/000000015278.jpg",
+     "seconds": 0.1557565489999888
+    },
+    {
+     "file": "images/coco-val2017/000000015335.jpg",
+     "seconds": 0.15819271800000934
+    },
+    {
+     "file": "images/coco-val2017/000000015338.jpg",
+     "seconds": 0.15440636599987556
+    },
+    {
+     "file": "images/coco-val2017/000000015440.jpg",
+     "seconds": 0.15202036400000907
+    },
+    {
+     "file": "images/coco-val2017/000000015497.jpg",
+     "seconds": 0.15821739099988008
+    },
+    {
+     "file": "images/coco-val2017/000000015517.jpg",
+     "seconds": 0.15639302299996416
+    },
+    {
+     "file": "images/coco-val2017/000000015597.jpg",
+     "seconds": 0.16264890399997967
+    },
+    {
+     "file": "images/coco-val2017/000000015660.jpg",
+     "seconds": 0.13885107700002663
+    },
+    {
+     "file": "images/coco-val2017/000000015746.jpg",
+     "seconds": 0.16265490199998567
+    },
+    {
+     "file": "images/coco-val2017/000000015751.jpg",
+     "seconds": 0.1537278419998529
+    },
+    {
+     "file": "images/coco-val2017/000000015956.jpg",
+     "seconds": 0.15514878900012263
+    },
+    {
+     "file": "images/coco-val2017/000000016010.jpg",
+     "seconds": 0.16334317599989845
+    },
+    {
+     "file": "images/coco-val2017/000000016228.jpg",
+     "seconds": 0.16516326999999364
+    },
+    {
+     "file": "images/coco-val2017/000000016249.jpg",
+     "seconds": 0.12697573600007672
+    },
+    {
+     "file": "images/coco-val2017/000000016439.jpg",
+     "seconds": 0.15169946200012419
+    },
+    {
+     "file": "images/coco-val2017/000000016451.jpg",
+     "seconds": 0.1767276690000017
+    },
+    {
+     "file": "images/coco-val2017/000000016502.jpg",
+     "seconds": 0.12699911200002134
+    },
+    {
+     "file": "images/coco-val2017/000000016598.jpg",
+     "seconds": 0.15765613200005646
+    },
+    {
+     "file": "images/coco-val2017/000000016958.jpg",
+     "seconds": 0.1574800949999826
+    },
+    {
+     "file": "images/coco-val2017/000000017029.jpg",
+     "seconds": 0.17187837699998454
+    },
+    {
+     "file": "images/coco-val2017/000000017031.jpg",
+     "seconds": 0.1159424959998887
+    },
+    {
+     "file": "images/coco-val2017/000000017115.jpg",
+     "seconds": 0.16159139900014452
+    },
+    {
+     "file": "images/coco-val2017/000000017178.jpg",
+     "seconds": 0.15811300499990466
+    },
+    {
+     "file": "images/coco-val2017/000000017182.jpg",
+     "seconds": 0.15751574499995513
+    },
+    {
+     "file": "images/coco-val2017/000000017207.jpg",
+     "seconds": 0.15038182000012057
+    },
+    {
+     "file": "images/coco-val2017/000000017379.jpg",
+     "seconds": 0.15718671900003756
+    },
+    {
+     "file": "images/coco-val2017/000000017436.jpg",
+     "seconds": 0.15756324499989205
+    },
+    {
+     "file": "images/coco-val2017/000000017627.jpg",
+     "seconds": 0.15549375999989934
+    },
+    {
+     "file": "images/coco-val2017/000000017714.jpg",
+     "seconds": 0.16004166800007624
+    },
+    {
+     "file": "images/coco-val2017/000000017899.jpg",
+     "seconds": 0.15380505499979336
+    },
+    {
+     "file": "images/coco-val2017/000000017905.jpg",
+     "seconds": 0.15870520299995405
+    },
+    {
+     "file": "images/coco-val2017/000000017959.jpg",
+     "seconds": 0.1655295240000214
+    },
+    {
+     "file": "images/coco-val2017/000000018150.jpg",
+     "seconds": 0.15856365900003766
+    },
+    {
+     "file": "images/coco-val2017/000000018193.jpg",
+     "seconds": 0.1536926499998117
+    },
+    {
+     "file": "images/coco-val2017/000000018380.jpg",
+     "seconds": 0.1553295840001283
+    },
+    {
+     "file": "images/coco-val2017/000000018491.jpg",
+     "seconds": 0.15971602500007975
+    },
+    {
+     "file": "images/coco-val2017/000000018519.jpg",
+     "seconds": 0.16078667000010682
+    },
+    {
+     "file": "images/coco-val2017/000000018575.jpg",
+     "seconds": 0.1509292660000483
+    },
+    {
+     "file": "images/coco-val2017/000000018737.jpg",
+     "seconds": 0.15209305999997014
+    },
+    {
+     "file": "images/coco-val2017/000000018770.jpg",
+     "seconds": 0.15417659900003855
+    },
+    {
+     "file": "images/coco-val2017/000000018833.jpg",
+     "seconds": 0.15888853100000233
+    },
+    {
+     "file": "images/coco-val2017/000000018837.jpg",
+     "seconds": 0.15328169600002184
+    },
+    {
+     "file": "images/coco-val2017/000000019042.jpg",
+     "seconds": 0.151518532999944
+    },
+    {
+     "file": "images/coco-val2017/000000019109.jpg",
+     "seconds": 0.1599723819999781
+    },
+    {
+     "file": "images/coco-val2017/000000019221.jpg",
+     "seconds": 0.1643572129999029
+    },
+    {
+     "file": "images/coco-val2017/000000019402.jpg",
+     "seconds": 0.15955115799988562
+    },
+    {
+     "file": "images/coco-val2017/000000019432.jpg",
+     "seconds": 0.15315223299990066
+    },
+    {
+     "file": "images/coco-val2017/000000019742.jpg",
+     "seconds": 0.12499510300017391
+    },
+    {
+     "file": "images/coco-val2017/000000019786.jpg",
+     "seconds": 0.12661297499994362
+    },
+    {
+     "file": "images/coco-val2017/000000019924.jpg",
+     "seconds": 0.14067890199999056
+    },
+    {
+     "file": "images/coco-val2017/000000020059.jpg",
+     "seconds": 0.15486919199997828
+    },
+    {
+     "file": "images/coco-val2017/000000020107.jpg",
+     "seconds": 0.11603588599996328
+    },
+    {
+     "file": "images/coco-val2017/000000020247.jpg",
+     "seconds": 0.15367217900006835
+    }
+   ],
+   "score": {
+    "recall_at_1": 0.885,
+    "recall_at_10": 1.0,
+    "among": 200,
+    "query": "each photo's first COCO caption"
+   },
+   "summary": {
+    "median_s": 0.15580627199994979,
+    "p90_s": 0.16497658000002957,
+    "total_s": 30.372879457999034
+   }
+  },
+  {
+   "load_s": 1.807194293000066,
+   "gpu": {
+    "utilization_median_pct": 67.0,
+    "memory_peak_mib": 8546.0
+   },
+   "items": [
+    {
+     "file": "images/coco-val2017/000000000139.jpg",
+     "seconds": 0.18742623000002823
+    },
+    {
+     "file": "images/coco-val2017/000000000285.jpg",
+     "seconds": 0.17201448099990557
+    },
+    {
+     "file": "images/coco-val2017/000000000632.jpg",
+     "seconds": 0.16180369500011693
+    },
+    {
+     "file": "images/coco-val2017/000000000724.jpg",
+     "seconds": 0.13631027200017343
+    },
+    {
+     "file": "images/coco-val2017/000000000776.jpg",
+     "seconds": 0.17100968500017188
+    },
+    {
+     "file": "images/coco-val2017/000000000785.jpg",
+     "seconds": 0.16796198799988815
+    },
+    {
+     "file": "images/coco-val2017/000000000802.jpg",
+     "seconds": 0.161256111000057
+    },
+    {
+     "file": "images/coco-val2017/000000000872.jpg",
+     "seconds": 0.1763979309998831
+    },
+    {
+     "file": "images/coco-val2017/000000000885.jpg",
+     "seconds": 0.17902307700001074
+    },
+    {
+     "file": "images/coco-val2017/000000001000.jpg",
+     "seconds": 0.18252994999988914
+    },
+    {
+     "file": "images/coco-val2017/000000001268.jpg",
+     "seconds": 0.17473028099993826
+    },
+    {
+     "file": "images/coco-val2017/000000001296.jpg",
+     "seconds": 0.1770805080000173
+    },
+    {
+     "file": "images/coco-val2017/000000001353.jpg",
+     "seconds": 0.13729446100001041
+    },
+    {
+     "file": "images/coco-val2017/000000001425.jpg",
+     "seconds": 0.1865527459999612
+    },
+    {
+     "file": "images/coco-val2017/000000001490.jpg",
+     "seconds": 0.15556756299997687
+    },
+    {
+     "file": "images/coco-val2017/000000001503.jpg",
+     "seconds": 0.08940030799999477
+    },
+    {
+     "file": "images/coco-val2017/000000001532.jpg",
+     "seconds": 0.1852845729999899
+    },
+    {
+     "file": "images/coco-val2017/000000001584.jpg",
+     "seconds": 0.21309304800001883
+    },
+    {
+     "file": "images/coco-val2017/000000001675.jpg",
+     "seconds": 0.16961170300010053
+    },
+    {
+     "file": "images/coco-val2017/000000001761.jpg",
+     "seconds": 0.16319871399991825
+    },
+    {
+     "file": "images/coco-val2017/000000001818.jpg",
+     "seconds": 0.16656830400006584
+    },
+    {
+     "file": "images/coco-val2017/000000001993.jpg",
+     "seconds": 0.1652146639999046
+    },
+    {
+     "file": "images/coco-val2017/000000002006.jpg",
+     "seconds": 0.17474092799989194
+    },
+    {
+     "file": "images/coco-val2017/000000002149.jpg",
+     "seconds": 0.16624464500000613
+    },
+    {
+     "file": "images/coco-val2017/000000002153.jpg",
+     "seconds": 0.16375749000008
+    },
+    {
+     "file": "images/coco-val2017/000000002157.jpg",
+     "seconds": 0.16812110699993355
+    },
+    {
+     "file": "images/coco-val2017/000000002261.jpg",
+     "seconds": 0.1696621440000854
+    },
+    {
+     "file": "images/coco-val2017/000000002299.jpg",
+     "seconds": 0.12299505300006786
+    },
+    {
+     "file": "images/coco-val2017/000000002431.jpg",
+     "seconds": 0.16265933800013954
+    },
+    {
+     "file": "images/coco-val2017/000000002473.jpg",
+     "seconds": 0.16909510699997554
+    },
+    {
+     "file": "images/coco-val2017/000000002532.jpg",
+     "seconds": 0.15597972099999424
+    },
+    {
+     "file": "images/coco-val2017/000000002587.jpg",
+     "seconds": 0.12980455499996424
+    },
+    {
+     "file": "images/coco-val2017/000000002592.jpg",
+     "seconds": 0.144093268000006
+    },
+    {
+     "file": "images/coco-val2017/000000002685.jpg",
+     "seconds": 0.1598777650001466
+    },
+    {
+     "file": "images/coco-val2017/000000002923.jpg",
+     "seconds": 0.1274665449998338
+    },
+    {
+     "file": "images/coco-val2017/000000003156.jpg",
+     "seconds": 0.16154389200005426
+    },
+    {
+     "file": "images/coco-val2017/000000003255.jpg",
+     "seconds": 0.15115916100012328
+    },
+    {
+     "file": "images/coco-val2017/000000003501.jpg",
+     "seconds": 0.1667993779999506
+    },
+    {
+     "file": "images/coco-val2017/000000003553.jpg",
+     "seconds": 0.16989848000002894
+    },
+    {
+     "file": "images/coco-val2017/000000003661.jpg",
+     "seconds": 0.15222053200000119
+    },
+    {
+     "file": "images/coco-val2017/000000003845.jpg",
+     "seconds": 0.12906380499998704
+    },
+    {
+     "file": "images/coco-val2017/000000003934.jpg",
+     "seconds": 0.13118845700000747
+    },
+    {
+     "file": "images/coco-val2017/000000004134.jpg",
+     "seconds": 0.1597661219998372
+    },
+    {
+     "file": "images/coco-val2017/000000004395.jpg",
+     "seconds": 0.16143858800000999
+    },
+    {
+     "file": "images/coco-val2017/000000004495.jpg",
+     "seconds": 0.1318134519999603
+    },
+    {
+     "file": "images/coco-val2017/000000004765.jpg",
+     "seconds": 0.1685378130000572
+    },
+    {
+     "file": "images/coco-val2017/000000004795.jpg",
+     "seconds": 0.1714263620001475
+    },
+    {
+     "file": "images/coco-val2017/000000005001.jpg",
+     "seconds": 0.15819449199989322
+    },
+    {
+     "file": "images/coco-val2017/000000005037.jpg",
+     "seconds": 0.16784771599986925
+    },
+    {
+     "file": "images/coco-val2017/000000005060.jpg",
+     "seconds": 0.15995992299986028
+    },
+    {
+     "file": "images/coco-val2017/000000005193.jpg",
+     "seconds": 0.15823854499990375
+    },
+    {
+     "file": "images/coco-val2017/000000005477.jpg",
+     "seconds": 0.14070040599995082
+    },
+    {
+     "file": "images/coco-val2017/000000005503.jpg",
+     "seconds": 0.14387046299998474
+    },
+    {
+     "file": "images/coco-val2017/000000005529.jpg",
+     "seconds": 0.1654700579999826
+    },
+    {
+     "file": "images/coco-val2017/000000005586.jpg",
+     "seconds": 0.0840460939998593
+    },
+    {
+     "file": "images/coco-val2017/000000005600.jpg",
+     "seconds": 0.14451400600000852
+    },
+    {
+     "file": "images/coco-val2017/000000005992.jpg",
+     "seconds": 0.15713193100009448
+    },
+    {
+     "file": "images/coco-val2017/000000006012.jpg",
+     "seconds": 0.16486211999995248
+    },
+    {
+     "file": "images/coco-val2017/000000006040.jpg",
+     "seconds": 0.15084567299982155
+    },
+    {
+     "file": "images/coco-val2017/000000006213.jpg",
+     "seconds": 0.1639569849999134
+    },
+    {
+     "file": "images/coco-val2017/000000006460.jpg",
+     "seconds": 0.16463012799999888
+    },
+    {
+     "file": "images/coco-val2017/000000006471.jpg",
+     "seconds": 0.11688668500005406
+    },
+    {
+     "file": "images/coco-val2017/000000006614.jpg",
+     "seconds": 0.12953510600004847
+    },
+    {
+     "file": "images/coco-val2017/000000006723.jpg",
+     "seconds": 0.14494623900009174
+    },
+    {
+     "file": "images/coco-val2017/000000006763.jpg",
+     "seconds": 0.13034517300002335
+    },
+    {
+     "file": "images/coco-val2017/000000006771.jpg",
+     "seconds": 0.15920135500005017
+    },
+    {
+     "file": "images/coco-val2017/000000006818.jpg",
+     "seconds": 0.16329155299990816
+    },
+    {
+     "file": "images/coco-val2017/000000006894.jpg",
+     "seconds": 0.1642333150000468
+    },
+    {
+     "file": "images/coco-val2017/000000006954.jpg",
+     "seconds": 0.1552897760000178
+    },
+    {
+     "file": "images/coco-val2017/000000007088.jpg",
+     "seconds": 0.15953760999991573
+    },
+    {
+     "file": "images/coco-val2017/000000007108.jpg",
+     "seconds": 0.15810487499993542
+    },
+    {
+     "file": "images/coco-val2017/000000007278.jpg",
+     "seconds": 0.15587376899998162
+    },
+    {
+     "file": "images/coco-val2017/000000007281.jpg",
+     "seconds": 0.13825107100001333
+    },
+    {
+     "file": "images/coco-val2017/000000007386.jpg",
+     "seconds": 0.14959968499988463
+    },
+    {
+     "file": "images/coco-val2017/000000007511.jpg",
+     "seconds": 0.15936022000005323
+    },
+    {
+     "file": "images/coco-val2017/000000007574.jpg",
+     "seconds": 0.15919655300012892
+    },
+    {
+     "file": "images/coco-val2017/000000007784.jpg",
+     "seconds": 0.1274569470001552
+    },
+    {
+     "file": "images/coco-val2017/000000007795.jpg",
+     "seconds": 0.1581692050001493
+    },
+    {
+     "file": "images/coco-val2017/000000007816.jpg",
+     "seconds": 0.15542389699999148
+    },
+    {
+     "file": "images/coco-val2017/000000007818.jpg",
+     "seconds": 0.1581247109998003
+    },
+    {
+     "file": "images/coco-val2017/000000007888.jpg",
+     "seconds": 0.17782277300011629
+    },
+    {
+     "file": "images/coco-val2017/000000007977.jpg",
+     "seconds": 0.16852090299994416
+    },
+    {
+     "file": "images/coco-val2017/000000007991.jpg",
+     "seconds": 0.14754253599994627
+    },
+    {
+     "file": "images/coco-val2017/000000008021.jpg",
+     "seconds": 0.16728015900002902
+    },
+    {
+     "file": "images/coco-val2017/000000008211.jpg",
+     "seconds": 0.16090909300010026
+    },
+    {
+     "file": "images/coco-val2017/000000008277.jpg",
+     "seconds": 0.18318277499997748
+    },
+    {
+     "file": "images/coco-val2017/000000008532.jpg",
+     "seconds": 0.16272025900002518
+    },
+    {
+     "file": "images/coco-val2017/000000008629.jpg",
+     "seconds": 0.17699478700001237
+    },
+    {
+     "file": "images/coco-val2017/000000008690.jpg",
+     "seconds": 0.15667204400006085
+    },
+    {
+     "file": "images/coco-val2017/000000008762.jpg",
+     "seconds": 0.15460755499998413
+    },
+    {
+     "file": "images/coco-val2017/000000008844.jpg",
+     "seconds": 0.16126079000014215
+    },
+    {
+     "file": "images/coco-val2017/000000008899.jpg",
+     "seconds": 0.1691906349999499
+    },
+    {
+     "file": "images/coco-val2017/000000009378.jpg",
+     "seconds": 0.1534843599999931
+    },
+    {
+     "file": "images/coco-val2017/000000009400.jpg",
+     "seconds": 0.15231121600004371
+    },
+    {
+     "file": "images/coco-val2017/000000009448.jpg",
+     "seconds": 0.16963312699999733
+    },
+    {
+     "file": "images/coco-val2017/000000009483.jpg",
+     "seconds": 0.159869831999913
+    },
+    {
+     "file": "images/coco-val2017/000000009590.jpg",
+     "seconds": 0.16024118200016346
+    },
+    {
+     "file": "images/coco-val2017/000000009769.jpg",
+     "seconds": 0.16327609599989046
+    },
+    {
+     "file": "images/coco-val2017/000000009772.jpg",
+     "seconds": 0.15745787700006986
+    },
+    {
+     "file": "images/coco-val2017/000000009891.jpg",
+     "seconds": 0.15436094699998648
+    },
+    {
+     "file": "images/coco-val2017/000000009914.jpg",
+     "seconds": 0.15940894699997443
+    },
+    {
+     "file": "images/coco-val2017/000000010092.jpg",
+     "seconds": 0.15839737299984336
+    },
+    {
+     "file": "images/coco-val2017/000000010363.jpg",
+     "seconds": 0.13751612200007912
+    },
+    {
+     "file": "images/coco-val2017/000000010583.jpg",
+     "seconds": 0.16988228700006403
+    },
+    {
+     "file": "images/coco-val2017/000000010707.jpg",
+     "seconds": 0.15279537200012783
+    },
+    {
+     "file": "images/coco-val2017/000000010764.jpg",
+     "seconds": 0.16156068800000867
+    },
+    {
+     "file": "images/coco-val2017/000000010977.jpg",
+     "seconds": 0.12455415799990988
+    },
+    {
+     "file": "images/coco-val2017/000000010995.jpg",
+     "seconds": 0.15431645999979082
+    },
+    {
+     "file": "images/coco-val2017/000000011051.jpg",
+     "seconds": 0.15931456999987859
+    },
+    {
+     "file": "images/coco-val2017/000000011122.jpg",
+     "seconds": 0.15378260600004978
+    },
+    {
+     "file": "images/coco-val2017/000000011149.jpg",
+     "seconds": 0.12721601600014765
+    },
+    {
+     "file": "images/coco-val2017/000000011197.jpg",
+     "seconds": 0.15640460500003428
+    },
+    {
+     "file": "images/coco-val2017/000000011511.jpg",
+     "seconds": 0.15106965400013905
+    },
+    {
+     "file": "images/coco-val2017/000000011615.jpg",
+     "seconds": 0.15418335499998648
+    },
+    {
+     "file": "images/coco-val2017/000000011699.jpg",
+     "seconds": 0.15708139200000915
+    },
+    {
+     "file": "images/coco-val2017/000000011760.jpg",
+     "seconds": 0.15718331199991553
+    },
+    {
+     "file": "images/coco-val2017/000000011813.jpg",
+     "seconds": 0.11229100199989261
+    },
+    {
+     "file": "images/coco-val2017/000000012062.jpg",
+     "seconds": 0.1562957930000266
+    },
+    {
+     "file": "images/coco-val2017/000000012120.jpg",
+     "seconds": 0.15489267399993878
+    },
+    {
+     "file": "images/coco-val2017/000000012280.jpg",
+     "seconds": 0.15354245800017452
+    },
+    {
+     "file": "images/coco-val2017/000000012576.jpg",
+     "seconds": 0.15387076700017133
+    },
+    {
+     "file": "images/coco-val2017/000000012639.jpg",
+     "seconds": 0.15902077600003395
+    },
+    {
+     "file": "images/coco-val2017/000000012667.jpg",
+     "seconds": 0.15502553700002863
+    },
+    {
+     "file": "images/coco-val2017/000000012670.jpg",
+     "seconds": 0.1553327649999119
+    },
+    {
+     "file": "images/coco-val2017/000000012748.jpg",
+     "seconds": 0.15636634099996627
+    },
+    {
+     "file": "images/coco-val2017/000000013004.jpg",
+     "seconds": 0.12664584899994225
+    },
+    {
+     "file": "images/coco-val2017/000000013177.jpg",
+     "seconds": 0.15400073900013922
+    },
+    {
+     "file": "images/coco-val2017/000000013201.jpg",
+     "seconds": 0.15480543699982263
+    },
+    {
+     "file": "images/coco-val2017/000000013291.jpg",
+     "seconds": 0.11281374400005006
+    },
+    {
+     "file": "images/coco-val2017/000000013348.jpg",
+     "seconds": 0.153643971000065
+    },
+    {
+     "file": "images/coco-val2017/000000013546.jpg",
+     "seconds": 0.1518892589999723
+    },
+    {
+     "file": "images/coco-val2017/000000013597.jpg",
+     "seconds": 0.15240444899995964
+    },
+    {
+     "file": "images/coco-val2017/000000013659.jpg",
+     "seconds": 0.15880147099983333
+    },
+    {
+     "file": "images/coco-val2017/000000013729.jpg",
+     "seconds": 0.1514284840000073
+    },
+    {
+     "file": "images/coco-val2017/000000013774.jpg",
+     "seconds": 0.15684781699997075
+    },
+    {
+     "file": "images/coco-val2017/000000013923.jpg",
+     "seconds": 0.15743062199999258
+    },
+    {
+     "file": "images/coco-val2017/000000014007.jpg",
+     "seconds": 0.15554600899986326
+    },
+    {
+     "file": "images/coco-val2017/000000014038.jpg",
+     "seconds": 0.1536866789999749
+    },
+    {
+     "file": "images/coco-val2017/000000014226.jpg",
+     "seconds": 0.1526723409999704
+    },
+    {
+     "file": "images/coco-val2017/000000014380.jpg",
+     "seconds": 0.1562763829999767
+    },
+    {
+     "file": "images/coco-val2017/000000014439.jpg",
+     "seconds": 0.15132924999988973
+    },
+    {
+     "file": "images/coco-val2017/000000014473.jpg",
+     "seconds": 0.15569922899999256
+    },
+    {
+     "file": "images/coco-val2017/000000014831.jpg",
+     "seconds": 0.15250718700008292
+    },
+    {
+     "file": "images/coco-val2017/000000014888.jpg",
+     "seconds": 0.15368908400000691
+    },
+    {
+     "file": "images/coco-val2017/000000015079.jpg",
+     "seconds": 0.15491542399990976
+    },
+    {
+     "file": "images/coco-val2017/000000015254.jpg",
+     "seconds": 0.15968345700002828
+    },
+    {
+     "file": "images/coco-val2017/000000015272.jpg",
+     "seconds": 0.15824275799991483
+    },
+    {
+     "file": "images/coco-val2017/000000015278.jpg",
+     "seconds": 0.15632531500000368
+    },
+    {
+     "file": "images/coco-val2017/000000015335.jpg",
+     "seconds": 0.15769788900001913
+    },
+    {
+     "file": "images/coco-val2017/000000015338.jpg",
+     "seconds": 0.15480408799999168
+    },
+    {
+     "file": "images/coco-val2017/000000015440.jpg",
+     "seconds": 0.15230582699996376
+    },
+    {
+     "file": "images/coco-val2017/000000015497.jpg",
+     "seconds": 0.15491392600006293
+    },
+    {
+     "file": "images/coco-val2017/000000015517.jpg",
+     "seconds": 0.15745394400005353
+    },
+    {
+     "file": "images/coco-val2017/000000015597.jpg",
+     "seconds": 0.16060913000001165
+    },
+    {
+     "file": "images/coco-val2017/000000015660.jpg",
+     "seconds": 0.13972557100009908
+    },
+    {
+     "file": "images/coco-val2017/000000015746.jpg",
+     "seconds": 0.1613650259998849
+    },
+    {
+     "file": "images/coco-val2017/000000015751.jpg",
+     "seconds": 0.15295465000008335
+    },
+    {
+     "file": "images/coco-val2017/000000015956.jpg",
+     "seconds": 0.15507323799988626
+    },
+    {
+     "file": "images/coco-val2017/000000016010.jpg",
+     "seconds": 0.15982912399999805
+    },
+    {
+     "file": "images/coco-val2017/000000016228.jpg",
+     "seconds": 0.16228406699997322
+    },
+    {
+     "file": "images/coco-val2017/000000016249.jpg",
+     "seconds": 0.12306565799985947
+    },
+    {
+     "file": "images/coco-val2017/000000016439.jpg",
+     "seconds": 0.15009005399997477
+    },
+    {
+     "file": "images/coco-val2017/000000016451.jpg",
+     "seconds": 0.16374351500007833
+    },
+    {
+     "file": "images/coco-val2017/000000016502.jpg",
+     "seconds": 0.12415884100005314
+    },
+    {
+     "file": "images/coco-val2017/000000016598.jpg",
+     "seconds": 0.15498939999997674
+    },
+    {
+     "file": "images/coco-val2017/000000016958.jpg",
+     "seconds": 0.15667811100001927
+    },
+    {
+     "file": "images/coco-val2017/000000017029.jpg",
+     "seconds": 0.16919460600001912
+    },
+    {
+     "file": "images/coco-val2017/000000017031.jpg",
+     "seconds": 0.11703461699994477
+    },
+    {
+     "file": "images/coco-val2017/000000017115.jpg",
+     "seconds": 0.15907002499989176
+    },
+    {
+     "file": "images/coco-val2017/000000017178.jpg",
+     "seconds": 0.1629599180000696
+    },
+    {
+     "file": "images/coco-val2017/000000017182.jpg",
+     "seconds": 0.15868710899985672
+    },
+    {
+     "file": "images/coco-val2017/000000017207.jpg",
+     "seconds": 0.15745186899994223
+    },
+    {
+     "file": "images/coco-val2017/000000017379.jpg",
+     "seconds": 0.1544751459998679
+    },
+    {
+     "file": "images/coco-val2017/000000017436.jpg",
+     "seconds": 0.15829518700002154
+    },
+    {
+     "file": "images/coco-val2017/000000017627.jpg",
+     "seconds": 0.1630170519999865
+    },
+    {
+     "file": "images/coco-val2017/000000017714.jpg",
+     "seconds": 0.15686933699998917
+    },
+    {
+     "file": "images/coco-val2017/000000017899.jpg",
+     "seconds": 0.16525562900005752
+    },
+    {
+     "file": "images/coco-val2017/000000017905.jpg",
+     "seconds": 0.15824592399985704
+    },
+    {
+     "file": "images/coco-val2017/000000017959.jpg",
+     "seconds": 0.15550989999997
+    },
+    {
+     "file": "images/coco-val2017/000000018150.jpg",
+     "seconds": 0.15681854700005715
+    },
+    {
+     "file": "images/coco-val2017/000000018193.jpg",
+     "seconds": 0.15837057499993534
+    },
+    {
+     "file": "images/coco-val2017/000000018380.jpg",
+     "seconds": 0.16543568899987804
+    },
+    {
+     "file": "images/coco-val2017/000000018491.jpg",
+     "seconds": 0.15799568800002817
+    },
+    {
+     "file": "images/coco-val2017/000000018519.jpg",
+     "seconds": 0.16064228400000502
+    },
+    {
+     "file": "images/coco-val2017/000000018575.jpg",
+     "seconds": 0.16157626800008984
+    },
+    {
+     "file": "images/coco-val2017/000000018737.jpg",
+     "seconds": 0.1628977959999247
+    },
+    {
+     "file": "images/coco-val2017/000000018770.jpg",
+     "seconds": 0.1547418000000107
+    },
+    {
+     "file": "images/coco-val2017/000000018833.jpg",
+     "seconds": 0.16035408199991252
+    },
+    {
+     "file": "images/coco-val2017/000000018837.jpg",
+     "seconds": 0.1577857260001565
+    },
+    {
+     "file": "images/coco-val2017/000000019042.jpg",
+     "seconds": 0.15063016099998094
+    },
+    {
+     "file": "images/coco-val2017/000000019109.jpg",
+     "seconds": 0.16725047299996731
+    },
+    {
+     "file": "images/coco-val2017/000000019221.jpg",
+     "seconds": 0.15924653000001854
+    },
+    {
+     "file": "images/coco-val2017/000000019402.jpg",
+     "seconds": 0.16270966199999748
+    },
+    {
+     "file": "images/coco-val2017/000000019432.jpg",
+     "seconds": 0.15489516000002368
+    },
+    {
+     "file": "images/coco-val2017/000000019742.jpg",
+     "seconds": 0.1278850369999418
+    },
+    {
+     "file": "images/coco-val2017/000000019786.jpg",
+     "seconds": 0.12979336399985186
+    },
+    {
+     "file": "images/coco-val2017/000000019924.jpg",
+     "seconds": 0.1439646639998955
+    },
+    {
+     "file": "images/coco-val2017/000000020059.jpg",
+     "seconds": 0.1597587599999315
+    },
+    {
+     "file": "images/coco-val2017/000000020107.jpg",
+     "seconds": 0.11556749199985461
+    },
+    {
+     "file": "images/coco-val2017/000000020247.jpg",
+     "seconds": 0.1549165940000421
+    }
+   ],
+   "score": {
+    "recall_at_1": 0.885,
+    "recall_at_10": 1.0,
+    "among": 200,
+    "query": "each photo's first COCO caption"
+   },
+   "summary": {
+    "median_s": 0.15745290649999788,
+    "p90_s": 0.16961384540009022,
+    "total_s": 31.056753949998438
+   }
+  },
+  {
+   "load_s": 1.8424496229999932,
+   "gpu": {
+    "utilization_median_pct": 66.0,
+    "memory_peak_mib": 8546.0
+   },
+   "items": [
+    {
+     "file": "images/coco-val2017/000000000139.jpg",
+     "seconds": 0.1792428999999629
+    },
+    {
+     "file": "images/coco-val2017/000000000285.jpg",
+     "seconds": 0.19470418299988523
+    },
+    {
+     "file": "images/coco-val2017/000000000632.jpg",
+     "seconds": 0.16508950000002187
+    },
+    {
+     "file": "images/coco-val2017/000000000724.jpg",
+     "seconds": 0.132377077000001
+    },
+    {
+     "file": "images/coco-val2017/000000000776.jpg",
+     "seconds": 0.16735242699996888
+    },
+    {
+     "file": "images/coco-val2017/000000000785.jpg",
+     "seconds": 0.16315939099990828
+    },
+    {
+     "file": "images/coco-val2017/000000000802.jpg",
+     "seconds": 0.1695823800000653
+    },
+    {
+     "file": "images/coco-val2017/000000000872.jpg",
+     "seconds": 0.17410164599982636
+    },
+    {
+     "file": "images/coco-val2017/000000000885.jpg",
+     "seconds": 0.1614124279999487
+    },
+    {
+     "file": "images/coco-val2017/000000001000.jpg",
+     "seconds": 0.16299366899988854
+    },
+    {
+     "file": "images/coco-val2017/000000001268.jpg",
+     "seconds": 0.1670073139998749
+    },
+    {
+     "file": "images/coco-val2017/000000001296.jpg",
+     "seconds": 0.16272102800007815
+    },
+    {
+     "file": "images/coco-val2017/000000001353.jpg",
+     "seconds": 0.1337439159999576
+    },
+    {
+     "file": "images/coco-val2017/000000001425.jpg",
+     "seconds": 0.16374248500005706
+    },
+    {
+     "file": "images/coco-val2017/000000001490.jpg",
+     "seconds": 0.13796799799979453
+    },
+    {
+     "file": "images/coco-val2017/000000001503.jpg",
+     "seconds": 0.08695517399996788
+    },
+    {
+     "file": "images/coco-val2017/000000001532.jpg",
+     "seconds": 0.16940691500008143
+    },
+    {
+     "file": "images/coco-val2017/000000001584.jpg",
+     "seconds": 0.19120810300000812
+    },
+    {
+     "file": "images/coco-val2017/000000001675.jpg",
+     "seconds": 0.1635760230001324
+    },
+    {
+     "file": "images/coco-val2017/000000001761.jpg",
+     "seconds": 0.16261338699996486
+    },
+    {
+     "file": "images/coco-val2017/000000001818.jpg",
+     "seconds": 0.16032162600004085
+    },
+    {
+     "file": "images/coco-val2017/000000001993.jpg",
+     "seconds": 0.160850327000162
+    },
+    {
+     "file": "images/coco-val2017/000000002006.jpg",
+     "seconds": 0.17246181399991656
+    },
+    {
+     "file": "images/coco-val2017/000000002149.jpg",
+     "seconds": 0.16145997599983275
+    },
+    {
+     "file": "images/coco-val2017/000000002153.jpg",
+     "seconds": 0.1717871109999578
+    },
+    {
+     "file": "images/coco-val2017/000000002157.jpg",
+     "seconds": 0.15901693299997532
+    },
+    {
+     "file": "images/coco-val2017/000000002261.jpg",
+     "seconds": 0.1562131580001278
+    },
+    {
+     "file": "images/coco-val2017/000000002299.jpg",
+     "seconds": 0.11261727900000551
+    },
+    {
+     "file": "images/coco-val2017/000000002431.jpg",
+     "seconds": 0.16535786200006442
+    },
+    {
+     "file": "images/coco-val2017/000000002473.jpg",
+     "seconds": 0.16703767500007416
+    },
+    {
+     "file": "images/coco-val2017/000000002532.jpg",
+     "seconds": 0.16915254699983961
+    },
+    {
+     "file": "images/coco-val2017/000000002587.jpg",
+     "seconds": 0.126509206000037
+    },
+    {
+     "file": "images/coco-val2017/000000002592.jpg",
+     "seconds": 0.13918148600009772
+    },
+    {
+     "file": "images/coco-val2017/000000002685.jpg",
+     "seconds": 0.1575895829998899
+    },
+    {
+     "file": "images/coco-val2017/000000002923.jpg",
+     "seconds": 0.12271749499996076
+    },
+    {
+     "file": "images/coco-val2017/000000003156.jpg",
+     "seconds": 0.1646153649999178
+    },
+    {
+     "file": "images/coco-val2017/000000003255.jpg",
+     "seconds": 0.13253024799996638
+    },
+    {
+     "file": "images/coco-val2017/000000003501.jpg",
+     "seconds": 0.1581738069999119
+    },
+    {
+     "file": "images/coco-val2017/000000003553.jpg",
+     "seconds": 0.16140595900014887
+    },
+    {
+     "file": "images/coco-val2017/000000003661.jpg",
+     "seconds": 0.14755808499990053
+    },
+    {
+     "file": "images/coco-val2017/000000003845.jpg",
+     "seconds": 0.12705400400000144
+    },
+    {
+     "file": "images/coco-val2017/000000003934.jpg",
+     "seconds": 0.1259096160001718
+    },
+    {
+     "file": "images/coco-val2017/000000004134.jpg",
+     "seconds": 0.16609554199999366
+    },
+    {
+     "file": "images/coco-val2017/000000004395.jpg",
+     "seconds": 0.15188093699998717
+    },
+    {
+     "file": "images/coco-val2017/000000004495.jpg",
+     "seconds": 0.1310707799998454
+    },
+    {
+     "file": "images/coco-val2017/000000004765.jpg",
+     "seconds": 0.1736845909999829
+    },
+    {
+     "file": "images/coco-val2017/000000004795.jpg",
+     "seconds": 0.16292868200002886
+    },
+    {
+     "file": "images/coco-val2017/000000005001.jpg",
+     "seconds": 0.15315456600001198
+    },
+    {
+     "file": "images/coco-val2017/000000005037.jpg",
+     "seconds": 0.15660168299996258
+    },
+    {
+     "file": "images/coco-val2017/000000005060.jpg",
+     "seconds": 0.15304791400012618
+    },
+    {
+     "file": "images/coco-val2017/000000005193.jpg",
+     "seconds": 0.15730641499999365
+    },
+    {
+     "file": "images/coco-val2017/000000005477.jpg",
+     "seconds": 0.13444333000006736
+    },
+    {
+     "file": "images/coco-val2017/000000005503.jpg",
+     "seconds": 0.10974716500004433
+    },
+    {
+     "file": "images/coco-val2017/000000005529.jpg",
+     "seconds": 0.15600009199988563
+    },
+    {
+     "file": "images/coco-val2017/000000005586.jpg",
+     "seconds": 0.0804650610000408
+    },
+    {
+     "file": "images/coco-val2017/000000005600.jpg",
+     "seconds": 0.13825079899993398
+    },
+    {
+     "file": "images/coco-val2017/000000005992.jpg",
+     "seconds": 0.15238661299986234
+    },
+    {
+     "file": "images/coco-val2017/000000006012.jpg",
+     "seconds": 0.15889163299993925
+    },
+    {
+     "file": "images/coco-val2017/000000006040.jpg",
+     "seconds": 0.13835135299996182
+    },
+    {
+     "file": "images/coco-val2017/000000006213.jpg",
+     "seconds": 0.15841281600000912
+    },
+    {
+     "file": "images/coco-val2017/000000006460.jpg",
+     "seconds": 0.16198475300006976
+    },
+    {
+     "file": "images/coco-val2017/000000006471.jpg",
+     "seconds": 0.11588604200005648
+    },
+    {
+     "file": "images/coco-val2017/000000006614.jpg",
+     "seconds": 0.12205275700011953
+    },
+    {
+     "file": "images/coco-val2017/000000006723.jpg",
+     "seconds": 0.13483706800002437
+    },
+    {
+     "file": "images/coco-val2017/000000006763.jpg",
+     "seconds": 0.12692500700018172
+    },
+    {
+     "file": "images/coco-val2017/000000006771.jpg",
+     "seconds": 0.1575084329999754
+    },
+    {
+     "file": "images/coco-val2017/000000006818.jpg",
+     "seconds": 0.15418488199998137
+    },
+    {
+     "file": "images/coco-val2017/000000006894.jpg",
+     "seconds": 0.1526982540001427
+    },
+    {
+     "file": "images/coco-val2017/000000006954.jpg",
+     "seconds": 0.1548251720000735
+    },
+    {
+     "file": "images/coco-val2017/000000007088.jpg",
+     "seconds": 0.16450770100004775
+    },
+    {
+     "file": "images/coco-val2017/000000007108.jpg",
+     "seconds": 0.16131730799997968
+    },
+    {
+     "file": "images/coco-val2017/000000007278.jpg",
+     "seconds": 0.16009258399981263
+    },
+    {
+     "file": "images/coco-val2017/000000007281.jpg",
+     "seconds": 0.14414741799987496
+    },
+    {
+     "file": "images/coco-val2017/000000007386.jpg",
+     "seconds": 0.14919004700004734
+    },
+    {
+     "file": "images/coco-val2017/000000007511.jpg",
+     "seconds": 0.1581041260001257
+    },
+    {
+     "file": "images/coco-val2017/000000007574.jpg",
+     "seconds": 0.15378803199996582
+    },
+    {
+     "file": "images/coco-val2017/000000007784.jpg",
+     "seconds": 0.12649164699996618
+    },
+    {
+     "file": "images/coco-val2017/000000007795.jpg",
+     "seconds": 0.1579053660000227
+    },
+    {
+     "file": "images/coco-val2017/000000007816.jpg",
+     "seconds": 0.16134734699994624
+    },
+    {
+     "file": "images/coco-val2017/000000007818.jpg",
+     "seconds": 0.15493160100004388
+    },
+    {
+     "file": "images/coco-val2017/000000007888.jpg",
+     "seconds": 0.16701515400018252
+    },
+    {
+     "file": "images/coco-val2017/000000007977.jpg",
+     "seconds": 0.16458045800004584
+    },
+    {
+     "file": "images/coco-val2017/000000007991.jpg",
+     "seconds": 0.14192682900011278
+    },
+    {
+     "file": "images/coco-val2017/000000008021.jpg",
+     "seconds": 0.15663089300005595
+    },
+    {
+     "file": "images/coco-val2017/000000008211.jpg",
+     "seconds": 0.16076494300000377
+    },
+    {
+     "file": "images/coco-val2017/000000008277.jpg",
+     "seconds": 0.17235749799988298
+    },
+    {
+     "file": "images/coco-val2017/000000008532.jpg",
+     "seconds": 0.15547561400012455
+    },
+    {
+     "file": "images/coco-val2017/000000008629.jpg",
+     "seconds": 0.16884803900006773
+    },
+    {
+     "file": "images/coco-val2017/000000008690.jpg",
+     "seconds": 0.15716548899990812
+    },
+    {
+     "file": "images/coco-val2017/000000008762.jpg",
+     "seconds": 0.15882938499999
+    },
+    {
+     "file": "images/coco-val2017/000000008844.jpg",
+     "seconds": 0.16958466500000213
+    },
+    {
+     "file": "images/coco-val2017/000000008899.jpg",
+     "seconds": 0.1635309870000583
+    },
+    {
+     "file": "images/coco-val2017/000000009378.jpg",
+     "seconds": 0.15859127400017314
+    },
+    {
+     "file": "images/coco-val2017/000000009400.jpg",
+     "seconds": 0.15925919500000418
+    },
+    {
+     "file": "images/coco-val2017/000000009448.jpg",
+     "seconds": 0.16637983500004339
+    },
+    {
+     "file": "images/coco-val2017/000000009483.jpg",
+     "seconds": 0.15634751099992172
+    },
+    {
+     "file": "images/coco-val2017/000000009590.jpg",
+     "seconds": 0.15448663200004376
+    },
+    {
+     "file": "images/coco-val2017/000000009769.jpg",
+     "seconds": 0.16334055799984526
+    },
+    {
+     "file": "images/coco-val2017/000000009772.jpg",
+     "seconds": 0.1592980709999665
+    },
+    {
+     "file": "images/coco-val2017/000000009891.jpg",
+     "seconds": 0.15590238300001147
+    },
+    {
+     "file": "images/coco-val2017/000000009914.jpg",
+     "seconds": 0.16335166699991532
+    },
+    {
+     "file": "images/coco-val2017/000000010092.jpg",
+     "seconds": 0.16293516400014596
+    },
+    {
+     "file": "images/coco-val2017/000000010363.jpg",
+     "seconds": 0.14569882800014966
+    },
+    {
+     "file": "images/coco-val2017/000000010583.jpg",
+     "seconds": 0.17766320199984875
+    },
+    {
+     "file": "images/coco-val2017/000000010707.jpg",
+     "seconds": 0.15488194299996394
+    },
+    {
+     "file": "images/coco-val2017/000000010764.jpg",
+     "seconds": 0.15837956299992584
+    },
+    {
+     "file": "images/coco-val2017/000000010977.jpg",
+     "seconds": 0.12461578500005999
+    },
+    {
+     "file": "images/coco-val2017/000000010995.jpg",
+     "seconds": 0.15365853999992396
+    },
+    {
+     "file": "images/coco-val2017/000000011051.jpg",
+     "seconds": 0.1601945180000257
+    },
+    {
+     "file": "images/coco-val2017/000000011122.jpg",
+     "seconds": 0.15910658699999658
+    },
+    {
+     "file": "images/coco-val2017/000000011149.jpg",
+     "seconds": 0.12696340800016515
+    },
+    {
+     "file": "images/coco-val2017/000000011197.jpg",
+     "seconds": 0.1559275179999986
+    },
+    {
+     "file": "images/coco-val2017/000000011511.jpg",
+     "seconds": 0.1568728239999473
+    },
+    {
+     "file": "images/coco-val2017/000000011615.jpg",
+     "seconds": 0.1570287880001615
+    },
+    {
+     "file": "images/coco-val2017/000000011699.jpg",
+     "seconds": 0.16400845699990896
+    },
+    {
+     "file": "images/coco-val2017/000000011760.jpg",
+     "seconds": 0.16891742500001783
+    },
+    {
+     "file": "images/coco-val2017/000000011813.jpg",
+     "seconds": 0.1165842809998594
+    },
+    {
+     "file": "images/coco-val2017/000000012062.jpg",
+     "seconds": 0.16935641300005955
+    },
+    {
+     "file": "images/coco-val2017/000000012120.jpg",
+     "seconds": 0.16272282899990387
+    },
+    {
+     "file": "images/coco-val2017/000000012280.jpg",
+     "seconds": 0.15997403100004703
+    },
+    {
+     "file": "images/coco-val2017/000000012576.jpg",
+     "seconds": 0.15885483400006706
+    },
+    {
+     "file": "images/coco-val2017/000000012639.jpg",
+     "seconds": 0.1618509909999375
+    },
+    {
+     "file": "images/coco-val2017/000000012667.jpg",
+     "seconds": 0.15995661100009784
+    },
+    {
+     "file": "images/coco-val2017/000000012670.jpg",
+     "seconds": 0.16541941200011934
+    },
+    {
+     "file": "images/coco-val2017/000000012748.jpg",
+     "seconds": 0.1583004379999693
+    },
+    {
+     "file": "images/coco-val2017/000000013004.jpg",
+     "seconds": 0.12880757400012044
+    },
+    {
+     "file": "images/coco-val2017/000000013177.jpg",
+     "seconds": 0.16119932999981756
+    },
+    {
+     "file": "images/coco-val2017/000000013201.jpg",
+     "seconds": 0.16105472399999599
+    },
+    {
+     "file": "images/coco-val2017/000000013291.jpg",
+     "seconds": 0.1174048909999783
+    },
+    {
+     "file": "images/coco-val2017/000000013348.jpg",
+     "seconds": 0.15685820100020464
+    },
+    {
+     "file": "images/coco-val2017/000000013546.jpg",
+     "seconds": 0.1612133050000466
+    },
+    {
+     "file": "images/coco-val2017/000000013597.jpg",
+     "seconds": 0.15845979999994597
+    },
+    {
+     "file": "images/coco-val2017/000000013659.jpg",
+     "seconds": 0.1578072360000533
+    },
+    {
+     "file": "images/coco-val2017/000000013729.jpg",
+     "seconds": 0.16214143299998796
+    },
+    {
+     "file": "images/coco-val2017/000000013774.jpg",
+     "seconds": 0.1583703499998137
+    },
+    {
+     "file": "images/coco-val2017/000000013923.jpg",
+     "seconds": 0.16163823600004434
+    },
+    {
+     "file": "images/coco-val2017/000000014007.jpg",
+     "seconds": 0.1655272180000793
+    },
+    {
+     "file": "images/coco-val2017/000000014038.jpg",
+     "seconds": 0.162286948999963
+    },
+    {
+     "file": "images/coco-val2017/000000014226.jpg",
+     "seconds": 0.1548563119999926
+    },
+    {
+     "file": "images/coco-val2017/000000014380.jpg",
+     "seconds": 0.15864612999985184
+    },
+    {
+     "file": "images/coco-val2017/000000014439.jpg",
+     "seconds": 0.1605578940000214
+    },
+    {
+     "file": "images/coco-val2017/000000014473.jpg",
+     "seconds": 0.16059764400006316
+    },
+    {
+     "file": "images/coco-val2017/000000014831.jpg",
+     "seconds": 0.16113096600020071
+    },
+    {
+     "file": "images/coco-val2017/000000014888.jpg",
+     "seconds": 0.15952039399985551
+    },
+    {
+     "file": "images/coco-val2017/000000015079.jpg",
+     "seconds": 0.15646058200013613
+    },
+    {
+     "file": "images/coco-val2017/000000015254.jpg",
+     "seconds": 0.15970539399995687
+    },
+    {
+     "file": "images/coco-val2017/000000015272.jpg",
+     "seconds": 0.16071398400004
+    },
+    {
+     "file": "images/coco-val2017/000000015278.jpg",
+     "seconds": 0.16070687199999156
+    },
+    {
+     "file": "images/coco-val2017/000000015335.jpg",
+     "seconds": 0.15806363199999396
+    },
+    {
+     "file": "images/coco-val2017/000000015338.jpg",
+     "seconds": 0.15946721499994965
+    },
+    {
+     "file": "images/coco-val2017/000000015440.jpg",
+     "seconds": 0.15172776400004295
+    },
+    {
+     "file": "images/coco-val2017/000000015497.jpg",
+     "seconds": 0.1545525330000146
+    },
+    {
+     "file": "images/coco-val2017/000000015517.jpg",
+     "seconds": 0.1601922680001735
+    },
+    {
+     "file": "images/coco-val2017/000000015597.jpg",
+     "seconds": 0.16007258900003762
+    },
+    {
+     "file": "images/coco-val2017/000000015660.jpg",
+     "seconds": 0.14180702500016196
+    },
+    {
+     "file": "images/coco-val2017/000000015746.jpg",
+     "seconds": 0.15684303299985913
+    },
+    {
+     "file": "images/coco-val2017/000000015751.jpg",
+     "seconds": 0.16291961199999605
+    },
+    {
+     "file": "images/coco-val2017/000000015956.jpg",
+     "seconds": 0.15675089399996978
+    },
+    {
+     "file": "images/coco-val2017/000000016010.jpg",
+     "seconds": 0.1579566379998596
+    },
+    {
+     "file": "images/coco-val2017/000000016228.jpg",
+     "seconds": 0.15855746300007922
+    },
+    {
+     "file": "images/coco-val2017/000000016249.jpg",
+     "seconds": 0.12364551099994969
+    },
+    {
+     "file": "images/coco-val2017/000000016439.jpg",
+     "seconds": 0.1591646290000881
+    },
+    {
+     "file": "images/coco-val2017/000000016451.jpg",
+     "seconds": 0.17023705899987362
+    },
+    {
+     "file": "images/coco-val2017/000000016502.jpg",
+     "seconds": 0.12740624000002754
+    },
+    {
+     "file": "images/coco-val2017/000000016598.jpg",
+     "seconds": 0.15738244399994983
+    },
+    {
+     "file": "images/coco-val2017/000000016958.jpg",
+     "seconds": 0.15774645999999848
+    },
+    {
+     "file": "images/coco-val2017/000000017029.jpg",
+     "seconds": 0.1725277810000989
+    },
+    {
+     "file": "images/coco-val2017/000000017031.jpg",
+     "seconds": 0.1173682869998629
+    },
+    {
+     "file": "images/coco-val2017/000000017115.jpg",
+     "seconds": 0.1579450409999481
+    },
+    {
+     "file": "images/coco-val2017/000000017178.jpg",
+     "seconds": 0.15829904199995326
+    },
+    {
+     "file": "images/coco-val2017/000000017182.jpg",
+     "seconds": 0.16425160100016
+    },
+    {
+     "file": "images/coco-val2017/000000017207.jpg",
+     "seconds": 0.15872190899995076
+    },
+    {
+     "file": "images/coco-val2017/000000017379.jpg",
+     "seconds": 0.15848510299997542
+    },
+    {
+     "file": "images/coco-val2017/000000017436.jpg",
+     "seconds": 0.1583730120000837
+    },
+    {
+     "file": "images/coco-val2017/000000017627.jpg",
+     "seconds": 0.15850902099987252
+    },
+    {
+     "file": "images/coco-val2017/000000017714.jpg",
+     "seconds": 0.15861260600013338
+    },
+    {
+     "file": "images/coco-val2017/000000017899.jpg",
+     "seconds": 0.15996833000008337
+    },
+    {
+     "file": "images/coco-val2017/000000017905.jpg",
+     "seconds": 0.15975488599997334
+    },
+    {
+     "file": "images/coco-val2017/000000017959.jpg",
+     "seconds": 0.15736820899996928
+    },
+    {
+     "file": "images/coco-val2017/000000018150.jpg",
+     "seconds": 0.16696762900005524
+    },
+    {
+     "file": "images/coco-val2017/000000018193.jpg",
+     "seconds": 0.15932055100006437
+    },
+    {
+     "file": "images/coco-val2017/000000018380.jpg",
+     "seconds": 0.16382030699992356
+    },
+    {
+     "file": "images/coco-val2017/000000018491.jpg",
+     "seconds": 0.16082345699987854
+    },
+    {
+     "file": "images/coco-val2017/000000018519.jpg",
+     "seconds": 0.16500373100006982
+    },
+    {
+     "file": "images/coco-val2017/000000018575.jpg",
+     "seconds": 0.15743832600014684
+    },
+    {
+     "file": "images/coco-val2017/000000018737.jpg",
+     "seconds": 0.1623608699999295
+    },
+    {
+     "file": "images/coco-val2017/000000018770.jpg",
+     "seconds": 0.15927008599987857
+    },
+    {
+     "file": "images/coco-val2017/000000018833.jpg",
+     "seconds": 0.15881653700012066
+    },
+    {
+     "file": "images/coco-val2017/000000018837.jpg",
+     "seconds": 0.15501301799986322
+    },
+    {
+     "file": "images/coco-val2017/000000019042.jpg",
+     "seconds": 0.15587821400004032
+    },
+    {
+     "file": "images/coco-val2017/000000019109.jpg",
+     "seconds": 0.16037957699995786
+    },
+    {
+     "file": "images/coco-val2017/000000019221.jpg",
+     "seconds": 0.15562501099998372
+    },
+    {
+     "file": "images/coco-val2017/000000019402.jpg",
+     "seconds": 0.17182018199991944
+    },
+    {
+     "file": "images/coco-val2017/000000019432.jpg",
+     "seconds": 0.1651745500000743
+    },
+    {
+     "file": "images/coco-val2017/000000019742.jpg",
+     "seconds": 0.12705043899995871
+    },
+    {
+     "file": "images/coco-val2017/000000019786.jpg",
+     "seconds": 0.12485618300001988
+    },
+    {
+     "file": "images/coco-val2017/000000019924.jpg",
+     "seconds": 0.14377598100008981
+    },
+    {
+     "file": "images/coco-val2017/000000020059.jpg",
+     "seconds": 0.1585533340000893
+    },
+    {
+     "file": "images/coco-val2017/000000020107.jpg",
+     "seconds": 0.11581108600012158
+    },
+    {
+     "file": "images/coco-val2017/000000020247.jpg",
+     "seconds": 0.15354266899998947
+    }
+   ],
+   "score": {
+    "recall_at_1": 0.885,
+    "recall_at_10": 1.0,
+    "among": 200,
+    "query": "each photo's first COCO caption"
+   },
+   "summary": {
+    "median_s": 0.15860194000015326,
+    "p90_s": 0.16706915020006363,
+    "total_s": 30.909109087000616
+   }
+  },
+  {
+   "load_s": 1.8069587179998052,
+   "gpu": {
+    "utilization_median_pct": 66.0,
+    "memory_peak_mib": 8546.0
+   },
+   "items": [
+    {
+     "file": "images/coco-val2017/000000000139.jpg",
+     "seconds": 0.1642506940002022
+    },
+    {
+     "file": "images/coco-val2017/000000000285.jpg",
+     "seconds": 0.17108040700009042
+    },
+    {
+     "file": "images/coco-val2017/000000000632.jpg",
+     "seconds": 0.16096622999998544
+    },
+    {
+     "file": "images/coco-val2017/000000000724.jpg",
+     "seconds": 0.12759344799997052
+    },
+    {
+     "file": "images/coco-val2017/000000000776.jpg",
+     "seconds": 0.16430027000001246
+    },
+    {
+     "file": "images/coco-val2017/000000000785.jpg",
+     "seconds": 0.1584513479999714
+    },
+    {
+     "file": "images/coco-val2017/000000000802.jpg",
+     "seconds": 0.16077238099978786
+    },
+    {
+     "file": "images/coco-val2017/000000000872.jpg",
+     "seconds": 0.1686926699999276
+    },
+    {
+     "file": "images/coco-val2017/000000000885.jpg",
+     "seconds": 0.157963380999945
+    },
+    {
+     "file": "images/coco-val2017/000000001000.jpg",
+     "seconds": 0.15687454299995807
+    },
+    {
+     "file": "images/coco-val2017/000000001268.jpg",
+     "seconds": 0.16383123500008878
+    },
+    {
+     "file": "images/coco-val2017/000000001296.jpg",
+     "seconds": 0.15333446600016032
+    },
+    {
+     "file": "images/coco-val2017/000000001353.jpg",
+     "seconds": 0.12732340499997008
+    },
+    {
+     "file": "images/coco-val2017/000000001425.jpg",
+     "seconds": 0.15997619899985693
+    },
+    {
+     "file": "images/coco-val2017/000000001490.jpg",
+     "seconds": 0.1359016700000666
+    },
+    {
+     "file": "images/coco-val2017/000000001503.jpg",
+     "seconds": 0.08276098400006049
+    },
+    {
+     "file": "images/coco-val2017/000000001532.jpg",
+     "seconds": 0.16501758000003974
+    },
+    {
+     "file": "images/coco-val2017/000000001584.jpg",
+     "seconds": 0.19681679599989366
+    },
+    {
+     "file": "images/coco-val2017/000000001675.jpg",
+     "seconds": 0.1540237920000891
+    },
+    {
+     "file": "images/coco-val2017/000000001761.jpg",
+     "seconds": 0.1582384749999619
+    },
+    {
+     "file": "images/coco-val2017/000000001818.jpg",
+     "seconds": 0.15698249199999736
+    },
+    {
+     "file": "images/coco-val2017/000000001993.jpg",
+     "seconds": 0.15314031399998385
+    },
+    {
+     "file": "images/coco-val2017/000000002006.jpg",
+     "seconds": 0.15800542199986012
+    },
+    {
+     "file": "images/coco-val2017/000000002149.jpg",
+     "seconds": 0.15273083500005669
+    },
+    {
+     "file": "images/coco-val2017/000000002153.jpg",
+     "seconds": 0.15577468199990108
+    },
+    {
+     "file": "images/coco-val2017/000000002157.jpg",
+     "seconds": 0.16135106499996255
+    },
+    {
+     "file": "images/coco-val2017/000000002261.jpg",
+     "seconds": 0.1589435369999137
+    },
+    {
+     "file": "images/coco-val2017/000000002299.jpg",
+     "seconds": 0.1104562470000019
+    },
+    {
+     "file": "images/coco-val2017/000000002431.jpg",
+     "seconds": 0.15604776000009224
+    },
+    {
+     "file": "images/coco-val2017/000000002473.jpg",
+     "seconds": 0.15780004800012648
+    },
+    {
+     "file": "images/coco-val2017/000000002532.jpg",
+     "seconds": 0.158885865000002
+    },
+    {
+     "file": "images/coco-val2017/000000002587.jpg",
+     "seconds": 0.12454230299999836
+    },
+    {
+     "file": "images/coco-val2017/000000002592.jpg",
+     "seconds": 0.13795967800001563
+    },
+    {
+     "file": "images/coco-val2017/000000002685.jpg",
+     "seconds": 0.16337171100008163
+    },
+    {
+     "file": "images/coco-val2017/000000002923.jpg",
+     "seconds": 0.12110681699982706
+    },
+    {
+     "file": "images/coco-val2017/000000003156.jpg",
+     "seconds": 0.15530461899993497
+    },
+    {
+     "file": "images/coco-val2017/000000003255.jpg",
+     "seconds": 0.13583313000003727
+    },
+    {
+     "file": "images/coco-val2017/000000003501.jpg",
+     "seconds": 0.16052801599994382
+    },
+    {
+     "file": "images/coco-val2017/000000003553.jpg",
+     "seconds": 0.15549140300004183
+    },
+    {
+     "file": "images/coco-val2017/000000003661.jpg",
+     "seconds": 0.15182622199995421
+    },
+    {
+     "file": "images/coco-val2017/000000003845.jpg",
+     "seconds": 0.12750657499987028
+    },
+    {
+     "file": "images/coco-val2017/000000003934.jpg",
+     "seconds": 0.12902581800017288
+    },
+    {
+     "file": "images/coco-val2017/000000004134.jpg",
+     "seconds": 0.15796808000004603
+    },
+    {
+     "file": "images/coco-val2017/000000004395.jpg",
+     "seconds": 0.1598447110000052
+    },
+    {
+     "file": "images/coco-val2017/000000004495.jpg",
+     "seconds": 0.12916407099987737
+    },
+    {
+     "file": "images/coco-val2017/000000004765.jpg",
+     "seconds": 0.1765757499999836
+    },
+    {
+     "file": "images/coco-val2017/000000004795.jpg",
+     "seconds": 0.1702268940000522
+    },
+    {
+     "file": "images/coco-val2017/000000005001.jpg",
+     "seconds": 0.15691252599981453
+    },
+    {
+     "file": "images/coco-val2017/000000005037.jpg",
+     "seconds": 0.16610967099995833
+    },
+    {
+     "file": "images/coco-val2017/000000005060.jpg",
+     "seconds": 0.1560573360000035
+    },
+    {
+     "file": "images/coco-val2017/000000005193.jpg",
+     "seconds": 0.16067642899997736
+    },
+    {
+     "file": "images/coco-val2017/000000005477.jpg",
+     "seconds": 0.14139107799996964
+    },
+    {
+     "file": "images/coco-val2017/000000005503.jpg",
+     "seconds": 0.11797021100005622
+    },
+    {
+     "file": "images/coco-val2017/000000005529.jpg",
+     "seconds": 0.16327018199990562
+    },
+    {
+     "file": "images/coco-val2017/000000005586.jpg",
+     "seconds": 0.08310881600004905
+    },
+    {
+     "file": "images/coco-val2017/000000005600.jpg",
+     "seconds": 0.14570708999985982
+    },
+    {
+     "file": "images/coco-val2017/000000005992.jpg",
+     "seconds": 0.16000791199985542
+    },
+    {
+     "file": "images/coco-val2017/000000006012.jpg",
+     "seconds": 0.16414932600014254
+    },
+    {
+     "file": "images/coco-val2017/000000006040.jpg",
+     "seconds": 0.14401085700001204
+    },
+    {
+     "file": "images/coco-val2017/000000006213.jpg",
+     "seconds": 0.161168736000036
+    },
+    {
+     "file": "images/coco-val2017/000000006460.jpg",
+     "seconds": 0.16290743499985183
+    },
+    {
+     "file": "images/coco-val2017/000000006471.jpg",
+     "seconds": 0.11779038999998193
+    },
+    {
+     "file": "images/coco-val2017/000000006614.jpg",
+     "seconds": 0.12613198300005024
+    },
+    {
+     "file": "images/coco-val2017/000000006723.jpg",
+     "seconds": 0.14176955699986138
+    },
+    {
+     "file": "images/coco-val2017/000000006763.jpg",
+     "seconds": 0.1310319140000047
+    },
+    {
+     "file": "images/coco-val2017/000000006771.jpg",
+     "seconds": 0.15871109900012925
+    },
+    {
+     "file": "images/coco-val2017/000000006818.jpg",
+     "seconds": 0.16048840200005543
+    },
+    {
+     "file": "images/coco-val2017/000000006894.jpg",
+     "seconds": 0.16313251900010073
+    },
+    {
+     "file": "images/coco-val2017/000000006954.jpg",
+     "seconds": 0.15516708600011953
+    },
+    {
+     "file": "images/coco-val2017/000000007088.jpg",
+     "seconds": 0.15593174200012072
+    },
+    {
+     "file": "images/coco-val2017/000000007108.jpg",
+     "seconds": 0.162256225000192
+    },
+    {
+     "file": "images/coco-val2017/000000007278.jpg",
+     "seconds": 0.16308585299998413
+    },
+    {
+     "file": "images/coco-val2017/000000007281.jpg",
+     "seconds": 0.14027134599996316
+    },
+    {
+     "file": "images/coco-val2017/000000007386.jpg",
+     "seconds": 0.15252278200000546
+    },
+    {
+     "file": "images/coco-val2017/000000007511.jpg",
+     "seconds": 0.16058674700002484
+    },
+    {
+     "file": "images/coco-val2017/000000007574.jpg",
+     "seconds": 0.1534275169999546
+    },
+    {
+     "file": "images/coco-val2017/000000007784.jpg",
+     "seconds": 0.13113436100002218
+    },
+    {
+     "file": "images/coco-val2017/000000007795.jpg",
+     "seconds": 0.1579166249998707
+    },
+    {
+     "file": "images/coco-val2017/000000007816.jpg",
+     "seconds": 0.1603094899999178
+    },
+    {
+     "file": "images/coco-val2017/000000007818.jpg",
+     "seconds": 0.15791468200018244
+    },
+    {
+     "file": "images/coco-val2017/000000007888.jpg",
+     "seconds": 0.16356842899995172
+    },
+    {
+     "file": "images/coco-val2017/000000007977.jpg",
+     "seconds": 0.15865963299984287
+    },
+    {
+     "file": "images/coco-val2017/000000007991.jpg",
+     "seconds": 0.14335151099999166
+    },
+    {
+     "file": "images/coco-val2017/000000008021.jpg",
+     "seconds": 0.16214091200004077
+    },
+    {
+     "file": "images/coco-val2017/000000008211.jpg",
+     "seconds": 0.16249991099994077
+    },
+    {
+     "file": "images/coco-val2017/000000008277.jpg",
+     "seconds": 0.17557417700004407
+    },
+    {
+     "file": "images/coco-val2017/000000008532.jpg",
+     "seconds": 0.16269632200010165
+    },
+    {
+     "file": "images/coco-val2017/000000008629.jpg",
+     "seconds": 0.1809598070001357
+    },
+    {
+     "file": "images/coco-val2017/000000008690.jpg",
+     "seconds": 0.16238530200007517
+    },
+    {
+     "file": "images/coco-val2017/000000008762.jpg",
+     "seconds": 0.16444673499995588
+    },
+    {
+     "file": "images/coco-val2017/000000008844.jpg",
+     "seconds": 0.16689455200003067
+    },
+    {
+     "file": "images/coco-val2017/000000008899.jpg",
+     "seconds": 0.17363469699989764
+    },
+    {
+     "file": "images/coco-val2017/000000009378.jpg",
+     "seconds": 0.15665495600001123
+    },
+    {
+     "file": "images/coco-val2017/000000009400.jpg",
+     "seconds": 0.16187430600007247
+    },
+    {
+     "file": "images/coco-val2017/000000009448.jpg",
+     "seconds": 0.17413322699985656
+    },
+    {
+     "file": "images/coco-val2017/000000009483.jpg",
+     "seconds": 0.15725037099991823
+    },
+    {
+     "file": "images/coco-val2017/000000009590.jpg",
+     "seconds": 0.15961115499999323
+    },
+    {
+     "file": "images/coco-val2017/000000009769.jpg",
+     "seconds": 0.17216892900000857
+    },
+    {
+     "file": "images/coco-val2017/000000009772.jpg",
+     "seconds": 0.16458895100004156
+    },
+    {
+     "file": "images/coco-val2017/000000009891.jpg",
+     "seconds": 0.16849778499999957
+    },
+    {
+     "file": "images/coco-val2017/000000009914.jpg",
+     "seconds": 0.16692793099991832
+    },
+    {
+     "file": "images/coco-val2017/000000010092.jpg",
+     "seconds": 0.1668071779999991
+    },
+    {
+     "file": "images/coco-val2017/000000010363.jpg",
+     "seconds": 0.15805341899999803
+    },
+    {
+     "file": "images/coco-val2017/000000010583.jpg",
+     "seconds": 0.19602910599996903
+    },
+    {
+     "file": "images/coco-val2017/000000010707.jpg",
+     "seconds": 0.16836898099995778
+    },
+    {
+     "file": "images/coco-val2017/000000010764.jpg",
+     "seconds": 0.1743622569999843
+    },
+    {
+     "file": "images/coco-val2017/000000010977.jpg",
+     "seconds": 0.13979115999995884
+    },
+    {
+     "file": "images/coco-val2017/000000010995.jpg",
+     "seconds": 0.1609006880000834
+    },
+    {
+     "file": "images/coco-val2017/000000011051.jpg",
+     "seconds": 0.17541184400010934
+    },
+    {
+     "file": "images/coco-val2017/000000011122.jpg",
+     "seconds": 0.1706335129999843
+    },
+    {
+     "file": "images/coco-val2017/000000011149.jpg",
+     "seconds": 0.13480233399991448
+    },
+    {
+     "file": "images/coco-val2017/000000011197.jpg",
+     "seconds": 0.15840893000017786
+    },
+    {
+     "file": "images/coco-val2017/000000011511.jpg",
+     "seconds": 0.15590673299993796
+    },
+    {
+     "file": "images/coco-val2017/000000011615.jpg",
+     "seconds": 0.15912661099991965
+    },
+    {
+     "file": "images/coco-val2017/000000011699.jpg",
+     "seconds": 0.15808496200020272
+    },
+    {
+     "file": "images/coco-val2017/000000011760.jpg",
+     "seconds": 0.16479600000002392
+    },
+    {
+     "file": "images/coco-val2017/000000011813.jpg",
+     "seconds": 0.1198182690000067
+    },
+    {
+     "file": "images/coco-val2017/000000012062.jpg",
+     "seconds": 0.1637775019999026
+    },
+    {
+     "file": "images/coco-val2017/000000012120.jpg",
+     "seconds": 0.16124246999993375
+    },
+    {
+     "file": "images/coco-val2017/000000012280.jpg",
+     "seconds": 0.16558405000000675
+    },
+    {
+     "file": "images/coco-val2017/000000012576.jpg",
+     "seconds": 0.16287841899998057
+    },
+    {
+     "file": "images/coco-val2017/000000012639.jpg",
+     "seconds": 0.16460447300005399
+    },
+    {
+     "file": "images/coco-val2017/000000012667.jpg",
+     "seconds": 0.15801080500000353
+    },
+    {
+     "file": "images/coco-val2017/000000012670.jpg",
+     "seconds": 0.16403603800017663
+    },
+    {
+     "file": "images/coco-val2017/000000012748.jpg",
+     "seconds": 0.16230772699987028
+    },
+    {
+     "file": "images/coco-val2017/000000013004.jpg",
+     "seconds": 0.13091117499993743
+    },
+    {
+     "file": "images/coco-val2017/000000013177.jpg",
+     "seconds": 0.15917081499992491
+    },
+    {
+     "file": "images/coco-val2017/000000013201.jpg",
+     "seconds": 0.16242632000012236
+    },
+    {
+     "file": "images/coco-val2017/000000013291.jpg",
+     "seconds": 0.11992830400004095
+    },
+    {
+     "file": "images/coco-val2017/000000013348.jpg",
+     "seconds": 0.16070603700018182
+    },
+    {
+     "file": "images/coco-val2017/000000013546.jpg",
+     "seconds": 0.16088713699991786
+    },
+    {
+     "file": "images/coco-val2017/000000013597.jpg",
+     "seconds": 0.1592211810000208
+    },
+    {
+     "file": "images/coco-val2017/000000013659.jpg",
+     "seconds": 0.157433539999829
+    },
+    {
+     "file": "images/coco-val2017/000000013729.jpg",
+     "seconds": 0.15484845000014502
+    },
+    {
+     "file": "images/coco-val2017/000000013774.jpg",
+     "seconds": 0.15387716999998702
+    },
+    {
+     "file": "images/coco-val2017/000000013923.jpg",
+     "seconds": 0.14772075599989876
+    },
+    {
+     "file": "images/coco-val2017/000000014007.jpg",
+     "seconds": 0.1557494940000197
+    },
+    {
+     "file": "images/coco-val2017/000000014038.jpg",
+     "seconds": 0.15245535600001858
+    },
+    {
+     "file": "images/coco-val2017/000000014226.jpg",
+     "seconds": 0.1541541460001099
+    },
+    {
+     "file": "images/coco-val2017/000000014380.jpg",
+     "seconds": 0.15516315800005032
+    },
+    {
+     "file": "images/coco-val2017/000000014439.jpg",
+     "seconds": 0.14726954900015699
+    },
+    {
+     "file": "images/coco-val2017/000000014473.jpg",
+     "seconds": 0.15075250499990034
+    },
+    {
+     "file": "images/coco-val2017/000000014831.jpg",
+     "seconds": 0.14730947600014588
+    },
+    {
+     "file": "images/coco-val2017/000000014888.jpg",
+     "seconds": 0.15280289299994365
+    },
+    {
+     "file": "images/coco-val2017/000000015079.jpg",
+     "seconds": 0.14902603900009126
+    },
+    {
+     "file": "images/coco-val2017/000000015254.jpg",
+     "seconds": 0.15246715100010988
+    },
+    {
+     "file": "images/coco-val2017/000000015272.jpg",
+     "seconds": 0.1554665709998062
+    },
+    {
+     "file": "images/coco-val2017/000000015278.jpg",
+     "seconds": 0.14987619299995458
+    },
+    {
+     "file": "images/coco-val2017/000000015335.jpg",
+     "seconds": 0.14880977099983284
+    },
+    {
+     "file": "images/coco-val2017/000000015338.jpg",
+     "seconds": 0.15168683000001693
+    },
+    {
+     "file": "images/coco-val2017/000000015440.jpg",
+     "seconds": 0.15000016600015442
+    },
+    {
+     "file": "images/coco-val2017/000000015497.jpg",
+     "seconds": 0.14889081800015447
+    },
+    {
+     "file": "images/coco-val2017/000000015517.jpg",
+     "seconds": 0.15125931000011406
+    },
+    {
+     "file": "images/coco-val2017/000000015597.jpg",
+     "seconds": 0.15011519199993018
+    },
+    {
+     "file": "images/coco-val2017/000000015660.jpg",
+     "seconds": 0.1336630729999797
+    },
+    {
+     "file": "images/coco-val2017/000000015746.jpg",
+     "seconds": 0.1554276800000025
+    },
+    {
+     "file": "images/coco-val2017/000000015751.jpg",
+     "seconds": 0.15651345099990976
+    },
+    {
+     "file": "images/coco-val2017/000000015956.jpg",
+     "seconds": 0.15168952699991678
+    },
+    {
+     "file": "images/coco-val2017/000000016010.jpg",
+     "seconds": 0.1559180940000715
+    },
+    {
+     "file": "images/coco-val2017/000000016228.jpg",
+     "seconds": 0.1499599589999434
+    },
+    {
+     "file": "images/coco-val2017/000000016249.jpg",
+     "seconds": 0.11711136799999622
+    },
+    {
+     "file": "images/coco-val2017/000000016439.jpg",
+     "seconds": 0.1497878130001027
+    },
+    {
+     "file": "images/coco-val2017/000000016451.jpg",
+     "seconds": 0.16390344000001278
+    },
+    {
+     "file": "images/coco-val2017/000000016502.jpg",
+     "seconds": 0.12090082800000346
+    },
+    {
+     "file": "images/coco-val2017/000000016598.jpg",
+     "seconds": 0.15353677400003107
+    },
+    {
+     "file": "images/coco-val2017/000000016958.jpg",
+     "seconds": 0.15105547300004218
+    },
+    {
+     "file": "images/coco-val2017/000000017029.jpg",
+     "seconds": 0.1719310729999961
+    },
+    {
+     "file": "images/coco-val2017/000000017031.jpg",
+     "seconds": 0.11056571099993562
+    },
+    {
+     "file": "images/coco-val2017/000000017115.jpg",
+     "seconds": 0.15423068099994452
+    },
+    {
+     "file": "images/coco-val2017/000000017178.jpg",
+     "seconds": 0.15684159700003875
+    },
+    {
+     "file": "images/coco-val2017/000000017182.jpg",
+     "seconds": 0.15315871300003892
+    },
+    {
+     "file": "images/coco-val2017/000000017207.jpg",
+     "seconds": 0.1486664080000537
+    },
+    {
+     "file": "images/coco-val2017/000000017379.jpg",
+     "seconds": 0.1483004520000577
+    },
+    {
+     "file": "images/coco-val2017/000000017436.jpg",
+     "seconds": 0.1486652989999584
+    },
+    {
+     "file": "images/coco-val2017/000000017627.jpg",
+     "seconds": 0.15090293200000815
+    },
+    {
+     "file": "images/coco-val2017/000000017714.jpg",
+     "seconds": 0.1558236159999069
+    },
+    {
+     "file": "images/coco-val2017/000000017899.jpg",
+     "seconds": 0.1520062049999069
+    },
+    {
+     "file": "images/coco-val2017/000000017905.jpg",
+     "seconds": 0.15147757700015063
+    },
+    {
+     "file": "images/coco-val2017/000000017959.jpg",
+     "seconds": 0.15313059400000384
+    },
+    {
+     "file": "images/coco-val2017/000000018150.jpg",
+     "seconds": 0.15644507299998622
+    },
+    {
+     "file": "images/coco-val2017/000000018193.jpg",
+     "seconds": 0.155458033000059
+    },
+    {
+     "file": "images/coco-val2017/000000018380.jpg",
+     "seconds": 0.15256113800001003
+    },
+    {
+     "file": "images/coco-val2017/000000018491.jpg",
+     "seconds": 0.15186239200011187
+    },
+    {
+     "file": "images/coco-val2017/000000018519.jpg",
+     "seconds": 0.15784817000007934
+    },
+    {
+     "file": "images/coco-val2017/000000018575.jpg",
+     "seconds": 0.15423150400010854
+    },
+    {
+     "file": "images/coco-val2017/000000018737.jpg",
+     "seconds": 0.15231643800007078
+    },
+    {
+     "file": "images/coco-val2017/000000018770.jpg",
+     "seconds": 0.15518184300003668
+    },
+    {
+     "file": "images/coco-val2017/000000018833.jpg",
+     "seconds": 0.15047735600001033
+    },
+    {
+     "file": "images/coco-val2017/000000018837.jpg",
+     "seconds": 0.156118344999868
+    },
+    {
+     "file": "images/coco-val2017/000000019042.jpg",
+     "seconds": 0.1443636719998267
+    },
+    {
+     "file": "images/coco-val2017/000000019109.jpg",
+     "seconds": 0.15324730999986969
+    },
+    {
+     "file": "images/coco-val2017/000000019221.jpg",
+     "seconds": 0.14680567100003827
+    },
+    {
+     "file": "images/coco-val2017/000000019402.jpg",
+     "seconds": 0.1492486709998957
+    },
+    {
+     "file": "images/coco-val2017/000000019432.jpg",
+     "seconds": 0.1535753539999405
+    },
+    {
+     "file": "images/coco-val2017/000000019742.jpg",
+     "seconds": 0.12354168100000607
+    },
+    {
+     "file": "images/coco-val2017/000000019786.jpg",
+     "seconds": 0.1256683060000796
+    },
+    {
+     "file": "images/coco-val2017/000000019924.jpg",
+     "seconds": 0.1374341099999583
+    },
+    {
+     "file": "images/coco-val2017/000000020059.jpg",
+     "seconds": 0.15646745399999418
+    },
+    {
+     "file": "images/coco-val2017/000000020107.jpg",
+     "seconds": 0.1116822349999893
+    },
+    {
+     "file": "images/coco-val2017/000000020247.jpg",
+     "seconds": 0.1523410940001213
+    }
+   ],
+   "score": {
+    "recall_at_1": 0.885,
+    "recall_at_10": 1.0,
+    "among": 200,
+    "query": "each photo's first COCO caption"
+   },
+   "summary": {
+    "median_s": 0.1559249180000961,
+    "p90_s": 0.1661794216999624,
+    "total_s": 30.582284723000384
+   }
+  },
+  {
+   "load_s": 1.8443843189998006,
+   "gpu": {
+    "utilization_median_pct": 66.0,
+    "memory_peak_mib": 8546.0
+   },
+   "items": [
+    {
+     "file": "images/coco-val2017/000000000139.jpg",
+     "seconds": 0.18215733299985004
+    },
+    {
+     "file": "images/coco-val2017/000000000285.jpg",
+     "seconds": 0.20810245500001656
+    },
+    {
+     "file": "images/coco-val2017/000000000632.jpg",
+     "seconds": 0.16359202000012374
+    },
+    {
+     "file": "images/coco-val2017/000000000724.jpg",
+     "seconds": 0.13275450299988734
+    },
+    {
+     "file": "images/coco-val2017/000000000776.jpg",
+     "seconds": 0.1646129819998805
+    },
+    {
+     "file": "images/coco-val2017/000000000785.jpg",
+     "seconds": 0.16602367099994808
+    },
+    {
+     "file": "images/coco-val2017/000000000802.jpg",
+     "seconds": 0.1800501660000009
+    },
+    {
+     "file": "images/coco-val2017/000000000872.jpg",
+     "seconds": 0.17516148499998963
+    },
+    {
+     "file": "images/coco-val2017/000000000885.jpg",
+     "seconds": 0.16760100300007252
+    },
+    {
+     "file": "images/coco-val2017/000000001000.jpg",
+     "seconds": 0.16780316900008074
+    },
+    {
+     "file": "images/coco-val2017/000000001268.jpg",
+     "seconds": 0.1677725179999925
+    },
+    {
+     "file": "images/coco-val2017/000000001296.jpg",
+     "seconds": 0.15958748100001685
+    },
+    {
+     "file": "images/coco-val2017/000000001353.jpg",
+     "seconds": 0.13190293399998154
+    },
+    {
+     "file": "images/coco-val2017/000000001425.jpg",
+     "seconds": 0.1687731779998103
+    },
+    {
+     "file": "images/coco-val2017/000000001490.jpg",
+     "seconds": 0.14415917799988165
+    },
+    {
+     "file": "images/coco-val2017/000000001503.jpg",
+     "seconds": 0.08806823500003702
+    },
+    {
+     "file": "images/coco-val2017/000000001532.jpg",
+     "seconds": 0.17160503800005245
+    },
+    {
+     "file": "images/coco-val2017/000000001584.jpg",
+     "seconds": 0.19450285700008862
+    },
+    {
+     "file": "images/coco-val2017/000000001675.jpg",
+     "seconds": 0.16377827899987096
+    },
+    {
+     "file": "images/coco-val2017/000000001761.jpg",
+     "seconds": 0.16450510899994697
+    },
+    {
+     "file": "images/coco-val2017/000000001818.jpg",
+     "seconds": 0.1649808889999349
+    },
+    {
+     "file": "images/coco-val2017/000000001993.jpg",
+     "seconds": 0.16166768199991566
+    },
+    {
+     "file": "images/coco-val2017/000000002006.jpg",
+     "seconds": 0.16797795000002225
+    },
+    {
+     "file": "images/coco-val2017/000000002149.jpg",
+     "seconds": 0.16157420200011074
+    },
+    {
+     "file": "images/coco-val2017/000000002153.jpg",
+     "seconds": 0.16290128499986167
+    },
+    {
+     "file": "images/coco-val2017/000000002157.jpg",
+     "seconds": 0.16918613600000754
+    },
+    {
+     "file": "images/coco-val2017/000000002261.jpg",
+     "seconds": 0.16641184099989914
+    },
+    {
+     "file": "images/coco-val2017/000000002299.jpg",
+     "seconds": 0.1219449899999745
+    },
+    {
+     "file": "images/coco-val2017/000000002431.jpg",
+     "seconds": 0.16396760500015262
+    },
+    {
+     "file": "images/coco-val2017/000000002473.jpg",
+     "seconds": 0.16756802399982007
+    },
+    {
+     "file": "images/coco-val2017/000000002532.jpg",
+     "seconds": 0.16991114400002516
+    },
+    {
+     "file": "images/coco-val2017/000000002587.jpg",
+     "seconds": 0.13879707599994617
+    },
+    {
+     "file": "images/coco-val2017/000000002592.jpg",
+     "seconds": 0.1465621260001626
+    },
+    {
+     "file": "images/coco-val2017/000000002685.jpg",
+     "seconds": 0.16865460999997595
+    },
+    {
+     "file": "images/coco-val2017/000000002923.jpg",
+     "seconds": 0.129611739999973
+    },
+    {
+     "file": "images/coco-val2017/000000003156.jpg",
+     "seconds": 0.16183269800012567
+    },
+    {
+     "file": "images/coco-val2017/000000003255.jpg",
+     "seconds": 0.14246547599987025
+    },
+    {
+     "file": "images/coco-val2017/000000003501.jpg",
+     "seconds": 0.17226178800001435
+    },
+    {
+     "file": "images/coco-val2017/000000003553.jpg",
+     "seconds": 0.16777227700004005
+    },
+    {
+     "file": "images/coco-val2017/000000003661.jpg",
+     "seconds": 0.15530991800005722
+    },
+    {
+     "file": "images/coco-val2017/000000003845.jpg",
+     "seconds": 0.13284626600011507
+    },
+    {
+     "file": "images/coco-val2017/000000003934.jpg",
+     "seconds": 0.1295518719998654
+    },
+    {
+     "file": "images/coco-val2017/000000004134.jpg",
+     "seconds": 0.165023212000051
+    },
+    {
+     "file": "images/coco-val2017/000000004395.jpg",
+     "seconds": 0.16411947300002794
+    },
+    {
+     "file": "images/coco-val2017/000000004495.jpg",
+     "seconds": 0.1293300800000452
+    },
+    {
+     "file": "images/coco-val2017/000000004765.jpg",
+     "seconds": 0.173388740000064
+    },
+    {
+     "file": "images/coco-val2017/000000004795.jpg",
+     "seconds": 0.16963190900014524
+    },
+    {
+     "file": "images/coco-val2017/000000005001.jpg",
+     "seconds": 0.15692211000009593
+    },
+    {
+     "file": "images/coco-val2017/000000005037.jpg",
+     "seconds": 0.15823484600014126
+    },
+    {
+     "file": "images/coco-val2017/000000005060.jpg",
+     "seconds": 0.16364266899995528
+    },
+    {
+     "file": "images/coco-val2017/000000005193.jpg",
+     "seconds": 0.15729986199994528
+    },
+    {
+     "file": "images/coco-val2017/000000005477.jpg",
+     "seconds": 0.14024474999996528
+    },
+    {
+     "file": "images/coco-val2017/000000005503.jpg",
+     "seconds": 0.11556133699991733
+    },
+    {
+     "file": "images/coco-val2017/000000005529.jpg",
+     "seconds": 0.1630226899999343
+    },
+    {
+     "file": "images/coco-val2017/000000005586.jpg",
+     "seconds": 0.08627378400001362
+    },
+    {
+     "file": "images/coco-val2017/000000005600.jpg",
+     "seconds": 0.14839665900012733
+    },
+    {
+     "file": "images/coco-val2017/000000005992.jpg",
+     "seconds": 0.17239172299991878
+    },
+    {
+     "file": "images/coco-val2017/000000006012.jpg",
+     "seconds": 0.16130325900007847
+    },
+    {
+     "file": "images/coco-val2017/000000006040.jpg",
+     "seconds": 0.14628186400000232
+    },
+    {
+     "file": "images/coco-val2017/000000006213.jpg",
+     "seconds": 0.16578942599994662
+    },
+    {
+     "file": "images/coco-val2017/000000006460.jpg",
+     "seconds": 0.16705570699991767
+    },
+    {
+     "file": "images/coco-val2017/000000006471.jpg",
+     "seconds": 0.12331577300005847
+    },
+    {
+     "file": "images/coco-val2017/000000006614.jpg",
+     "seconds": 0.12290902699987782
+    },
+    {
+     "file": "images/coco-val2017/000000006723.jpg",
+     "seconds": 0.14972756099996332
+    },
+    {
+     "file": "images/coco-val2017/000000006763.jpg",
+     "seconds": 0.12503903700007868
+    },
+    {
+     "file": "images/coco-val2017/000000006771.jpg",
+     "seconds": 0.15472239299992907
+    },
+    {
+     "file": "images/coco-val2017/000000006818.jpg",
+     "seconds": 0.15989155899978869
+    },
+    {
+     "file": "images/coco-val2017/000000006894.jpg",
+     "seconds": 0.15700876000005337
+    },
+    {
+     "file": "images/coco-val2017/000000006954.jpg",
+     "seconds": 0.15754802499986909
+    },
+    {
+     "file": "images/coco-val2017/000000007088.jpg",
+     "seconds": 0.15530749799995647
+    },
+    {
+     "file": "images/coco-val2017/000000007108.jpg",
+     "seconds": 0.15844295700003386
+    },
+    {
+     "file": "images/coco-val2017/000000007278.jpg",
+     "seconds": 0.1573322310000549
+    },
+    {
+     "file": "images/coco-val2017/000000007281.jpg",
+     "seconds": 0.13790380199998253
+    },
+    {
+     "file": "images/coco-val2017/000000007386.jpg",
+     "seconds": 0.149807274000068
+    },
+    {
+     "file": "images/coco-val2017/000000007511.jpg",
+     "seconds": 0.16221933800011357
+    },
+    {
+     "file": "images/coco-val2017/000000007574.jpg",
+     "seconds": 0.1676214940000591
+    },
+    {
+     "file": "images/coco-val2017/000000007784.jpg",
+     "seconds": 0.13179069000011623
+    },
+    {
+     "file": "images/coco-val2017/000000007795.jpg",
+     "seconds": 0.15481746299997212
+    },
+    {
+     "file": "images/coco-val2017/000000007816.jpg",
+     "seconds": 0.15824029200007317
+    },
+    {
+     "file": "images/coco-val2017/000000007818.jpg",
+     "seconds": 0.1664113389999784
+    },
+    {
+     "file": "images/coco-val2017/000000007888.jpg",
+     "seconds": 0.15851798500011682
+    },
+    {
+     "file": "images/coco-val2017/000000007977.jpg",
+     "seconds": 0.15527972800009593
+    },
+    {
+     "file": "images/coco-val2017/000000007991.jpg",
+     "seconds": 0.13442557799999122
+    },
+    {
+     "file": "images/coco-val2017/000000008021.jpg",
+     "seconds": 0.15634165100004793
+    },
+    {
+     "file": "images/coco-val2017/000000008211.jpg",
+     "seconds": 0.15052552599991031
+    },
+    {
+     "file": "images/coco-val2017/000000008277.jpg",
+     "seconds": 0.1642761860000519
+    },
+    {
+     "file": "images/coco-val2017/000000008532.jpg",
+     "seconds": 0.14859259200011365
+    },
+    {
+     "file": "images/coco-val2017/000000008629.jpg",
+     "seconds": 0.17201598299993748
+    },
+    {
+     "file": "images/coco-val2017/000000008690.jpg",
+     "seconds": 0.15594593900004838
+    },
+    {
+     "file": "images/coco-val2017/000000008762.jpg",
+     "seconds": 0.1554780229998869
+    },
+    {
+     "file": "images/coco-val2017/000000008844.jpg",
+     "seconds": 0.15202763199999936
+    },
+    {
+     "file": "images/coco-val2017/000000008899.jpg",
+     "seconds": 0.15498030000003382
+    },
+    {
+     "file": "images/coco-val2017/000000009378.jpg",
+     "seconds": 0.1472566340000867
+    },
+    {
+     "file": "images/coco-val2017/000000009400.jpg",
+     "seconds": 0.15207143199995699
+    },
+    {
+     "file": "images/coco-val2017/000000009448.jpg",
+     "seconds": 0.1552238069998566
+    },
+    {
+     "file": "images/coco-val2017/000000009483.jpg",
+     "seconds": 0.15061036599990985
+    },
+    {
+     "file": "images/coco-val2017/000000009590.jpg",
+     "seconds": 0.1473471150000023
+    },
+    {
+     "file": "images/coco-val2017/000000009769.jpg",
+     "seconds": 0.1496822390001853
+    },
+    {
+     "file": "images/coco-val2017/000000009772.jpg",
+     "seconds": 0.155381497999997
+    },
+    {
+     "file": "images/coco-val2017/000000009891.jpg",
+     "seconds": 0.1495426999999836
+    },
+    {
+     "file": "images/coco-val2017/000000009914.jpg",
+     "seconds": 0.15144273100008832
+    },
+    {
+     "file": "images/coco-val2017/000000010092.jpg",
+     "seconds": 0.1547915290000219
+    },
+    {
+     "file": "images/coco-val2017/000000010363.jpg",
+     "seconds": 0.13788220400010687
+    },
+    {
+     "file": "images/coco-val2017/000000010583.jpg",
+     "seconds": 0.1701097679999748
+    },
+    {
+     "file": "images/coco-val2017/000000010707.jpg",
+     "seconds": 0.16027999999982967
+    },
+    {
+     "file": "images/coco-val2017/000000010764.jpg",
+     "seconds": 0.1563723659999141
+    },
+    {
+     "file": "images/coco-val2017/000000010977.jpg",
+     "seconds": 0.12775940399978936
+    },
+    {
+     "file": "images/coco-val2017/000000010995.jpg",
+     "seconds": 0.16085898699998324
+    },
+    {
+     "file": "images/coco-val2017/000000011051.jpg",
+     "seconds": 0.15797345300006782
+    },
+    {
+     "file": "images/coco-val2017/000000011122.jpg",
+     "seconds": 0.15804626900012408
+    },
+    {
+     "file": "images/coco-val2017/000000011149.jpg",
+     "seconds": 0.12399181199998566
+    },
+    {
+     "file": "images/coco-val2017/000000011197.jpg",
+     "seconds": 0.15509654300012699
+    },
+    {
+     "file": "images/coco-val2017/000000011511.jpg",
+     "seconds": 0.15185350600017955
+    },
+    {
+     "file": "images/coco-val2017/000000011615.jpg",
+     "seconds": 0.15365488199995525
+    },
+    {
+     "file": "images/coco-val2017/000000011699.jpg",
+     "seconds": 0.15439115599997422
+    },
+    {
+     "file": "images/coco-val2017/000000011760.jpg",
+     "seconds": 0.15050863199985542
+    },
+    {
+     "file": "images/coco-val2017/000000011813.jpg",
+     "seconds": 0.11586348199989516
+    },
+    {
+     "file": "images/coco-val2017/000000012062.jpg",
+     "seconds": 0.15507178699999713
+    },
+    {
+     "file": "images/coco-val2017/000000012120.jpg",
+     "seconds": 0.15407105899998896
+    },
+    {
+     "file": "images/coco-val2017/000000012280.jpg",
+     "seconds": 0.1516991109999708
+    },
+    {
+     "file": "images/coco-val2017/000000012576.jpg",
+     "seconds": 0.158280189999914
+    },
+    {
+     "file": "images/coco-val2017/000000012639.jpg",
+     "seconds": 0.1585944500000096
+    },
+    {
+     "file": "images/coco-val2017/000000012667.jpg",
+     "seconds": 0.14889233500002774
+    },
+    {
+     "file": "images/coco-val2017/000000012670.jpg",
+     "seconds": 0.15821366900013345
+    },
+    {
+     "file": "images/coco-val2017/000000012748.jpg",
+     "seconds": 0.15360920500006614
+    },
+    {
+     "file": "images/coco-val2017/000000013004.jpg",
+     "seconds": 0.1290762660000837
+    },
+    {
+     "file": "images/coco-val2017/000000013177.jpg",
+     "seconds": 0.15640579999990223
+    },
+    {
+     "file": "images/coco-val2017/000000013201.jpg",
+     "seconds": 0.15133725300006518
+    },
+    {
+     "file": "images/coco-val2017/000000013291.jpg",
+     "seconds": 0.11623416099996575
+    },
+    {
+     "file": "images/coco-val2017/000000013348.jpg",
+     "seconds": 0.15401934500005154
+    },
+    {
+     "file": "images/coco-val2017/000000013546.jpg",
+     "seconds": 0.1597412720000193
+    },
+    {
+     "file": "images/coco-val2017/000000013597.jpg",
+     "seconds": 0.1494723050000175
+    },
+    {
+     "file": "images/coco-val2017/000000013659.jpg",
+     "seconds": 0.15568234900001698
+    },
+    {
+     "file": "images/coco-val2017/000000013729.jpg",
+     "seconds": 0.15662559199995485
+    },
+    {
+     "file": "images/coco-val2017/000000013774.jpg",
+     "seconds": 0.15341749899994284
+    },
+    {
+     "file": "images/coco-val2017/000000013923.jpg",
+     "seconds": 0.15236531299979106
+    },
+    {
+     "file": "images/coco-val2017/000000014007.jpg",
+     "seconds": 0.15235309300010158
+    },
+    {
+     "file": "images/coco-val2017/000000014038.jpg",
+     "seconds": 0.15844596800002364
+    },
+    {
+     "file": "images/coco-val2017/000000014226.jpg",
+     "seconds": 0.1472456169999532
+    },
+    {
+     "file": "images/coco-val2017/000000014380.jpg",
+     "seconds": 0.15852026700008537
+    },
+    {
+     "file": "images/coco-val2017/000000014439.jpg",
+     "seconds": 0.14804539400006433
+    },
+    {
+     "file": "images/coco-val2017/000000014473.jpg",
+     "seconds": 0.1616462300000876
+    },
+    {
+     "file": "images/coco-val2017/000000014831.jpg",
+     "seconds": 0.15081773899987638
+    },
+    {
+     "file": "images/coco-val2017/000000014888.jpg",
+     "seconds": 0.15116290600008142
+    },
+    {
+     "file": "images/coco-val2017/000000015079.jpg",
+     "seconds": 0.14844873600009123
+    },
+    {
+     "file": "images/coco-val2017/000000015254.jpg",
+     "seconds": 0.1492879099998845
+    },
+    {
+     "file": "images/coco-val2017/000000015272.jpg",
+     "seconds": 0.1585437210001146
+    },
+    {
+     "file": "images/coco-val2017/000000015278.jpg",
+     "seconds": 0.15909136100003707
+    },
+    {
+     "file": "images/coco-val2017/000000015335.jpg",
+     "seconds": 0.15885458399998242
+    },
+    {
+     "file": "images/coco-val2017/000000015338.jpg",
+     "seconds": 0.1541924950001885
+    },
+    {
+     "file": "images/coco-val2017/000000015440.jpg",
+     "seconds": 0.15000451199989584
+    },
+    {
+     "file": "images/coco-val2017/000000015497.jpg",
+     "seconds": 0.1589259290001337
+    },
+    {
+     "file": "images/coco-val2017/000000015517.jpg",
+     "seconds": 0.16820687499989617
+    },
+    {
+     "file": "images/coco-val2017/000000015597.jpg",
+     "seconds": 0.16517832900012763
+    },
+    {
+     "file": "images/coco-val2017/000000015660.jpg",
+     "seconds": 0.14060928699996111
+    },
+    {
+     "file": "images/coco-val2017/000000015746.jpg",
+     "seconds": 0.16506820899985541
+    },
+    {
+     "file": "images/coco-val2017/000000015751.jpg",
+     "seconds": 0.16564342500009843
+    },
+    {
+     "file": "images/coco-val2017/000000015956.jpg",
+     "seconds": 0.1695223920000899
+    },
+    {
+     "file": "images/coco-val2017/000000016010.jpg",
+     "seconds": 0.15909209200003716
+    },
+    {
+     "file": "images/coco-val2017/000000016228.jpg",
+     "seconds": 0.18899385899999288
+    },
+    {
+     "file": "images/coco-val2017/000000016249.jpg",
+     "seconds": 0.12680838400001448
+    },
+    {
+     "file": "images/coco-val2017/000000016439.jpg",
+     "seconds": 0.16008482999995977
+    },
+    {
+     "file": "images/coco-val2017/000000016451.jpg",
+     "seconds": 0.17137654199996177
+    },
+    {
+     "file": "images/coco-val2017/000000016502.jpg",
+     "seconds": 0.13173588800009384
+    },
+    {
+     "file": "images/coco-val2017/000000016598.jpg",
+     "seconds": 0.16316023299987137
+    },
+    {
+     "file": "images/coco-val2017/000000016958.jpg",
+     "seconds": 0.16786025900000823
+    },
+    {
+     "file": "images/coco-val2017/000000017029.jpg",
+     "seconds": 0.17551221200005784
+    },
+    {
+     "file": "images/coco-val2017/000000017031.jpg",
+     "seconds": 0.11897419399997489
+    },
+    {
+     "file": "images/coco-val2017/000000017115.jpg",
+     "seconds": 0.17044569100016815
+    },
+    {
+     "file": "images/coco-val2017/000000017178.jpg",
+     "seconds": 0.1689314689999719
+    },
+    {
+     "file": "images/coco-val2017/000000017182.jpg",
+     "seconds": 0.16992493499992634
+    },
+    {
+     "file": "images/coco-val2017/000000017207.jpg",
+     "seconds": 0.1643335459998525
+    },
+    {
+     "file": "images/coco-val2017/000000017379.jpg",
+     "seconds": 0.16419623399997363
+    },
+    {
+     "file": "images/coco-val2017/000000017436.jpg",
+     "seconds": 0.1552870340001391
+    },
+    {
+     "file": "images/coco-val2017/000000017627.jpg",
+     "seconds": 0.15937751199999184
+    },
+    {
+     "file": "images/coco-val2017/000000017714.jpg",
+     "seconds": 0.16089062500009277
+    },
+    {
+     "file": "images/coco-val2017/000000017899.jpg",
+     "seconds": 0.16120316800015644
+    },
+    {
+     "file": "images/coco-val2017/000000017905.jpg",
+     "seconds": 0.16074629400009144
+    },
+    {
+     "file": "images/coco-val2017/000000017959.jpg",
+     "seconds": 0.16008421699984865
+    },
+    {
+     "file": "images/coco-val2017/000000018150.jpg",
+     "seconds": 0.15683541900011733
+    },
+    {
+     "file": "images/coco-val2017/000000018193.jpg",
+     "seconds": 0.15775714000005792
+    },
+    {
+     "file": "images/coco-val2017/000000018380.jpg",
+     "seconds": 0.16146732300012445
+    },
+    {
+     "file": "images/coco-val2017/000000018491.jpg",
+     "seconds": 0.1627231899999515
+    },
+    {
+     "file": "images/coco-val2017/000000018519.jpg",
+     "seconds": 0.17107506500019554
+    },
+    {
+     "file": "images/coco-val2017/000000018575.jpg",
+     "seconds": 0.1552612279999721
+    },
+    {
+     "file": "images/coco-val2017/000000018737.jpg",
+     "seconds": 0.15862982500016187
+    },
+    {
+     "file": "images/coco-val2017/000000018770.jpg",
+     "seconds": 0.1546352250002201
+    },
+    {
+     "file": "images/coco-val2017/000000018833.jpg",
+     "seconds": 0.15446413400013626
+    },
+    {
+     "file": "images/coco-val2017/000000018837.jpg",
+     "seconds": 0.15837926800008972
+    },
+    {
+     "file": "images/coco-val2017/000000019042.jpg",
+     "seconds": 0.15448892500012334
+    },
+    {
+     "file": "images/coco-val2017/000000019109.jpg",
+     "seconds": 0.15549509099992065
+    },
+    {
+     "file": "images/coco-val2017/000000019221.jpg",
+     "seconds": 0.15256044900002053
+    },
+    {
+     "file": "images/coco-val2017/000000019402.jpg",
+     "seconds": 0.15672929699985616
+    },
+    {
+     "file": "images/coco-val2017/000000019432.jpg",
+     "seconds": 0.16274703399994905
+    },
+    {
+     "file": "images/coco-val2017/000000019742.jpg",
+     "seconds": 0.12583906300005765
+    },
+    {
+     "file": "images/coco-val2017/000000019786.jpg",
+     "seconds": 0.128726203000042
+    },
+    {
+     "file": "images/coco-val2017/000000019924.jpg",
+     "seconds": 0.14309474899982888
+    },
+    {
+     "file": "images/coco-val2017/000000020059.jpg",
+     "seconds": 0.16225176900002225
+    },
+    {
+     "file": "images/coco-val2017/000000020107.jpg",
+     "seconds": 0.11969646100010323
+    },
+    {
+     "file": "images/coco-val2017/000000020247.jpg",
+     "seconds": 0.15522092899982454
+    }
+   ],
+   "score": {
+    "recall_at_1": 0.885,
+    "recall_at_10": 1.0,
+    "among": 200,
+    "query": "each photo's first COCO caption"
+   },
+   "summary": {
+    "median_s": 0.15696543500007465,
+    "p90_s": 0.16921976160001578,
+    "total_s": 30.926362385001312
+   }
+  }
+ ],
+ "summary": {
+  "median_of_trial_medians_s": 0.15696543500007465,
+  "spread_s": [
+   0.15580627199994979,
+   0.15860194000015326
+  ],
+  "score": {
+   "recall_at_1": 0.885,
+   "recall_at_10": 1.0,
+   "among": 200,
+   "query": "each photo's first COCO caption"
+  }
+ }
+}

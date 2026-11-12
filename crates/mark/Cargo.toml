@@ -1,0 +1,9 @@
+[package]
+name = "mark"
+description = "Excavate's mark brought to life: its swirls drawn in, a light running along them, its core breathing."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]

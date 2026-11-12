@@ -1,0 +1,4 @@
+video-shown: 150 of 2990 files (a seeded sample), the balanced choice, 1 runs
+warm-up (downloads the models the first time)
+run 1/1: 38.7 s, 150 of 150 done (0 failed), 39.7 s of CPU, peak 2546 MB
+written: finding-video-shown-balanced-150-read.json

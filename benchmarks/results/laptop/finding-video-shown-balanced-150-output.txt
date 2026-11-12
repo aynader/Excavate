@@ -1,0 +1,4 @@
+video-shown: 150 queries over 150 files
+  100: first 66, top ten 91
+first 102 of 150, top ten 137
+written: finding-video-shown-balanced-150.json

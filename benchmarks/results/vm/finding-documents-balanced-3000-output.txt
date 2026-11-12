@@ -1,0 +1,9 @@
+documents: 1000 queries over 3000 files
+  100: first 66, top ten 91
+  200: first 135, top ten 182
+  300: first 197, top ten 269
+  400: first 263, top ten 360
+  500: first 328, top ten 451
+  600: first 393, top ten 537
+first 440 of 662, top ten 594
+written: C:\measure\bench\finding-documents-balanced-3000.json

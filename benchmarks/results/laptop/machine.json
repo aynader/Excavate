@@ -1,0 +1,13 @@
+﻿{
+    "windows":  "Microsoft Windows 11 Home 10.0.26200",
+    "processor":  "13th Gen Intel(R) Core(TM) i9-13900HX",
+    "threads":  32,
+    "memory_gb":  31.7,
+    "graphics":  [
+                     "NVIDIA GeForce RTX 4080 Laptop GPU (32.0.16.1088)",
+                     "Intel(R) UHD Graphics (31.0.101.5187)"
+                 ],
+    "virtualization_based_security":  2,
+    "release":  "Excavate-0.1.0-windows-x64.zip",
+    "power":  "Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)"
+}

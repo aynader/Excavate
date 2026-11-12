@@ -1,0 +1,6 @@
+image-shown: 300 queries over 300 files
+  100: first 78, top ten 100
+  200: first 158, top ten 197
+  300: first 243, top ten 296
+first 243 of 300, top ten 296
+written: finding-image-shown-balanced-300.json

@@ -1,0 +1,9 @@
+[package]
+name = "seeing"
+description = "Excavate's images by what they show: each model's vectors, stored and scored."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]

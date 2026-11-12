@@ -1,0 +1,13 @@
+image-text: 300 of 3166 files (a seeded sample), the quick choice, 5 runs
+warm-up (downloads the models the first time)
+  1 min: 236 of 300 done, reading
+run 1/5: 76.7 s, 300 of 300 done (0 failed), 124.1 s of CPU, peak 239 MB
+  1 min: 254 of 300 done, reading
+run 2/5: 70.0 s, 300 of 300 done (0 failed), 110.8 s of CPU, peak 240 MB
+  1 min: 238 of 300 done, reading
+run 3/5: 68.9 s, 300 of 300 done (0 failed), 113.8 s of CPU, peak 254 MB
+  1 min: 121 of 300 done, reading
+run 4/5: 100.0 s, 300 of 300 done (0 failed), 163.2 s of CPU, peak 240 MB
+  1 min: 263 of 300 done, reading
+run 5/5: 66.9 s, 300 of 300 done (0 failed), 104.7 s of CPU, peak 254 MB
+written: C:\measure\bench\reading-image-text-quick-300-5.json

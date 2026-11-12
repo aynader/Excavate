@@ -1,0 +1,33 @@
+// Version details for each program and library the listener's package builds (CMakeLists.txt fills these in), so
+// Windows' file properties and virus scanners can tell what the file is.
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     @LISTEN_VERSION_COMMAS@
+PRODUCTVERSION  @LISTEN_VERSION_COMMAS@
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        @LISTEN_FILE_TYPE@
+FILESUBTYPE     0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "Excavate\0"
+            VALUE "ProductName",      "Excavate's listener (whisper.cpp @WHISPER_RELEASE@)\0"
+            VALUE "FileDescription",  "@LISTEN_DESCRIPTION@\0"
+            VALUE "FileVersion",      "@LISTEN_VERSION@\0"
+            VALUE "ProductVersion",   "@LISTEN_VERSION@\0"
+            VALUE "InternalName",     "@LISTEN_NAME@\0"
+            VALUE "OriginalFilename", "@LISTEN_FILE@\0"
+            VALUE "LegalCopyright",   "@LISTEN_COPYRIGHT@\0"
+            VALUE "Comments",         "Speech to text for Excavate, a local search app. Source: https://github.com/ggml-org/whisper.cpp and Excavate's tools/listen.\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

@@ -1,0 +1,23 @@
+video-shown: 150 of 2990 files (a seeded sample), the balanced choice, 1 runs
+warm-up (downloads the models the first time)
+  1 min: 8 of 150 done, reading
+  2 min: 16 of 150 done, reading
+  3 min: 23 of 150 done, reading
+  4 min: 32 of 150 done, reading
+  5 min: 37 of 150 done, reading
+  6 min: 45 of 150 done, reading
+  7 min: 54 of 150 done, reading
+  8 min: 63 of 150 done, reading
+  9 min: 71 of 150 done, reading
+  10 min: 80 of 150 done, reading
+  11 min: 87 of 150 done, reading
+  12 min: 95 of 150 done, reading
+  13 min: 102 of 150 done, reading
+  14 min: 109 of 150 done, reading
+  15 min: 117 of 150 done, reading
+  16 min: 125 of 150 done, reading
+  17 min: 132 of 150 done, reading
+  18 min: 138 of 150 done, reading
+  19 min: 146 of 150 done, reading
+run 1/1: 1169.8 s, 150 of 150 done (0 failed), 4658.0 s of CPU, peak 1764 MB
+written: C:\measure\bench\finding-video-shown-balanced-150-read.json

@@ -1,0 +1,65 @@
+{
+  "at": 1794355349,
+  "machine": {
+    "cores": 4,
+    "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+  },
+  "measured": "finding",
+  "result": {
+    "files_read": 50,
+    "files_with_text": {
+      "n": 50,
+      "share": 1.0,
+      "share_95": [
+        0.92865,
+        1.0
+      ]
+    },
+    "files_without_a_query": 9,
+    "first": {
+      "n": 41,
+      "share": 0.92683,
+      "share_95": [
+        0.80572,
+        0.9748
+      ]
+    },
+    "kind": "speech",
+    "queries": 41,
+    "rank_when_in_top_sixty": {
+      "max": 1.0,
+      "median": 1.0,
+      "median_95": [
+        1.0,
+        1.0
+      ],
+      "min": 1.0,
+      "n": 38,
+      "p95": 1.0
+    },
+    "search_ms": {
+      "max": 0.2945,
+      "median": 0.1042,
+      "median_95": [
+        0.0776,
+        0.1287
+      ],
+      "min": 0.0254,
+      "n": 41,
+      "p95": 0.2006
+    },
+    "seed": 1,
+    "top_ten": {
+      "n": 41,
+      "share": 0.92683,
+      "share_95": [
+        0.80572,
+        0.9748
+      ]
+    },
+    "word_error_rate": 0.02091,
+    "word_error_rate_by_language": {
+      "en": 0.02091
+    }
+  }
+}

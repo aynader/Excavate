@@ -1,0 +1,37 @@
+[package]
+name = "engine"
+description = "Bedrock, Excavate's own file-name index: the drives in memory, kept current, searched in Everything's syntax."
+version.workspace = true
+edition = "2021"
+license.workspace = true
+publish = false
+
+[dependencies]
+aho-corasick = "1.1"
+memchr = "2.7"
+crossbeam-channel = "0.5"
+unicode-normalization = "0.1"
+rayon = "1.10"
+regex = "1.11"
+everything = { workspace = true }
+
+[dev-dependencies]
+proptest = "1.5"
+
+[dependencies.windows-sys]
+version = "0.59"
+features = [
+  "Win32_Foundation",
+  "Win32_Globalization",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Ioctl",
+  "Win32_System_Memory",
+  "Win32_System_ProcessStatus",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+  "Win32_System_Time",
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+]

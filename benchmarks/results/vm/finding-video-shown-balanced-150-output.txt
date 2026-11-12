@@ -1,0 +1,4 @@
+video-shown: 150 queries over 150 files
+  100: first 64, top ten 92
+first 98 of 150, top ten 138
+written: C:\measure\bench\finding-video-shown-balanced-150.json

@@ -1,0 +1,3 @@
+speech-fleurs: 40 queries over 40 files
+first 39 of 40, top ten 39
+written: C:\measure\bench\finding-speech-fleurs-balanced-kept.json

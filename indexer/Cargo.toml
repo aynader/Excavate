@@ -1,0 +1,44 @@
+[package]
+name = "indexer"
+description = "Excavate's indexer: reads what's inside the person's files in the background and keeps the content index."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "excavate-indexer"
+path = "src/main.rs"
+
+[[bin]]
+name = "excavate-helper"
+path = "src/helper.rs"
+
+[dependencies]
+config.workspace = true
+content.workspace = true
+extract.workspace = true
+privacy.workspace = true
+everything.workspace = true
+engine.workspace = true
+sweep.workspace = true
+seeing.workspace = true
+winsys.workspace = true
+windows.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rusqlite = { version = "0.41", features = ["bundled"] }
+# DirectML: the graphics card, when chosen (ONNX Runtime's Windows build has it in already).
+oar-ocr = { version = "0.10", default-features = false, features = ["directml", "simd"] }
+# The same ONNX Runtime oar-ocr runs on, for SigLIP 2; and the tokenizer for its text half. Loaded from Microsoft's own
+# onnxruntime.dll beside the programs (scripts/fetch-onnxruntime.sh), which picks the processor's instructions as it
+# runs: the build ort downloads needs AVX, and stops at once on a processor without it.
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "ndarray", "directml", "load-dynamic"] }
+# (Without esaxx's C++, built against another C runtime than ONNX Runtime's: as oar-ocr has it.)
+tokenizers = { version = "0.23", default-features = false, features = ["onig"] }
+image = { version = "0.25", default-features = false }
+sha2 = "0.11"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+
+[build-dependencies]
+embed-resource = "3"

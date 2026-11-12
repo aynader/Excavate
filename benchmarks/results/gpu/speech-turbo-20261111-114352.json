@@ -1,0 +1,2653 @@
+{
+ "workload": "speech-turbo",
+ "started": "2026-11-11T11:37:08+0200",
+ "environment": {
+  "gpu": "NVIDIA GeForce RTX 4080 Laptop GPU, 610.88, 12282 MiB, 00000000:01:00.0, [N/A], 3105 MHz",
+  "cuda_driver_api": "13.3",
+  "windows_driver": "610.88",
+  "cuda_toolkit": [
+   "Build cuda_12.9.r12.9/compiler.36037853_0"
+  ],
+  "cuda_runtime_libraries": [
+   "libcudart.so.12",
+   "libcudart.so.12.9.79"
+  ],
+  "llama_cpp_tag": "b12001",
+  "llama_cpp": [
+   "version: 0.8.0-dev (build 1, commit eb4e244)",
+   "built with GNU 13.3.0 for Linux x86_64"
+  ],
+  "whisper_cpp": "d1be6fde",
+  "kernel": "6.6.114.1-microsoft-standard-WSL2",
+  "os": "Ubuntu 24.04.5 LTS",
+  "wsl": [
+   "WSL version: 2.7.3.0",
+   "Kernel version: 6.6.114.1-1",
+   "WSLg version: 1.0.73"
+  ],
+  "cpu": "13th Gen Intel(R) Core(TM) i9-13900HX",
+  "cores": 32,
+  "memory_gb": 15.5,
+  "python": "3.12.3"
+ },
+ "configuration": {
+  "files": [
+   "ggml-large-v3-turbo-q8_0.bin",
+   "ggml-silero-v6.2.0.bin"
+  ],
+  "items": 100,
+  "trials": 5,
+  "model_sha256": {
+   "ggml-large-v3-turbo-q8_0.bin": "317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1",
+   "ggml-silero-v6.2.0.bin": "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987"
+  }
+ },
+ "trials": [
+  {
+   "load_s": null,
+   "gpu": {
+    "utilization_median_pct": 27.0,
+    "memory_peak_mib": 1810.0
+   },
+   "items": [
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0000.flac",
+     "seconds": 0.8972899369999823,
+     "audio_seconds": 10.4374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0001.flac",
+     "seconds": 0.7024060840000175,
+     "audio_seconds": 3.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0002.flac",
+     "seconds": 0.8207302320000736,
+     "audio_seconds": 6.6274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0003.flac",
+     "seconds": 0.6660072720000016,
+     "audio_seconds": 2.6824375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0004.flac",
+     "seconds": 0.7596907870000678,
+     "audio_seconds": 5.2175
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0005.flac",
+     "seconds": 0.7881288790000553,
+     "audio_seconds": 9.6374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0006.flac",
+     "seconds": 0.795994606000022,
+     "audio_seconds": 10.5574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0007.flac",
+     "seconds": 0.7517624250000381,
+     "audio_seconds": 4.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0008.flac",
+     "seconds": 0.6390931120000687,
+     "audio_seconds": 6.7324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0009.flac",
+     "seconds": 0.7312947509999503,
+     "audio_seconds": 10.5774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0010.flac",
+     "seconds": 0.6259054140000444,
+     "audio_seconds": 4.4074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0011.flac",
+     "seconds": 0.7396547270000156,
+     "audio_seconds": 12.4474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0012.flac",
+     "seconds": 0.7508160649999809,
+     "audio_seconds": 11.6424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0013.flac",
+     "seconds": 0.7154961620000222,
+     "audio_seconds": 7.9174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0014.flac",
+     "seconds": 0.715763256999935,
+     "audio_seconds": 2.2274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0015.flac",
+     "seconds": 0.8621833380000226,
+     "audio_seconds": 5.8174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0016.flac",
+     "seconds": 0.6826217530000349,
+     "audio_seconds": 3.5424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0017.flac",
+     "seconds": 0.6752943959999129,
+     "audio_seconds": 8.8724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0018.flac",
+     "seconds": 0.819380692999971,
+     "audio_seconds": 15.7224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0019.flac",
+     "seconds": 0.7433982430000015,
+     "audio_seconds": 13.8974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0020.flac",
+     "seconds": 0.870702839000046,
+     "audio_seconds": 16.7924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0021.flac",
+     "seconds": 0.6685024959999737,
+     "audio_seconds": 6.5524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0022.flac",
+     "seconds": 0.6861151079999672,
+     "audio_seconds": 11.1774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0023.flac",
+     "seconds": 0.7261459549999927,
+     "audio_seconds": 13.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0024.flac",
+     "seconds": 0.7058694090000017,
+     "audio_seconds": 11.6574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0025.flac",
+     "seconds": 0.768795336999915,
+     "audio_seconds": 6.6124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0026.flac",
+     "seconds": 0.6155701090000321,
+     "audio_seconds": 4.0124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0027.flac",
+     "seconds": 0.6401909100000012,
+     "audio_seconds": 2.7124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0028.flac",
+     "seconds": 0.7998592690000805,
+     "audio_seconds": 7.8324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0029.flac",
+     "seconds": 0.6620840540000472,
+     "audio_seconds": 4.6724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0030.flac",
+     "seconds": 0.8259225900000047,
+     "audio_seconds": 2.7174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0031.flac",
+     "seconds": 0.6722485720000577,
+     "audio_seconds": 6.6174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0032.flac",
+     "seconds": 0.6540678220000018,
+     "audio_seconds": 4.0924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0033.flac",
+     "seconds": 0.6509678769999709,
+     "audio_seconds": 3.3324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0034.flac",
+     "seconds": 0.6989518010000211,
+     "audio_seconds": 5.8124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0035.flac",
+     "seconds": 0.6110446430000138,
+     "audio_seconds": 3.4474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0036.flac",
+     "seconds": 0.7641523529999859,
+     "audio_seconds": 3.2524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0037.flac",
+     "seconds": 0.6471897790000867,
+     "audio_seconds": 5.2124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0000.flac",
+     "seconds": 0.6006679519999807,
+     "audio_seconds": 2.0874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0001.flac",
+     "seconds": 0.6960067789999584,
+     "audio_seconds": 5.4174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0002.flac",
+     "seconds": 0.7494341509999458,
+     "audio_seconds": 11.6024375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0003.flac",
+     "seconds": 0.5603882640000393,
+     "audio_seconds": 2.1774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0004.flac",
+     "seconds": 0.6246788400000014,
+     "audio_seconds": 5.1775
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0005.flac",
+     "seconds": 0.613770569000053,
+     "audio_seconds": 5.3624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0006.flac",
+     "seconds": 0.6315038100000265,
+     "audio_seconds": 5.8974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0007.flac",
+     "seconds": 0.6085944339999969,
+     "audio_seconds": 3.4424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0008.flac",
+     "seconds": 0.7400575529999287,
+     "audio_seconds": 14.9874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0009.flac",
+     "seconds": 0.9775224889999663,
+     "audio_seconds": 20.0574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0010.flac",
+     "seconds": 0.6182941199999732,
+     "audio_seconds": 3.1974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0011.flac",
+     "seconds": 0.8188498250000293,
+     "audio_seconds": 20.0124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0012.flac",
+     "seconds": 0.8427926809999917,
+     "audio_seconds": 15.0324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0013.flac",
+     "seconds": 0.8347206580000375,
+     "audio_seconds": 16.3324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0014.flac",
+     "seconds": 0.6744453059999387,
+     "audio_seconds": 4.7574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0015.flac",
+     "seconds": 0.6244609310000442,
+     "audio_seconds": 3.3974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0016.flac",
+     "seconds": 0.6633488669999679,
+     "audio_seconds": 9.0624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0017.flac",
+     "seconds": 0.7229551469999933,
+     "audio_seconds": 11.6974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0018.flac",
+     "seconds": 0.5637546400000701,
+     "audio_seconds": 3.0924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0019.flac",
+     "seconds": 0.778297369000029,
+     "audio_seconds": 3.1574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0020.flac",
+     "seconds": 0.6688297739999598,
+     "audio_seconds": 3.9924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0021.flac",
+     "seconds": 0.7224900610000304,
+     "audio_seconds": 13.3724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0022.flac",
+     "seconds": 0.6245218359999853,
+     "audio_seconds": 5.6374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0023.flac",
+     "seconds": 0.6970539970000118,
+     "audio_seconds": 7.7374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0024.flac",
+     "seconds": 0.6963175040000351,
+     "audio_seconds": 2.2174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0025.flac",
+     "seconds": 0.7151652439999907,
+     "audio_seconds": 8.0074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0000.flac",
+     "seconds": 0.7767335050000383,
+     "audio_seconds": 10.7274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0001.flac",
+     "seconds": 0.670657434000077,
+     "audio_seconds": 9.0424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0002.flac",
+     "seconds": 0.8537707050001018,
+     "audio_seconds": 17.9624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0003.flac",
+     "seconds": 0.8434988029999886,
+     "audio_seconds": 12.6124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0004.flac",
+     "seconds": 0.8067748660000689,
+     "audio_seconds": 10.6524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0005.flac",
+     "seconds": 0.8031837910000377,
+     "audio_seconds": 8.5624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0006.flac",
+     "seconds": 0.6314392689999977,
+     "audio_seconds": 2.4024375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0007.flac",
+     "seconds": 0.7716876739999634,
+     "audio_seconds": 14.2424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0008.flac",
+     "seconds": 0.8231694270000389,
+     "audio_seconds": 20.7574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0009.flac",
+     "seconds": 0.8777364579999585,
+     "audio_seconds": 23.0624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0010.flac",
+     "seconds": 0.6455269520000684,
+     "audio_seconds": 6.0974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0011.flac",
+     "seconds": 0.8230218070000319,
+     "audio_seconds": 15.1924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0012.flac",
+     "seconds": 0.7870251209999424,
+     "audio_seconds": 14.6524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0013.flac",
+     "seconds": 0.903185078999968,
+     "audio_seconds": 3.0224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0014.flac",
+     "seconds": 0.6510836740000059,
+     "audio_seconds": 4.3924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0015.flac",
+     "seconds": 0.7581209620000209,
+     "audio_seconds": 16.0874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0016.flac",
+     "seconds": 0.771103835999952,
+     "audio_seconds": 16.5974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0017.flac",
+     "seconds": 0.636581772999989,
+     "audio_seconds": 4.6174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0018.flac",
+     "seconds": 0.9039157139999361,
+     "audio_seconds": 11.552375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0019.flac",
+     "seconds": 0.725893749000079,
+     "audio_seconds": 13.9324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0020.flac",
+     "seconds": 0.6697162400000707,
+     "audio_seconds": 10.2624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0021.flac",
+     "seconds": 0.7273386210000581,
+     "audio_seconds": 14.0224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0022.flac",
+     "seconds": 0.7227932460000375,
+     "audio_seconds": 9.6324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0023.flac",
+     "seconds": 1.0631156579999015,
+     "audio_seconds": 23.6724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0024.flac",
+     "seconds": 0.8804982180000707,
+     "audio_seconds": 15.2424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0025.flac",
+     "seconds": 0.7136257769999474,
+     "audio_seconds": 7.4524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0026.flac",
+     "seconds": 0.8422818039999811,
+     "audio_seconds": 20.1274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0027.flac",
+     "seconds": 0.74549752300004,
+     "audio_seconds": 11.2474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0028.flac",
+     "seconds": 0.7963554560000148,
+     "audio_seconds": 19.0074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0029.flac",
+     "seconds": 0.6798825539999598,
+     "audio_seconds": 3.7074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0030.flac",
+     "seconds": 0.603195330999938,
+     "audio_seconds": 1.9174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0031.flac",
+     "seconds": 0.6570305050000798,
+     "audio_seconds": 4.2524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0032.flac",
+     "seconds": 0.7807606409999153,
+     "audio_seconds": 10.9874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0033.flac",
+     "seconds": 0.7641357079999125,
+     "audio_seconds": 6.6274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0034.flac",
+     "seconds": 0.9261073889999807,
+     "audio_seconds": 20.9074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0035.flac",
+     "seconds": 0.7571591409999883,
+     "audio_seconds": 2.9274375
+    }
+   ],
+   "score": {
+    "word_error_rate": 0.017476555839727195,
+    "real_time_factor": 0.08144613479918085
+   },
+   "note": "each file is a separate whisper-cli run, so every item includes loading the model",
+   "summary": {
+    "median_s": 0.7244244480000361,
+    "p90_s": 0.8546119683000939,
+    "total_s": 73.41382026800056
+   }
+  },
+  {
+   "load_s": null,
+   "gpu": {
+    "utilization_median_pct": 26.0,
+    "memory_peak_mib": 1860.0
+   },
+   "items": [
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0000.flac",
+     "seconds": 0.9631877049999957,
+     "audio_seconds": 10.4374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0001.flac",
+     "seconds": 0.7610307149999471,
+     "audio_seconds": 3.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0002.flac",
+     "seconds": 0.8421319749999157,
+     "audio_seconds": 6.6274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0003.flac",
+     "seconds": 0.7610115659999792,
+     "audio_seconds": 2.6824375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0004.flac",
+     "seconds": 0.7670352549999961,
+     "audio_seconds": 5.2175
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0005.flac",
+     "seconds": 0.8610537570000361,
+     "audio_seconds": 9.6374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0006.flac",
+     "seconds": 0.7644033410000475,
+     "audio_seconds": 10.5574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0007.flac",
+     "seconds": 0.763129403999983,
+     "audio_seconds": 4.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0008.flac",
+     "seconds": 0.8160551640000904,
+     "audio_seconds": 6.7324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0009.flac",
+     "seconds": 0.8484932310000204,
+     "audio_seconds": 10.5774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0010.flac",
+     "seconds": 0.7337541450000344,
+     "audio_seconds": 4.4074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0011.flac",
+     "seconds": 0.8766027419999318,
+     "audio_seconds": 12.4474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0012.flac",
+     "seconds": 1.2345497919999389,
+     "audio_seconds": 11.6424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0013.flac",
+     "seconds": 1.0184753629999932,
+     "audio_seconds": 7.9174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0014.flac",
+     "seconds": 0.7903345469999294,
+     "audio_seconds": 2.2274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0015.flac",
+     "seconds": 0.7217509009999503,
+     "audio_seconds": 5.8174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0016.flac",
+     "seconds": 0.7190908010001067,
+     "audio_seconds": 3.5424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0017.flac",
+     "seconds": 0.8259993049999821,
+     "audio_seconds": 8.8724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0018.flac",
+     "seconds": 0.896284494999918,
+     "audio_seconds": 15.7224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0019.flac",
+     "seconds": 0.9471754099999998,
+     "audio_seconds": 13.8974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0020.flac",
+     "seconds": 0.8172555119999743,
+     "audio_seconds": 16.7924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0021.flac",
+     "seconds": 0.7277862759999607,
+     "audio_seconds": 6.5524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0022.flac",
+     "seconds": 0.8345474740000327,
+     "audio_seconds": 11.1774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0023.flac",
+     "seconds": 0.8204590550000148,
+     "audio_seconds": 13.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0024.flac",
+     "seconds": 0.8079680880000524,
+     "audio_seconds": 11.6574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0025.flac",
+     "seconds": 0.7450591109999323,
+     "audio_seconds": 6.6124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0026.flac",
+     "seconds": 0.6947865839999849,
+     "audio_seconds": 4.0124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0027.flac",
+     "seconds": 0.6987757160000001,
+     "audio_seconds": 2.7124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0028.flac",
+     "seconds": 0.7147115310000345,
+     "audio_seconds": 7.8324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0029.flac",
+     "seconds": 0.7943659049999496,
+     "audio_seconds": 4.6724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0030.flac",
+     "seconds": 0.6805581869999742,
+     "audio_seconds": 2.7174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0031.flac",
+     "seconds": 0.7141630239999586,
+     "audio_seconds": 6.6174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0032.flac",
+     "seconds": 0.6562171350000199,
+     "audio_seconds": 4.0924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0033.flac",
+     "seconds": 0.6641417749999619,
+     "audio_seconds": 3.3324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0034.flac",
+     "seconds": 0.7062164100000246,
+     "audio_seconds": 5.8124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0035.flac",
+     "seconds": 0.7846870339999441,
+     "audio_seconds": 3.4474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0036.flac",
+     "seconds": 0.7441881679999369,
+     "audio_seconds": 3.2524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0037.flac",
+     "seconds": 0.7686215190000212,
+     "audio_seconds": 5.2124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0000.flac",
+     "seconds": 0.6836705549999351,
+     "audio_seconds": 2.0874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0001.flac",
+     "seconds": 0.6895084929999484,
+     "audio_seconds": 5.4174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0002.flac",
+     "seconds": 0.7795365310000761,
+     "audio_seconds": 11.6024375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0003.flac",
+     "seconds": 0.6606583340000043,
+     "audio_seconds": 2.1774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0004.flac",
+     "seconds": 0.6802981329999511,
+     "audio_seconds": 5.1775
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0005.flac",
+     "seconds": 0.6673783530000037,
+     "audio_seconds": 5.3624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0006.flac",
+     "seconds": 0.8241756659999737,
+     "audio_seconds": 5.8974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0007.flac",
+     "seconds": 0.8597211910000624,
+     "audio_seconds": 3.4424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0008.flac",
+     "seconds": 0.8848755639999126,
+     "audio_seconds": 14.9874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0009.flac",
+     "seconds": 0.9528231960000539,
+     "audio_seconds": 20.0574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0010.flac",
+     "seconds": 0.7226580070000637,
+     "audio_seconds": 3.1974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0011.flac",
+     "seconds": 0.9102052299999741,
+     "audio_seconds": 20.0124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0012.flac",
+     "seconds": 0.8432797770000207,
+     "audio_seconds": 15.0324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0013.flac",
+     "seconds": 0.8926408400000128,
+     "audio_seconds": 16.3324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0014.flac",
+     "seconds": 0.6550122700000429,
+     "audio_seconds": 4.7574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0015.flac",
+     "seconds": 0.6630562609999515,
+     "audio_seconds": 3.3974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0016.flac",
+     "seconds": 0.8099561349999931,
+     "audio_seconds": 9.0624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0017.flac",
+     "seconds": 0.7867622290000327,
+     "audio_seconds": 11.6974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0018.flac",
+     "seconds": 0.8066541369998959,
+     "audio_seconds": 3.0924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0019.flac",
+     "seconds": 0.6555778790000204,
+     "audio_seconds": 3.1574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0020.flac",
+     "seconds": 0.6664535310000019,
+     "audio_seconds": 3.9924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0021.flac",
+     "seconds": 0.797535565999965,
+     "audio_seconds": 13.3724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0022.flac",
+     "seconds": 0.7241436990000238,
+     "audio_seconds": 5.6374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0023.flac",
+     "seconds": 0.6771523610000258,
+     "audio_seconds": 7.7374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0024.flac",
+     "seconds": 0.5967774289999852,
+     "audio_seconds": 2.2174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0025.flac",
+     "seconds": 0.6998511169999801,
+     "audio_seconds": 8.0074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0000.flac",
+     "seconds": 0.7229701940000268,
+     "audio_seconds": 10.7274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0001.flac",
+     "seconds": 0.666560655000012,
+     "audio_seconds": 9.0424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0002.flac",
+     "seconds": 0.8059817580000299,
+     "audio_seconds": 17.9624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0003.flac",
+     "seconds": 0.9481213110000226,
+     "audio_seconds": 12.6124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0004.flac",
+     "seconds": 0.7460432050000918,
+     "audio_seconds": 10.6524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0005.flac",
+     "seconds": 0.6950633419999122,
+     "audio_seconds": 8.5624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0006.flac",
+     "seconds": 0.6059011590000409,
+     "audio_seconds": 2.4024375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0007.flac",
+     "seconds": 0.7753335849999985,
+     "audio_seconds": 14.2424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0008.flac",
+     "seconds": 0.8384153080000942,
+     "audio_seconds": 20.7574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0009.flac",
+     "seconds": 0.8625790180000195,
+     "audio_seconds": 23.0624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0010.flac",
+     "seconds": 0.6329087309999295,
+     "audio_seconds": 6.0974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0011.flac",
+     "seconds": 0.7933958290000191,
+     "audio_seconds": 15.1924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0012.flac",
+     "seconds": 0.7648090829999319,
+     "audio_seconds": 14.6524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0013.flac",
+     "seconds": 0.6232476870000028,
+     "audio_seconds": 3.0224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0014.flac",
+     "seconds": 0.8288627319999478,
+     "audio_seconds": 4.3924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0015.flac",
+     "seconds": 0.7813041289999774,
+     "audio_seconds": 16.0874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0016.flac",
+     "seconds": 0.7586356859999341,
+     "audio_seconds": 16.5974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0017.flac",
+     "seconds": 0.6336639099999957,
+     "audio_seconds": 4.6174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0018.flac",
+     "seconds": 0.7219619630000125,
+     "audio_seconds": 11.552375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0019.flac",
+     "seconds": 0.7189147579999826,
+     "audio_seconds": 13.9324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0020.flac",
+     "seconds": 0.715855280000028,
+     "audio_seconds": 10.2624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0021.flac",
+     "seconds": 0.7585049489999847,
+     "audio_seconds": 14.0224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0022.flac",
+     "seconds": 0.8118471169999566,
+     "audio_seconds": 9.6324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0023.flac",
+     "seconds": 0.8836413029999903,
+     "audio_seconds": 23.6724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0024.flac",
+     "seconds": 0.8301890449999973,
+     "audio_seconds": 15.2424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0025.flac",
+     "seconds": 0.6833554430000959,
+     "audio_seconds": 7.4524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0026.flac",
+     "seconds": 0.9097141800000372,
+     "audio_seconds": 20.1274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0027.flac",
+     "seconds": 0.7635346380000101,
+     "audio_seconds": 11.2474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0028.flac",
+     "seconds": 0.8764471100000719,
+     "audio_seconds": 19.0074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0029.flac",
+     "seconds": 0.6974625249999917,
+     "audio_seconds": 3.7074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0030.flac",
+     "seconds": 0.6483973140000217,
+     "audio_seconds": 1.9174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0031.flac",
+     "seconds": 0.6971962810000605,
+     "audio_seconds": 4.2524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0032.flac",
+     "seconds": 0.8139567239999224,
+     "audio_seconds": 10.9874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0033.flac",
+     "seconds": 0.7121932979999883,
+     "audio_seconds": 6.6274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0034.flac",
+     "seconds": 1.075731821999966,
+     "audio_seconds": 20.9074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0035.flac",
+     "seconds": 0.7033266040000399,
+     "audio_seconds": 2.9274375
+    }
+   ],
+   "score": {
+    "word_error_rate": 0.017476555839727195,
+    "real_time_factor": 0.08584897626268494
+   },
+   "note": "each file is a separate whisper-cli run, so every item includes loading the model",
+   "summary": {
+    "median_s": 0.7633320209999965,
+    "p90_s": 0.8930052055000033,
+    "total_s": 77.38244827799963
+   }
+  },
+  {
+   "load_s": null,
+   "gpu": {
+    "utilization_median_pct": 29.0,
+    "memory_peak_mib": 1860.0
+   },
+   "items": [
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0000.flac",
+     "seconds": 0.8748380680000309,
+     "audio_seconds": 10.4374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0001.flac",
+     "seconds": 0.7339623899999879,
+     "audio_seconds": 3.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0002.flac",
+     "seconds": 0.7560478380000859,
+     "audio_seconds": 6.6274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0003.flac",
+     "seconds": 0.648062780000032,
+     "audio_seconds": 2.6824375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0004.flac",
+     "seconds": 0.7161294059999364,
+     "audio_seconds": 5.2175
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0005.flac",
+     "seconds": 0.7785177040000235,
+     "audio_seconds": 9.6374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0006.flac",
+     "seconds": 0.740934100000004,
+     "audio_seconds": 10.5574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0007.flac",
+     "seconds": 0.7627408930000001,
+     "audio_seconds": 4.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0008.flac",
+     "seconds": 0.7563656390000233,
+     "audio_seconds": 6.7324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0009.flac",
+     "seconds": 0.7689864179999404,
+     "audio_seconds": 10.5774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0010.flac",
+     "seconds": 0.7199591930000224,
+     "audio_seconds": 4.4074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0011.flac",
+     "seconds": 0.8107757470000934,
+     "audio_seconds": 12.4474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0012.flac",
+     "seconds": 0.8385091149999653,
+     "audio_seconds": 11.6424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0013.flac",
+     "seconds": 0.7497651200000064,
+     "audio_seconds": 7.9174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0014.flac",
+     "seconds": 0.6726492369999733,
+     "audio_seconds": 2.2274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0015.flac",
+     "seconds": 0.7242699109999648,
+     "audio_seconds": 5.8174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0016.flac",
+     "seconds": 0.7083119359999728,
+     "audio_seconds": 3.5424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0017.flac",
+     "seconds": 0.7824258399999735,
+     "audio_seconds": 8.8724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0018.flac",
+     "seconds": 0.8985199800000601,
+     "audio_seconds": 15.7224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0019.flac",
+     "seconds": 0.9435147880000159,
+     "audio_seconds": 13.8974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0020.flac",
+     "seconds": 0.909280762000094,
+     "audio_seconds": 16.7924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0021.flac",
+     "seconds": 0.7278869919999806,
+     "audio_seconds": 6.5524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0022.flac",
+     "seconds": 0.880842011000027,
+     "audio_seconds": 11.1774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0023.flac",
+     "seconds": 0.8333444870000903,
+     "audio_seconds": 13.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0024.flac",
+     "seconds": 0.7709014600000046,
+     "audio_seconds": 11.6574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0025.flac",
+     "seconds": 0.7433201079999208,
+     "audio_seconds": 6.6124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0026.flac",
+     "seconds": 0.7157313740000291,
+     "audio_seconds": 4.0124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0027.flac",
+     "seconds": 0.6938946310000347,
+     "audio_seconds": 2.7124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0028.flac",
+     "seconds": 0.7432358400000112,
+     "audio_seconds": 7.8324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0029.flac",
+     "seconds": 0.7758366910001087,
+     "audio_seconds": 4.6724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0030.flac",
+     "seconds": 0.7101421410000057,
+     "audio_seconds": 2.7174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0031.flac",
+     "seconds": 0.805195278000042,
+     "audio_seconds": 6.6174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0032.flac",
+     "seconds": 0.726914476999923,
+     "audio_seconds": 4.0924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0033.flac",
+     "seconds": 0.6832574149999573,
+     "audio_seconds": 3.3324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0034.flac",
+     "seconds": 0.746855756000059,
+     "audio_seconds": 5.8124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0035.flac",
+     "seconds": 0.7055026280000902,
+     "audio_seconds": 3.4474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0036.flac",
+     "seconds": 0.6853596329999618,
+     "audio_seconds": 3.2524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0037.flac",
+     "seconds": 0.7767814679999674,
+     "audio_seconds": 5.2124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0000.flac",
+     "seconds": 0.7677916430000096,
+     "audio_seconds": 2.0874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0001.flac",
+     "seconds": 0.7109092850000707,
+     "audio_seconds": 5.4174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0002.flac",
+     "seconds": 0.8388087560000486,
+     "audio_seconds": 11.6024375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0003.flac",
+     "seconds": 0.6983623219999799,
+     "audio_seconds": 2.1774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0004.flac",
+     "seconds": 0.7543219249999993,
+     "audio_seconds": 5.1775
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0005.flac",
+     "seconds": 0.6846984190000285,
+     "audio_seconds": 5.3624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0006.flac",
+     "seconds": 0.7172057129999985,
+     "audio_seconds": 5.8974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0007.flac",
+     "seconds": 0.6742284090000794,
+     "audio_seconds": 3.4424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0008.flac",
+     "seconds": 0.8327254370000219,
+     "audio_seconds": 14.9874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0009.flac",
+     "seconds": 0.8986007579999296,
+     "audio_seconds": 20.0574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0010.flac",
+     "seconds": 0.6236801240000887,
+     "audio_seconds": 3.1974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0011.flac",
+     "seconds": 0.8333385829999997,
+     "audio_seconds": 20.0124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0012.flac",
+     "seconds": 0.8239444979999462,
+     "audio_seconds": 15.0324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0013.flac",
+     "seconds": 0.8649137950000068,
+     "audio_seconds": 16.3324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0014.flac",
+     "seconds": 0.7467637259999265,
+     "audio_seconds": 4.7574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0015.flac",
+     "seconds": 0.6587673249999852,
+     "audio_seconds": 3.3974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0016.flac",
+     "seconds": 0.7211672199999839,
+     "audio_seconds": 9.0624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0017.flac",
+     "seconds": 0.9450187009999809,
+     "audio_seconds": 11.6974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0018.flac",
+     "seconds": 0.6379440380000005,
+     "audio_seconds": 3.0924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0019.flac",
+     "seconds": 0.6552577869999823,
+     "audio_seconds": 3.1574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0020.flac",
+     "seconds": 0.6657285759999922,
+     "audio_seconds": 3.9924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0021.flac",
+     "seconds": 0.8189486950000173,
+     "audio_seconds": 13.3724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0022.flac",
+     "seconds": 0.9318613159999813,
+     "audio_seconds": 5.6374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0023.flac",
+     "seconds": 0.7742152220000662,
+     "audio_seconds": 7.7374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0024.flac",
+     "seconds": 0.6089357240000481,
+     "audio_seconds": 2.2174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0025.flac",
+     "seconds": 0.7279511469999989,
+     "audio_seconds": 8.0074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0000.flac",
+     "seconds": 0.7519604110000273,
+     "audio_seconds": 10.7274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0001.flac",
+     "seconds": 0.7443495120000989,
+     "audio_seconds": 9.0424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0002.flac",
+     "seconds": 0.8353312479999886,
+     "audio_seconds": 17.9624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0003.flac",
+     "seconds": 0.7608519950000527,
+     "audio_seconds": 12.6124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0004.flac",
+     "seconds": 0.765809484999977,
+     "audio_seconds": 10.6524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0005.flac",
+     "seconds": 0.7532516579999537,
+     "audio_seconds": 8.5624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0006.flac",
+     "seconds": 0.6683440649999284,
+     "audio_seconds": 2.4024375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0007.flac",
+     "seconds": 0.8736977319999824,
+     "audio_seconds": 14.2424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0008.flac",
+     "seconds": 0.9642390249999835,
+     "audio_seconds": 20.7574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0009.flac",
+     "seconds": 1.062941672000079,
+     "audio_seconds": 23.0624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0010.flac",
+     "seconds": 0.7116479289999234,
+     "audio_seconds": 6.0974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0011.flac",
+     "seconds": 0.7965326449999566,
+     "audio_seconds": 15.1924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0012.flac",
+     "seconds": 0.7840072799999689,
+     "audio_seconds": 14.6524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0013.flac",
+     "seconds": 0.6623265759999413,
+     "audio_seconds": 3.0224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0014.flac",
+     "seconds": 0.6439622929999587,
+     "audio_seconds": 4.3924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0015.flac",
+     "seconds": 0.7787548000000015,
+     "audio_seconds": 16.0874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0016.flac",
+     "seconds": 0.7846718910000163,
+     "audio_seconds": 16.5974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0017.flac",
+     "seconds": 0.6957851110000774,
+     "audio_seconds": 4.6174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0018.flac",
+     "seconds": 0.8155792160000601,
+     "audio_seconds": 11.552375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0019.flac",
+     "seconds": 0.8151410469999973,
+     "audio_seconds": 13.9324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0020.flac",
+     "seconds": 0.6965598530000534,
+     "audio_seconds": 10.2624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0021.flac",
+     "seconds": 0.7306811250000464,
+     "audio_seconds": 14.0224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0022.flac",
+     "seconds": 0.6975131490000877,
+     "audio_seconds": 9.6324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0023.flac",
+     "seconds": 0.8281707449999658,
+     "audio_seconds": 23.6724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0024.flac",
+     "seconds": 0.7782776560000002,
+     "audio_seconds": 15.2424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0025.flac",
+     "seconds": 0.6508349470000212,
+     "audio_seconds": 7.4524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0026.flac",
+     "seconds": 0.7663931109999567,
+     "audio_seconds": 20.1274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0027.flac",
+     "seconds": 0.6848337110000102,
+     "audio_seconds": 11.2474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0028.flac",
+     "seconds": 0.8485829180000337,
+     "audio_seconds": 19.0074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0029.flac",
+     "seconds": 0.6291222230000812,
+     "audio_seconds": 3.7074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0030.flac",
+     "seconds": 0.612380542999972,
+     "audio_seconds": 1.9174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0031.flac",
+     "seconds": 0.6559643499999765,
+     "audio_seconds": 4.2524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0032.flac",
+     "seconds": 0.7236430880000171,
+     "audio_seconds": 10.9874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0033.flac",
+     "seconds": 0.6639781879999873,
+     "audio_seconds": 6.6274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0034.flac",
+     "seconds": 0.830632219999984,
+     "audio_seconds": 20.9074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0035.flac",
+     "seconds": 0.6028444360000549,
+     "audio_seconds": 2.9274375
+    }
+   ],
+   "score": {
+    "word_error_rate": 0.017476555839727195,
+    "real_time_factor": 0.08398828018048274
+   },
+   "note": "each file is a separate whisper-cli run, so every item includes loading the model",
+   "summary": {
+    "median_s": 0.7483104380000327,
+    "p90_s": 0.8738117655999872,
+    "total_s": 75.70525625300081
+   }
+  },
+  {
+   "load_s": null,
+   "gpu": {
+    "utilization_median_pct": 27.0,
+    "memory_peak_mib": 1860.0
+   },
+   "items": [
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0000.flac",
+     "seconds": 0.7436495939999759,
+     "audio_seconds": 10.4374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0001.flac",
+     "seconds": 0.6276092140000173,
+     "audio_seconds": 3.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0002.flac",
+     "seconds": 0.6495888389999891,
+     "audio_seconds": 6.6274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0003.flac",
+     "seconds": 0.7712707409999666,
+     "audio_seconds": 2.6824375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0004.flac",
+     "seconds": 0.6338724700000284,
+     "audio_seconds": 5.2175
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0005.flac",
+     "seconds": 0.6704363900000772,
+     "audio_seconds": 9.6374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0006.flac",
+     "seconds": 0.7005925309999839,
+     "audio_seconds": 10.5574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0007.flac",
+     "seconds": 0.8654280659999358,
+     "audio_seconds": 4.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0008.flac",
+     "seconds": 0.652803509000023,
+     "audio_seconds": 6.7324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0009.flac",
+     "seconds": 0.7083506879999959,
+     "audio_seconds": 10.5774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0010.flac",
+     "seconds": 0.6372722359999443,
+     "audio_seconds": 4.4074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0011.flac",
+     "seconds": 0.7227533680000988,
+     "audio_seconds": 12.4474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0012.flac",
+     "seconds": 0.6882099169999947,
+     "audio_seconds": 11.6424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0013.flac",
+     "seconds": 0.7706344509999781,
+     "audio_seconds": 7.9174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0014.flac",
+     "seconds": 0.6256948210000246,
+     "audio_seconds": 2.2274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0015.flac",
+     "seconds": 0.6284464220000245,
+     "audio_seconds": 5.8174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0016.flac",
+     "seconds": 0.6236437239999759,
+     "audio_seconds": 3.5424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0017.flac",
+     "seconds": 0.7228732109999783,
+     "audio_seconds": 8.8724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0018.flac",
+     "seconds": 0.7562202750000324,
+     "audio_seconds": 15.7224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0019.flac",
+     "seconds": 0.8001672270000881,
+     "audio_seconds": 13.8974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0020.flac",
+     "seconds": 0.8160751730000584,
+     "audio_seconds": 16.7924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0021.flac",
+     "seconds": 0.6793435289999934,
+     "audio_seconds": 6.5524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0022.flac",
+     "seconds": 0.7259057119999852,
+     "audio_seconds": 11.1774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0023.flac",
+     "seconds": 0.771463403000098,
+     "audio_seconds": 13.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0024.flac",
+     "seconds": 0.7582123600000159,
+     "audio_seconds": 11.6574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0025.flac",
+     "seconds": 0.6655734329999632,
+     "audio_seconds": 6.6124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0026.flac",
+     "seconds": 0.6606633939999256,
+     "audio_seconds": 4.0124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0027.flac",
+     "seconds": 0.6573981350001077,
+     "audio_seconds": 2.7124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0028.flac",
+     "seconds": 0.6699535350001042,
+     "audio_seconds": 7.8324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0029.flac",
+     "seconds": 0.6421863929999745,
+     "audio_seconds": 4.6724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0030.flac",
+     "seconds": 0.6419909759999882,
+     "audio_seconds": 2.7174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0031.flac",
+     "seconds": 0.7001147180000089,
+     "audio_seconds": 6.6174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0032.flac",
+     "seconds": 0.6584517919999371,
+     "audio_seconds": 4.0924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0033.flac",
+     "seconds": 0.6605277409998962,
+     "audio_seconds": 3.3324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0034.flac",
+     "seconds": 0.7286009580000155,
+     "audio_seconds": 5.8124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0035.flac",
+     "seconds": 0.6857708200000161,
+     "audio_seconds": 3.4474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0036.flac",
+     "seconds": 0.7430952999999363,
+     "audio_seconds": 3.2524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0037.flac",
+     "seconds": 0.7790860850000172,
+     "audio_seconds": 5.2124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0000.flac",
+     "seconds": 0.6157547300000488,
+     "audio_seconds": 2.0874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0001.flac",
+     "seconds": 0.7193926020000845,
+     "audio_seconds": 5.4174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0002.flac",
+     "seconds": 0.7567736400000058,
+     "audio_seconds": 11.6024375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0003.flac",
+     "seconds": 0.5784979129999783,
+     "audio_seconds": 2.1774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0004.flac",
+     "seconds": 0.7329715800000258,
+     "audio_seconds": 5.1775
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0005.flac",
+     "seconds": 0.6558143849999851,
+     "audio_seconds": 5.3624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0006.flac",
+     "seconds": 0.6668072699999357,
+     "audio_seconds": 5.8974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0007.flac",
+     "seconds": 0.6057729999999992,
+     "audio_seconds": 3.4424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0008.flac",
+     "seconds": 0.7642955369999527,
+     "audio_seconds": 14.9874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0009.flac",
+     "seconds": 0.7928621910000402,
+     "audio_seconds": 20.0574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0010.flac",
+     "seconds": 0.6051729030000388,
+     "audio_seconds": 3.1974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0011.flac",
+     "seconds": 0.7898455269998976,
+     "audio_seconds": 20.0124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0012.flac",
+     "seconds": 0.7350101130000439,
+     "audio_seconds": 15.0324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0013.flac",
+     "seconds": 0.7378230619999613,
+     "audio_seconds": 16.3324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0014.flac",
+     "seconds": 0.6127605540000332,
+     "audio_seconds": 4.7574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0015.flac",
+     "seconds": 0.6019702129999587,
+     "audio_seconds": 3.3974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0016.flac",
+     "seconds": 0.9345709589999842,
+     "audio_seconds": 9.0624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0017.flac",
+     "seconds": 0.7144212330000528,
+     "audio_seconds": 11.6974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0018.flac",
+     "seconds": 0.5767814129999351,
+     "audio_seconds": 3.0924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0019.flac",
+     "seconds": 0.5798059929999226,
+     "audio_seconds": 3.1574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0020.flac",
+     "seconds": 0.5893087840000817,
+     "audio_seconds": 3.9924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0021.flac",
+     "seconds": 0.721878537000066,
+     "audio_seconds": 13.3724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0022.flac",
+     "seconds": 0.7558435589999135,
+     "audio_seconds": 5.6374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0023.flac",
+     "seconds": 0.6454044380000141,
+     "audio_seconds": 7.7374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0024.flac",
+     "seconds": 0.5550124590000678,
+     "audio_seconds": 2.2174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0025.flac",
+     "seconds": 0.676401440999939,
+     "audio_seconds": 8.0074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0000.flac",
+     "seconds": 0.655415203000075,
+     "audio_seconds": 10.7274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0001.flac",
+     "seconds": 0.6382316739999396,
+     "audio_seconds": 9.0424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0002.flac",
+     "seconds": 1.0693943659999832,
+     "audio_seconds": 17.9624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0003.flac",
+     "seconds": 0.6874844930000563,
+     "audio_seconds": 12.6124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0004.flac",
+     "seconds": 0.7005451029999676,
+     "audio_seconds": 10.6524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0005.flac",
+     "seconds": 0.6663023319999866,
+     "audio_seconds": 8.5624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0006.flac",
+     "seconds": 0.5891801110000188,
+     "audio_seconds": 2.4024375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0007.flac",
+     "seconds": 0.7292770349999955,
+     "audio_seconds": 14.2424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0008.flac",
+     "seconds": 0.807595034999963,
+     "audio_seconds": 20.7574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0009.flac",
+     "seconds": 0.8425532840000187,
+     "audio_seconds": 23.0624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0010.flac",
+     "seconds": 0.6237822240000241,
+     "audio_seconds": 6.0974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0011.flac",
+     "seconds": 0.7236720309999782,
+     "audio_seconds": 15.1924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0012.flac",
+     "seconds": 0.695809019999956,
+     "audio_seconds": 14.6524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0013.flac",
+     "seconds": 0.5748472809999612,
+     "audio_seconds": 3.0224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0014.flac",
+     "seconds": 0.5766925630000515,
+     "audio_seconds": 4.3924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0015.flac",
+     "seconds": 0.728426911999918,
+     "audio_seconds": 16.0874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0016.flac",
+     "seconds": 0.7659520769999517,
+     "audio_seconds": 16.5974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0017.flac",
+     "seconds": 0.6080330409999988,
+     "audio_seconds": 4.6174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0018.flac",
+     "seconds": 0.6974754029999986,
+     "audio_seconds": 11.552375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0019.flac",
+     "seconds": 0.6871698080000215,
+     "audio_seconds": 13.9324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0020.flac",
+     "seconds": 0.646983768000041,
+     "audio_seconds": 10.2624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0021.flac",
+     "seconds": 0.6638386580000315,
+     "audio_seconds": 14.0224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0022.flac",
+     "seconds": 0.6620846719999918,
+     "audio_seconds": 9.6324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0023.flac",
+     "seconds": 0.7663299360000337,
+     "audio_seconds": 23.6724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0024.flac",
+     "seconds": 0.8803692029999866,
+     "audio_seconds": 15.2424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0025.flac",
+     "seconds": 0.6150469970000358,
+     "audio_seconds": 7.4524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0026.flac",
+     "seconds": 0.7612332249999554,
+     "audio_seconds": 20.1274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0027.flac",
+     "seconds": 0.6434505990000616,
+     "audio_seconds": 11.2474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0028.flac",
+     "seconds": 0.7298044780000055,
+     "audio_seconds": 19.0074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0029.flac",
+     "seconds": 0.8426538380000466,
+     "audio_seconds": 3.7074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0030.flac",
+     "seconds": 0.5729521030000342,
+     "audio_seconds": 1.9174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0031.flac",
+     "seconds": 0.7243484949999583,
+     "audio_seconds": 4.2524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0032.flac",
+     "seconds": 0.6982668860000558,
+     "audio_seconds": 10.9874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0033.flac",
+     "seconds": 0.6223847500000375,
+     "audio_seconds": 6.6274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0034.flac",
+     "seconds": 0.818476110000006,
+     "audio_seconds": 20.9074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0035.flac",
+     "seconds": 0.6650081020000016,
+     "audio_seconds": 2.9274375
+    }
+   ],
+   "score": {
+    "word_error_rate": 0.017476555839727195,
+    "real_time_factor": 0.07737696408634
+   },
+   "note": "each file is a separate whisper-cli run, so every item includes loading the model",
+   "summary": {
+    "median_s": 0.6873271505000389,
+    "p90_s": 0.793592694600045,
+    "total_s": 69.74595600300029
+   }
+  },
+  {
+   "load_s": null,
+   "gpu": {
+    "utilization_median_pct": 33.0,
+    "memory_peak_mib": 1860.0
+   },
+   "items": [
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0000.flac",
+     "seconds": 0.7673144230000162,
+     "audio_seconds": 10.4374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0001.flac",
+     "seconds": 0.5842132630000378,
+     "audio_seconds": 3.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0002.flac",
+     "seconds": 0.6333571440000014,
+     "audio_seconds": 6.6274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0003.flac",
+     "seconds": 0.5807048760000271,
+     "audio_seconds": 2.6824375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0004.flac",
+     "seconds": 0.6116206169999714,
+     "audio_seconds": 5.2175
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0005.flac",
+     "seconds": 0.6972437389999868,
+     "audio_seconds": 9.6374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0006.flac",
+     "seconds": 0.6636938190000592,
+     "audio_seconds": 10.5574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0007.flac",
+     "seconds": 0.6109599989999879,
+     "audio_seconds": 4.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0008.flac",
+     "seconds": 0.6414866249999704,
+     "audio_seconds": 6.7324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0009.flac",
+     "seconds": 0.6964779460000727,
+     "audio_seconds": 10.5774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0010.flac",
+     "seconds": 0.6572080810000216,
+     "audio_seconds": 4.4074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0011.flac",
+     "seconds": 0.8382838340000944,
+     "audio_seconds": 12.4474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0012.flac",
+     "seconds": 0.6983913969999094,
+     "audio_seconds": 11.6424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0013.flac",
+     "seconds": 0.6592625540000654,
+     "audio_seconds": 7.9174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0014.flac",
+     "seconds": 0.6301825939999617,
+     "audio_seconds": 2.2274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0015.flac",
+     "seconds": 0.6708820260000721,
+     "audio_seconds": 5.8174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0016.flac",
+     "seconds": 0.598891895999941,
+     "audio_seconds": 3.5424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0017.flac",
+     "seconds": 0.6876748969999653,
+     "audio_seconds": 8.8724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0018.flac",
+     "seconds": 0.7268055170000025,
+     "audio_seconds": 15.7224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0019.flac",
+     "seconds": 0.7800630899999987,
+     "audio_seconds": 13.8974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0020.flac",
+     "seconds": 0.7906012820000115,
+     "audio_seconds": 16.7924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0021.flac",
+     "seconds": 0.7761954350000906,
+     "audio_seconds": 6.5524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0022.flac",
+     "seconds": 0.6962181899999678,
+     "audio_seconds": 11.1774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0023.flac",
+     "seconds": 0.7200783670000419,
+     "audio_seconds": 13.2774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0024.flac",
+     "seconds": 0.7048114710000846,
+     "audio_seconds": 11.6574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0025.flac",
+     "seconds": 0.6160646499999984,
+     "audio_seconds": 6.6124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0026.flac",
+     "seconds": 0.6200040349999654,
+     "audio_seconds": 4.0124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0027.flac",
+     "seconds": 0.618869995999944,
+     "audio_seconds": 2.7124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0028.flac",
+     "seconds": 0.6236939469999925,
+     "audio_seconds": 7.8324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0029.flac",
+     "seconds": 0.6153488540001035,
+     "audio_seconds": 4.6724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0030.flac",
+     "seconds": 0.5856530459999476,
+     "audio_seconds": 2.7174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0031.flac",
+     "seconds": 0.6358595369999875,
+     "audio_seconds": 6.6174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0032.flac",
+     "seconds": 0.6425733429999809,
+     "audio_seconds": 4.0924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0033.flac",
+     "seconds": 0.6949250099999063,
+     "audio_seconds": 3.3324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0034.flac",
+     "seconds": 0.6340686120000782,
+     "audio_seconds": 5.8124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0035.flac",
+     "seconds": 0.6601015379999353,
+     "audio_seconds": 3.4474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0036.flac",
+     "seconds": 0.5883867460000829,
+     "audio_seconds": 3.2524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134686-0037.flac",
+     "seconds": 0.6466900579999901,
+     "audio_seconds": 5.2124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0000.flac",
+     "seconds": 0.639520143000027,
+     "audio_seconds": 2.0874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0001.flac",
+     "seconds": 0.944938703000048,
+     "audio_seconds": 5.4174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0002.flac",
+     "seconds": 0.7146066440000141,
+     "audio_seconds": 11.6024375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0003.flac",
+     "seconds": 0.5822667649999858,
+     "audio_seconds": 2.1774375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0004.flac",
+     "seconds": 0.6132391669999606,
+     "audio_seconds": 5.1775
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0005.flac",
+     "seconds": 0.6118922929999826,
+     "audio_seconds": 5.3624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0006.flac",
+     "seconds": 0.6732529310000928,
+     "audio_seconds": 5.8974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0007.flac",
+     "seconds": 0.7286792880000803,
+     "audio_seconds": 3.4424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0008.flac",
+     "seconds": 0.7556093800000099,
+     "audio_seconds": 14.9874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0009.flac",
+     "seconds": 0.8193989800000736,
+     "audio_seconds": 20.0574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0010.flac",
+     "seconds": 0.618073255000013,
+     "audio_seconds": 3.1974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0011.flac",
+     "seconds": 0.7963978379999617,
+     "audio_seconds": 20.0124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0012.flac",
+     "seconds": 0.7895929309999019,
+     "audio_seconds": 15.0324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0013.flac",
+     "seconds": 0.772496138000065,
+     "audio_seconds": 16.3324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0014.flac",
+     "seconds": 0.6154570759999842,
+     "audio_seconds": 4.7574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0015.flac",
+     "seconds": 0.5875636050000139,
+     "audio_seconds": 3.3974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0016.flac",
+     "seconds": 0.7724381919999814,
+     "audio_seconds": 9.0624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0017.flac",
+     "seconds": 0.8955731149999338,
+     "audio_seconds": 11.6974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0018.flac",
+     "seconds": 0.8382584529999804,
+     "audio_seconds": 3.0924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0019.flac",
+     "seconds": 0.583152412000004,
+     "audio_seconds": 3.1574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0020.flac",
+     "seconds": 0.6113538990000507,
+     "audio_seconds": 3.9924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0021.flac",
+     "seconds": 0.7601138330001049,
+     "audio_seconds": 13.3724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0022.flac",
+     "seconds": 0.6098567149999781,
+     "audio_seconds": 5.6374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0023.flac",
+     "seconds": 0.6527584490000891,
+     "audio_seconds": 7.7374375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0024.flac",
+     "seconds": 0.6837758160000931,
+     "audio_seconds": 2.2174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1089-134691-0025.flac",
+     "seconds": 0.6468099569999595,
+     "audio_seconds": 8.0074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0000.flac",
+     "seconds": 0.652560646999973,
+     "audio_seconds": 10.7274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0001.flac",
+     "seconds": 0.6546541379999553,
+     "audio_seconds": 9.0424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0002.flac",
+     "seconds": 0.7546454490000087,
+     "audio_seconds": 17.9624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0003.flac",
+     "seconds": 0.6822681690000536,
+     "audio_seconds": 12.6124375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0004.flac",
+     "seconds": 0.809936074999996,
+     "audio_seconds": 10.6524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0005.flac",
+     "seconds": 0.6715646669999842,
+     "audio_seconds": 8.5624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0006.flac",
+     "seconds": 0.576434931000108,
+     "audio_seconds": 2.4024375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0007.flac",
+     "seconds": 0.7308389810000335,
+     "audio_seconds": 14.2424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0008.flac",
+     "seconds": 0.8088044779999564,
+     "audio_seconds": 20.7574375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0009.flac",
+     "seconds": 0.8678198530000145,
+     "audio_seconds": 23.0624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0010.flac",
+     "seconds": 0.6763532920000443,
+     "audio_seconds": 6.0974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0011.flac",
+     "seconds": 0.7825089730000627,
+     "audio_seconds": 15.1924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0012.flac",
+     "seconds": 0.7229979859999958,
+     "audio_seconds": 14.6524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0013.flac",
+     "seconds": 0.5790894289999642,
+     "audio_seconds": 3.0224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0014.flac",
+     "seconds": 0.6004797320000534,
+     "audio_seconds": 4.3924375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0015.flac",
+     "seconds": 0.9903618009999491,
+     "audio_seconds": 16.0874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0016.flac",
+     "seconds": 0.7530831299999363,
+     "audio_seconds": 16.5974375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0017.flac",
+     "seconds": 0.6094973450000225,
+     "audio_seconds": 4.6174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0018.flac",
+     "seconds": 0.7029393050000863,
+     "audio_seconds": 11.552375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0019.flac",
+     "seconds": 0.6895348450000256,
+     "audio_seconds": 13.9324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0020.flac",
+     "seconds": 0.6612482660000296,
+     "audio_seconds": 10.2624375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0021.flac",
+     "seconds": 0.8744090280001728,
+     "audio_seconds": 14.0224375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0022.flac",
+     "seconds": 0.7811686019999797,
+     "audio_seconds": 9.6324375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0023.flac",
+     "seconds": 0.8557550019997961,
+     "audio_seconds": 23.6724375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0024.flac",
+     "seconds": 0.7570965179997984,
+     "audio_seconds": 15.2424375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0025.flac",
+     "seconds": 0.6363102499999513,
+     "audio_seconds": 7.4524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0026.flac",
+     "seconds": 0.8951739619999444,
+     "audio_seconds": 20.1274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0027.flac",
+     "seconds": 0.6725880980000056,
+     "audio_seconds": 11.2474375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0028.flac",
+     "seconds": 0.7555840679999619,
+     "audio_seconds": 19.0074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0029.flac",
+     "seconds": 0.6305857309998828,
+     "audio_seconds": 3.7074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0030.flac",
+     "seconds": 0.5650416440000754,
+     "audio_seconds": 1.9174375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0031.flac",
+     "seconds": 0.597116853999978,
+     "audio_seconds": 4.2524375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0032.flac",
+     "seconds": 0.7279527170001074,
+     "audio_seconds": 10.9874375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0033.flac",
+     "seconds": 0.631633420000071,
+     "audio_seconds": 6.6274375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0034.flac",
+     "seconds": 0.79724480699997,
+     "audio_seconds": 20.9074375
+    },
+    {
+     "file": "audio/librispeech-test-clean/1188-133604-0035.flac",
+     "seconds": 0.6093127530000402,
+     "audio_seconds": 2.9274375
+    }
+   ],
+   "score": {
+    "word_error_rate": 0.017476555839727195,
+    "real_time_factor": 0.07697821650095714
+   },
+   "note": "each file is a separate whisper-cli run, so every item includes loading the model",
+   "summary": {
+    "median_s": 0.6720763824999949,
+    "p90_s": 0.8108823655000038,
+    "total_s": 69.38653337800065
+   }
+  }
+ ],
+ "summary": {
+  "median_of_trial_medians_s": 0.7244244480000361,
+  "spread_s": [
+   0.6720763824999949,
+   0.7633320209999965
+  ],
+  "score": {
+   "word_error_rate": 0.017476555839727195,
+   "real_time_factor": 0.07697821650095714
+  }
+ }
+}

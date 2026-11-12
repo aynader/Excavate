@@ -1,0 +1,91 @@
+{
+  "at": 1794359966,
+  "machine": {
+    "cores": 4,
+    "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+  },
+  "measured": "reading",
+  "result": {
+    "choice": "balanced",
+    "cpu_seconds": {
+      "max": 2954.1,
+      "median": 2922.3,
+      "median_95": [
+        2919.2,
+        2954.1
+      ],
+      "min": 2919.2,
+      "n": 3,
+      "p95": 2950.9
+    },
+    "engine": "",
+    "errors": [],
+    "failed_files": {
+      "max": 0.0,
+      "median": 0.0,
+      "median_95": [
+        0.0,
+        0.0
+      ],
+      "min": 0.0,
+      "n": 3,
+      "p95": 0.0
+    },
+    "files": 40,
+    "files_read": {
+      "max": 40.0,
+      "median": 40.0,
+      "median_95": [
+        40.0,
+        40.0
+      ],
+      "min": 40.0,
+      "n": 3,
+      "p95": 40.0
+    },
+    "finished_runs": 3,
+    "indexer_ended": [],
+    "kind": "speech-fleurs",
+    "ms_per_file": {
+      "max": 36884.5,
+      "median": 36531.6,
+      "median_95": [
+        36510.1,
+        36884.5
+      ],
+      "min": 36510.1,
+      "n": 3,
+      "p95": 36849.2
+    },
+    "of": 1937,
+    "peak_memory_mb": {
+      "max": 1683.8,
+      "median": 1683.8,
+      "median_95": [
+        1683.7,
+        1683.8
+      ],
+      "min": 1683.7,
+      "n": 3,
+      "p95": 1683.8
+    },
+    "runs": 3,
+    "seconds": {
+      "max": 1475.4,
+      "median": 1461.3,
+      "median_95": [
+        1460.4,
+        1475.4
+      ],
+      "min": 1460.4,
+      "n": 3,
+      "p95": 1474.0
+    },
+    "seed": 1,
+    "timer_late_ms": {
+      "max": 29.361,
+      "p50": 0.8743,
+      "p99": 2.898
+    }
+  }
+}

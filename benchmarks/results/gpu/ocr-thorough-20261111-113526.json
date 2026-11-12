@@ -1,0 +1,1905 @@
+{
+ "workload": "ocr-thorough",
+ "started": "2026-11-11T11:25:38+0200",
+ "environment": {
+  "gpu": "NVIDIA GeForce RTX 4080 Laptop GPU, 610.88, 12282 MiB, 00000000:01:00.0, [N/A], 3105 MHz",
+  "cuda_driver_api": "13.3",
+  "windows_driver": "610.88",
+  "cuda_toolkit": [
+   "Build cuda_12.9.r12.9/compiler.36037853_0"
+  ],
+  "cuda_runtime_libraries": [
+   "libcudart.so.12",
+   "libcudart.so.12.9.79"
+  ],
+  "llama_cpp_tag": "b12001",
+  "llama_cpp": [
+   "version: 0.8.0-dev (build 1, commit eb4e244)",
+   "built with GNU 13.3.0 for Linux x86_64"
+  ],
+  "whisper_cpp": "d1be6fde",
+  "kernel": "6.6.114.1-microsoft-standard-WSL2",
+  "os": "Ubuntu 24.04.5 LTS",
+  "wsl": [
+   "WSL version: 2.7.3.0",
+   "Kernel version: 6.6.114.1-1",
+   "WSLg version: 1.0.73"
+  ],
+  "cpu": "13th Gen Intel(R) Core(TM) i9-13900HX",
+  "cores": 32,
+  "memory_gb": 15.5,
+  "python": "3.12.3"
+ },
+ "configuration": {
+  "files": [
+   "PaddleOCR-VL-1.5.gguf",
+   "PaddleOCR-VL-1.5-mmproj.gguf"
+  ],
+  "items": 50,
+  "args": [
+   "-c",
+   "8192",
+   "-np",
+   "1",
+   "-ngl",
+   "99",
+   "--temp",
+   "0"
+  ],
+  "prompt": "OCR:",
+  "max_side": 2048,
+  "max_tokens": 3000,
+  "trials": 5,
+  "model_sha256": {
+   "PaddleOCR-VL-1.5.gguf": "299051d54faa065abc505cc39b8383ea338fd3020c775ea3e0ba514a7022328c",
+   "PaddleOCR-VL-1.5-mmproj.gguf": "e7f1a72400fba517046f90d964e2fa0f4dac7781ee3b1bc5d2022f5f8cecbd87"
+  }
+ },
+ "trials": [
+  {
+   "load_s": 1.4229231510000009,
+   "gpu": {
+    "utilization_median_pct": 82.0,
+    "memory_peak_mib": 2738.0
+   },
+   "items": [
+    {
+     "file": "images/textvqa-val/0004c9478eeda995.jpg",
+     "seconds": 0.26389506900000015,
+     "tokens": 65,
+     "truth_tokens": 10,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00054dab88635bdb.jpg",
+     "seconds": 0.49782811800000104,
+     "tokens": 17,
+     "truth_tokens": 9,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/000adfe5b817011c.jpg",
+     "seconds": 9.666483857,
+     "tokens": 3000,
+     "truth_tokens": 18,
+     "found": 10
+    },
+    {
+     "file": "images/textvqa-val/000fd38f35d0ad0c.jpg",
+     "seconds": 0.741608835000001,
+     "tokens": 120,
+     "truth_tokens": 41,
+     "found": 24
+    },
+    {
+     "file": "images/textvqa-val/001512d120e1e800.jpg",
+     "seconds": 0.4616130250000019,
+     "tokens": 8,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00155bc9538a26ed.jpg",
+     "seconds": 0.3407225629999999,
+     "tokens": 7,
+     "truth_tokens": 3,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00165f9e139aedaf.jpg",
+     "seconds": 9.458523165999999,
+     "tokens": 3000,
+     "truth_tokens": 14,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/0017c0c45277ee1a.jpg",
+     "seconds": 9.476827262,
+     "tokens": 3000,
+     "truth_tokens": 43,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/001ce300279f1a81.jpg",
+     "seconds": 0.3730838709999986,
+     "tokens": 9,
+     "truth_tokens": 3,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/001e68b987a389d5.jpg",
+     "seconds": 0.3771789400000003,
+     "tokens": 3,
+     "truth_tokens": 6,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/0024fa464b466993.jpg",
+     "seconds": 0.7074896170000002,
+     "tokens": 113,
+     "truth_tokens": 40,
+     "found": 11
+    },
+    {
+     "file": "images/textvqa-val/002a1fb97133ae95.jpg",
+     "seconds": 0.7890014819999962,
+     "tokens": 50,
+     "truth_tokens": 22,
+     "found": 22
+    },
+    {
+     "file": "images/textvqa-val/002b6c5e434980df.jpg",
+     "seconds": 0.3106570190000042,
+     "tokens": 12,
+     "truth_tokens": 7,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/002cc8bb1d50cde0.jpg",
+     "seconds": 0.42071004499999987,
+     "tokens": 19,
+     "truth_tokens": 8,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/002ce32086fb7258.jpg",
+     "seconds": 0.6753990120000068,
+     "tokens": 22,
+     "truth_tokens": 7,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/0031bff54b02c9c1.jpg",
+     "seconds": 0.47072393600000595,
+     "tokens": 8,
+     "truth_tokens": 4,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00351a1451e059a5.jpg",
+     "seconds": 0.40798952100000463,
+     "tokens": 9,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/003679d4dc2e6856.jpg",
+     "seconds": 0.8480507209999999,
+     "tokens": 136,
+     "truth_tokens": 13,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/003a8ae2ef43b901.jpg",
+     "seconds": 0.40422059099999785,
+     "tokens": 11,
+     "truth_tokens": 6,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0040aa9c1660068e.jpg",
+     "seconds": 0.4315393059999977,
+     "tokens": 22,
+     "truth_tokens": 9,
+     "found": 8
+    },
+    {
+     "file": "images/textvqa-val/004636433aa3ef48.jpg",
+     "seconds": 0.7026152709999991,
+     "tokens": 90,
+     "truth_tokens": 20,
+     "found": 8
+    },
+    {
+     "file": "images/textvqa-val/00466f2d1b617884.jpg",
+     "seconds": 9.447893111999996,
+     "tokens": 3000,
+     "truth_tokens": 46,
+     "found": 37
+    },
+    {
+     "file": "images/textvqa-val/004cada0dea66c27.jpg",
+     "seconds": 0.557229600999996,
+     "tokens": 96,
+     "truth_tokens": 37,
+     "found": 21
+    },
+    {
+     "file": "images/textvqa-val/00515166eb5254d4.jpg",
+     "seconds": 0.42913919500000475,
+     "tokens": 30,
+     "truth_tokens": 11,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/00532432aafd3fb7.jpg",
+     "seconds": 0.46330235399999964,
+     "tokens": 20,
+     "truth_tokens": 7,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0053a650ec50c21f.jpg",
+     "seconds": 0.41293132999999926,
+     "tokens": 3,
+     "truth_tokens": 9,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/005d71de0834bd7e.jpg",
+     "seconds": 0.4042889459999941,
+     "tokens": 24,
+     "truth_tokens": 7,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/0065bfca13dd4b6b.jpg",
+     "seconds": 8.898074209000008,
+     "tokens": 3000,
+     "truth_tokens": 13,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0066511fff0f1419.jpg",
+     "seconds": 0.4223085939999862,
+     "tokens": 14,
+     "truth_tokens": 6,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/006f4870f0a038de.jpg",
+     "seconds": 0.46119997899999987,
+     "tokens": 5,
+     "truth_tokens": 4,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/0075f28d995930da.jpg",
+     "seconds": 0.37026495899999645,
+     "tokens": 16,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00780778116614e0.jpg",
+     "seconds": 0.42376653300000555,
+     "tokens": 14,
+     "truth_tokens": 3,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00792db6bb86e0e2.jpg",
+     "seconds": 0.3345445980000079,
+     "tokens": 2,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/007c8c28e1f149b1.jpg",
+     "seconds": 0.60415639,
+     "tokens": 26,
+     "truth_tokens": 13,
+     "found": 9
+    },
+    {
+     "file": "images/textvqa-val/007f097678571e5d.jpg",
+     "seconds": 0.6826367310000023,
+     "tokens": 109,
+     "truth_tokens": 19,
+     "found": 15
+    },
+    {
+     "file": "images/textvqa-val/0080ab49662c727c.jpg",
+     "seconds": 8.874575558000004,
+     "tokens": 3000,
+     "truth_tokens": 50,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/00831662d2ba731a.jpg",
+     "seconds": 0.5252365449999985,
+     "tokens": 22,
+     "truth_tokens": 9,
+     "found": 6
+    },
+    {
+     "file": "images/textvqa-val/00860d45e849ec0c.jpg",
+     "seconds": 0.438704572000006,
+     "tokens": 5,
+     "truth_tokens": 4,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00915dbaa395904c.jpg",
+     "seconds": 8.907104838999999,
+     "tokens": 3000,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00963eaad91c7da8.jpg",
+     "seconds": 0.49933993199999804,
+     "tokens": 25,
+     "truth_tokens": 10,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/009e76edf23c89df.jpg",
+     "seconds": 9.247548809999998,
+     "tokens": 3000,
+     "truth_tokens": 10,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00a40156a2843195.jpg",
+     "seconds": 0.4998271019999976,
+     "tokens": 21,
+     "truth_tokens": 3,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/00a96e7f361d71e2.jpg",
+     "seconds": 0.5576658390000091,
+     "tokens": 11,
+     "truth_tokens": 8,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00ad17e05c1a1bf5.jpg",
+     "seconds": 0.35533709699998894,
+     "tokens": 28,
+     "truth_tokens": 12,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00afcdd80ab1ba76.jpg",
+     "seconds": 0.42825087199999246,
+     "tokens": 11,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00c618f03ea0b6a2.jpg",
+     "seconds": 0.40922869899999625,
+     "tokens": 28,
+     "truth_tokens": 6,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00c701c3a7421bd9.jpg",
+     "seconds": 0.4667139299999974,
+     "tokens": 26,
+     "truth_tokens": 8,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00c7f84d61adce05.jpg",
+     "seconds": 0.7926910479999947,
+     "tokens": 128,
+     "truth_tokens": 26,
+     "found": 14
+    },
+    {
+     "file": "images/textvqa-val/00c8152e27a63776.jpg",
+     "seconds": 1.3190991820000022,
+     "tokens": 323,
+     "truth_tokens": 81,
+     "found": 75
+    },
+    {
+     "file": "images/textvqa-val/00d07a487147789e.jpg",
+     "seconds": 10.411953952000005,
+     "tokens": 3000,
+     "truth_tokens": 19,
+     "found": 11
+    }
+   ],
+   "score": {
+    "ocr_tokens_found": 0.5243393602225312
+   },
+   "summary": {
+    "median_s": 0.4842760270000035,
+    "p90_s": 9.267583240199999,
+    "total_s": 105.471175735
+   }
+  },
+  {
+   "load_s": 1.018621687999996,
+   "gpu": {
+    "utilization_median_pct": 79.0,
+    "memory_peak_mib": 2689.0
+   },
+   "items": [
+    {
+     "file": "images/textvqa-val/0004c9478eeda995.jpg",
+     "seconds": 0.26726311400000213,
+     "tokens": 65,
+     "truth_tokens": 10,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00054dab88635bdb.jpg",
+     "seconds": 0.44171684799999866,
+     "tokens": 17,
+     "truth_tokens": 9,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/000adfe5b817011c.jpg",
+     "seconds": 9.283078261,
+     "tokens": 3000,
+     "truth_tokens": 18,
+     "found": 10
+    },
+    {
+     "file": "images/textvqa-val/000fd38f35d0ad0c.jpg",
+     "seconds": 0.7160317740000153,
+     "tokens": 120,
+     "truth_tokens": 41,
+     "found": 24
+    },
+    {
+     "file": "images/textvqa-val/001512d120e1e800.jpg",
+     "seconds": 0.4275011119999874,
+     "tokens": 8,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00155bc9538a26ed.jpg",
+     "seconds": 0.30687526799999887,
+     "tokens": 7,
+     "truth_tokens": 3,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00165f9e139aedaf.jpg",
+     "seconds": 9.586241145000002,
+     "tokens": 3000,
+     "truth_tokens": 14,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/0017c0c45277ee1a.jpg",
+     "seconds": 10.015624322000008,
+     "tokens": 3000,
+     "truth_tokens": 43,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/001ce300279f1a81.jpg",
+     "seconds": 0.3514753849999863,
+     "tokens": 9,
+     "truth_tokens": 3,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/001e68b987a389d5.jpg",
+     "seconds": 0.36660840900000835,
+     "tokens": 3,
+     "truth_tokens": 6,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/0024fa464b466993.jpg",
+     "seconds": 0.667195927999984,
+     "tokens": 113,
+     "truth_tokens": 40,
+     "found": 11
+    },
+    {
+     "file": "images/textvqa-val/002a1fb97133ae95.jpg",
+     "seconds": 0.7383731390000037,
+     "tokens": 50,
+     "truth_tokens": 22,
+     "found": 22
+    },
+    {
+     "file": "images/textvqa-val/002b6c5e434980df.jpg",
+     "seconds": 0.2890068460000066,
+     "tokens": 12,
+     "truth_tokens": 7,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/002cc8bb1d50cde0.jpg",
+     "seconds": 0.3959776819999945,
+     "tokens": 19,
+     "truth_tokens": 8,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/002ce32086fb7258.jpg",
+     "seconds": 0.6339054370000099,
+     "tokens": 22,
+     "truth_tokens": 7,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/0031bff54b02c9c1.jpg",
+     "seconds": 0.43272593700001494,
+     "tokens": 8,
+     "truth_tokens": 4,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00351a1451e059a5.jpg",
+     "seconds": 0.39109205899998756,
+     "tokens": 9,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/003679d4dc2e6856.jpg",
+     "seconds": 0.8254333400000178,
+     "tokens": 136,
+     "truth_tokens": 13,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/003a8ae2ef43b901.jpg",
+     "seconds": 0.391543439000003,
+     "tokens": 11,
+     "truth_tokens": 6,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0040aa9c1660068e.jpg",
+     "seconds": 0.4137064749999979,
+     "tokens": 22,
+     "truth_tokens": 9,
+     "found": 8
+    },
+    {
+     "file": "images/textvqa-val/004636433aa3ef48.jpg",
+     "seconds": 0.6776649150000082,
+     "tokens": 90,
+     "truth_tokens": 20,
+     "found": 8
+    },
+    {
+     "file": "images/textvqa-val/00466f2d1b617884.jpg",
+     "seconds": 9.604755549000004,
+     "tokens": 3000,
+     "truth_tokens": 46,
+     "found": 37
+    },
+    {
+     "file": "images/textvqa-val/004cada0dea66c27.jpg",
+     "seconds": 0.5876532650000001,
+     "tokens": 96,
+     "truth_tokens": 37,
+     "found": 21
+    },
+    {
+     "file": "images/textvqa-val/00515166eb5254d4.jpg",
+     "seconds": 0.4304651470000067,
+     "tokens": 30,
+     "truth_tokens": 11,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/00532432aafd3fb7.jpg",
+     "seconds": 0.47242538700001546,
+     "tokens": 20,
+     "truth_tokens": 7,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0053a650ec50c21f.jpg",
+     "seconds": 0.4104351729999962,
+     "tokens": 3,
+     "truth_tokens": 9,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/005d71de0834bd7e.jpg",
+     "seconds": 0.43472612299999014,
+     "tokens": 24,
+     "truth_tokens": 7,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/0065bfca13dd4b6b.jpg",
+     "seconds": 9.987379299999986,
+     "tokens": 3000,
+     "truth_tokens": 13,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0066511fff0f1419.jpg",
+     "seconds": 0.45423962999998935,
+     "tokens": 14,
+     "truth_tokens": 6,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/006f4870f0a038de.jpg",
+     "seconds": 0.5018765330000008,
+     "tokens": 5,
+     "truth_tokens": 4,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/0075f28d995930da.jpg",
+     "seconds": 0.3822221579999905,
+     "tokens": 16,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00780778116614e0.jpg",
+     "seconds": 0.4335398739999903,
+     "tokens": 14,
+     "truth_tokens": 3,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00792db6bb86e0e2.jpg",
+     "seconds": 0.3405306639999992,
+     "tokens": 2,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/007c8c28e1f149b1.jpg",
+     "seconds": 0.6110120160000179,
+     "tokens": 26,
+     "truth_tokens": 13,
+     "found": 9
+    },
+    {
+     "file": "images/textvqa-val/007f097678571e5d.jpg",
+     "seconds": 0.7072449110000036,
+     "tokens": 109,
+     "truth_tokens": 19,
+     "found": 15
+    },
+    {
+     "file": "images/textvqa-val/0080ab49662c727c.jpg",
+     "seconds": 9.148018514,
+     "tokens": 3000,
+     "truth_tokens": 50,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/00831662d2ba731a.jpg",
+     "seconds": 0.5018170399999917,
+     "tokens": 22,
+     "truth_tokens": 9,
+     "found": 6
+    },
+    {
+     "file": "images/textvqa-val/00860d45e849ec0c.jpg",
+     "seconds": 0.4051442980000104,
+     "tokens": 5,
+     "truth_tokens": 4,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00915dbaa395904c.jpg",
+     "seconds": 9.244737712000017,
+     "tokens": 3000,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00963eaad91c7da8.jpg",
+     "seconds": 0.49788366800001427,
+     "tokens": 25,
+     "truth_tokens": 10,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/009e76edf23c89df.jpg",
+     "seconds": 9.752390518999988,
+     "tokens": 3000,
+     "truth_tokens": 10,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00a40156a2843195.jpg",
+     "seconds": 0.4904122320000113,
+     "tokens": 21,
+     "truth_tokens": 3,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/00a96e7f361d71e2.jpg",
+     "seconds": 0.5647804339999993,
+     "tokens": 11,
+     "truth_tokens": 8,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00ad17e05c1a1bf5.jpg",
+     "seconds": 0.3531385420000106,
+     "tokens": 28,
+     "truth_tokens": 12,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00afcdd80ab1ba76.jpg",
+     "seconds": 0.42541525000001457,
+     "tokens": 11,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00c618f03ea0b6a2.jpg",
+     "seconds": 0.411646697000009,
+     "tokens": 28,
+     "truth_tokens": 6,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00c701c3a7421bd9.jpg",
+     "seconds": 0.4709574039999893,
+     "tokens": 26,
+     "truth_tokens": 8,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00c7f84d61adce05.jpg",
+     "seconds": 0.7647718849999876,
+     "tokens": 128,
+     "truth_tokens": 26,
+     "found": 14
+    },
+    {
+     "file": "images/textvqa-val/00c8152e27a63776.jpg",
+     "seconds": 1.3020330450000017,
+     "tokens": 323,
+     "truth_tokens": 81,
+     "found": 75
+    },
+    {
+     "file": "images/textvqa-val/00d07a487147789e.jpg",
+     "seconds": 9.619485521000001,
+     "tokens": 3000,
+     "truth_tokens": 19,
+     "found": 11
+    }
+   ],
+   "score": {
+    "ocr_tokens_found": 0.5243393602225312
+   },
+   "summary": {
+    "median_s": 0.48141880950001337,
+    "p90_s": 9.588092585400002,
+    "total_s": 106.93017932600007
+   }
+  },
+  {
+   "load_s": 0.867070850999994,
+   "gpu": {
+    "utilization_median_pct": 82.0,
+    "memory_peak_mib": 2612.0
+   },
+   "items": [
+    {
+     "file": "images/textvqa-val/0004c9478eeda995.jpg",
+     "seconds": 0.26339083099998106,
+     "tokens": 65,
+     "truth_tokens": 10,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00054dab88635bdb.jpg",
+     "seconds": 0.4854226269999913,
+     "tokens": 17,
+     "truth_tokens": 9,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/000adfe5b817011c.jpg",
+     "seconds": 9.440832497000002,
+     "tokens": 3000,
+     "truth_tokens": 18,
+     "found": 10
+    },
+    {
+     "file": "images/textvqa-val/000fd38f35d0ad0c.jpg",
+     "seconds": 0.8136777789999883,
+     "tokens": 120,
+     "truth_tokens": 41,
+     "found": 24
+    },
+    {
+     "file": "images/textvqa-val/001512d120e1e800.jpg",
+     "seconds": 0.4891917590000219,
+     "tokens": 8,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00155bc9538a26ed.jpg",
+     "seconds": 0.3587206159999994,
+     "tokens": 7,
+     "truth_tokens": 3,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00165f9e139aedaf.jpg",
+     "seconds": 9.579235719999986,
+     "tokens": 3000,
+     "truth_tokens": 14,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/0017c0c45277ee1a.jpg",
+     "seconds": 9.00893497200002,
+     "tokens": 3000,
+     "truth_tokens": 43,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/001ce300279f1a81.jpg",
+     "seconds": 0.3456010059999812,
+     "tokens": 9,
+     "truth_tokens": 3,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/001e68b987a389d5.jpg",
+     "seconds": 0.34817230300001256,
+     "tokens": 3,
+     "truth_tokens": 6,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/0024fa464b466993.jpg",
+     "seconds": 0.6502230039999972,
+     "tokens": 113,
+     "truth_tokens": 40,
+     "found": 11
+    },
+    {
+     "file": "images/textvqa-val/002a1fb97133ae95.jpg",
+     "seconds": 0.7205004959999997,
+     "tokens": 50,
+     "truth_tokens": 22,
+     "found": 22
+    },
+    {
+     "file": "images/textvqa-val/002b6c5e434980df.jpg",
+     "seconds": 0.27887442899998405,
+     "tokens": 12,
+     "truth_tokens": 7,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/002cc8bb1d50cde0.jpg",
+     "seconds": 0.3738257859999976,
+     "tokens": 19,
+     "truth_tokens": 8,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/002ce32086fb7258.jpg",
+     "seconds": 0.6126397769999699,
+     "tokens": 22,
+     "truth_tokens": 7,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/0031bff54b02c9c1.jpg",
+     "seconds": 0.4157542190000072,
+     "tokens": 8,
+     "truth_tokens": 4,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00351a1451e059a5.jpg",
+     "seconds": 0.3751720829999954,
+     "tokens": 9,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/003679d4dc2e6856.jpg",
+     "seconds": 0.7773188460000142,
+     "tokens": 136,
+     "truth_tokens": 13,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/003a8ae2ef43b901.jpg",
+     "seconds": 0.37150685699998576,
+     "tokens": 11,
+     "truth_tokens": 6,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0040aa9c1660068e.jpg",
+     "seconds": 0.41358118400000876,
+     "tokens": 22,
+     "truth_tokens": 9,
+     "found": 8
+    },
+    {
+     "file": "images/textvqa-val/004636433aa3ef48.jpg",
+     "seconds": 0.6703674030000002,
+     "tokens": 90,
+     "truth_tokens": 20,
+     "found": 8
+    },
+    {
+     "file": "images/textvqa-val/00466f2d1b617884.jpg",
+     "seconds": 9.37853948999998,
+     "tokens": 3000,
+     "truth_tokens": 46,
+     "found": 37
+    },
+    {
+     "file": "images/textvqa-val/004cada0dea66c27.jpg",
+     "seconds": 0.5445137469999963,
+     "tokens": 96,
+     "truth_tokens": 37,
+     "found": 21
+    },
+    {
+     "file": "images/textvqa-val/00515166eb5254d4.jpg",
+     "seconds": 0.42502333999999564,
+     "tokens": 30,
+     "truth_tokens": 11,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/00532432aafd3fb7.jpg",
+     "seconds": 0.46065951799999993,
+     "tokens": 20,
+     "truth_tokens": 7,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0053a650ec50c21f.jpg",
+     "seconds": 0.4100212239999905,
+     "tokens": 3,
+     "truth_tokens": 9,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/005d71de0834bd7e.jpg",
+     "seconds": 0.4067158940000013,
+     "tokens": 24,
+     "truth_tokens": 7,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/0065bfca13dd4b6b.jpg",
+     "seconds": 8.734277255999984,
+     "tokens": 3000,
+     "truth_tokens": 13,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0066511fff0f1419.jpg",
+     "seconds": 0.41786048599999503,
+     "tokens": 14,
+     "truth_tokens": 6,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/006f4870f0a038de.jpg",
+     "seconds": 0.4713106220000327,
+     "tokens": 5,
+     "truth_tokens": 4,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/0075f28d995930da.jpg",
+     "seconds": 0.37354270999998107,
+     "tokens": 16,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00780778116614e0.jpg",
+     "seconds": 0.4513382040000238,
+     "tokens": 14,
+     "truth_tokens": 3,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00792db6bb86e0e2.jpg",
+     "seconds": 0.3628889180000101,
+     "tokens": 2,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/007c8c28e1f149b1.jpg",
+     "seconds": 0.6111352370000418,
+     "tokens": 26,
+     "truth_tokens": 13,
+     "found": 9
+    },
+    {
+     "file": "images/textvqa-val/007f097678571e5d.jpg",
+     "seconds": 0.6891186729999959,
+     "tokens": 109,
+     "truth_tokens": 19,
+     "found": 15
+    },
+    {
+     "file": "images/textvqa-val/0080ab49662c727c.jpg",
+     "seconds": 8.757632665000017,
+     "tokens": 3000,
+     "truth_tokens": 50,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/00831662d2ba731a.jpg",
+     "seconds": 0.5244795350000118,
+     "tokens": 22,
+     "truth_tokens": 9,
+     "found": 6
+    },
+    {
+     "file": "images/textvqa-val/00860d45e849ec0c.jpg",
+     "seconds": 0.43337310700002263,
+     "tokens": 5,
+     "truth_tokens": 4,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00915dbaa395904c.jpg",
+     "seconds": 9.292520768999964,
+     "tokens": 3000,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00963eaad91c7da8.jpg",
+     "seconds": 0.4834080749999998,
+     "tokens": 25,
+     "truth_tokens": 10,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/009e76edf23c89df.jpg",
+     "seconds": 9.783231870999998,
+     "tokens": 3000,
+     "truth_tokens": 10,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00a40156a2843195.jpg",
+     "seconds": 0.5672360679999997,
+     "tokens": 21,
+     "truth_tokens": 3,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/00a96e7f361d71e2.jpg",
+     "seconds": 0.6571193980000203,
+     "tokens": 11,
+     "truth_tokens": 8,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00ad17e05c1a1bf5.jpg",
+     "seconds": 0.40956090699995684,
+     "tokens": 28,
+     "truth_tokens": 12,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00afcdd80ab1ba76.jpg",
+     "seconds": 0.4994898360000093,
+     "tokens": 11,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00c618f03ea0b6a2.jpg",
+     "seconds": 0.47847360999998045,
+     "tokens": 28,
+     "truth_tokens": 6,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00c701c3a7421bd9.jpg",
+     "seconds": 0.5599006850000023,
+     "tokens": 26,
+     "truth_tokens": 8,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00c7f84d61adce05.jpg",
+     "seconds": 0.7511669800000504,
+     "tokens": 128,
+     "truth_tokens": 26,
+     "found": 14
+    },
+    {
+     "file": "images/textvqa-val/00c8152e27a63776.jpg",
+     "seconds": 1.249277114999984,
+     "tokens": 323,
+     "truth_tokens": 81,
+     "found": 75
+    },
+    {
+     "file": "images/textvqa-val/00d07a487147789e.jpg",
+     "seconds": 8.945668987999966,
+     "tokens": 3000,
+     "truth_tokens": 19,
+     "found": 11
+    }
+   ],
+   "score": {
+    "ocr_tokens_found": 0.5243393602225312
+   },
+   "summary": {
+    "median_s": 0.4943407975000156,
+    "p90_s": 9.037293551700015,
+    "total_s": 103.92242912199995
+   }
+  },
+  {
+   "load_s": 0.8057450200000176,
+   "gpu": {
+    "utilization_median_pct": 81.0,
+    "memory_peak_mib": 2612.0
+   },
+   "items": [
+    {
+     "file": "images/textvqa-val/0004c9478eeda995.jpg",
+     "seconds": 0.24675908199998275,
+     "tokens": 65,
+     "truth_tokens": 10,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00054dab88635bdb.jpg",
+     "seconds": 0.46542506299999786,
+     "tokens": 17,
+     "truth_tokens": 9,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/000adfe5b817011c.jpg",
+     "seconds": 8.90063685399997,
+     "tokens": 3000,
+     "truth_tokens": 18,
+     "found": 10
+    },
+    {
+     "file": "images/textvqa-val/000fd38f35d0ad0c.jpg",
+     "seconds": 0.7245298660000117,
+     "tokens": 120,
+     "truth_tokens": 41,
+     "found": 24
+    },
+    {
+     "file": "images/textvqa-val/001512d120e1e800.jpg",
+     "seconds": 0.45890406600000233,
+     "tokens": 8,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00155bc9538a26ed.jpg",
+     "seconds": 0.31249700899996924,
+     "tokens": 7,
+     "truth_tokens": 3,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00165f9e139aedaf.jpg",
+     "seconds": 9.561362422999991,
+     "tokens": 3000,
+     "truth_tokens": 14,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/0017c0c45277ee1a.jpg",
+     "seconds": 9.240328681999983,
+     "tokens": 3000,
+     "truth_tokens": 43,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/001ce300279f1a81.jpg",
+     "seconds": 0.36655018499999414,
+     "tokens": 9,
+     "truth_tokens": 3,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/001e68b987a389d5.jpg",
+     "seconds": 0.3628792239999825,
+     "tokens": 3,
+     "truth_tokens": 6,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/0024fa464b466993.jpg",
+     "seconds": 0.6912546720000137,
+     "tokens": 113,
+     "truth_tokens": 40,
+     "found": 11
+    },
+    {
+     "file": "images/textvqa-val/002a1fb97133ae95.jpg",
+     "seconds": 0.7460351809999679,
+     "tokens": 50,
+     "truth_tokens": 22,
+     "found": 22
+    },
+    {
+     "file": "images/textvqa-val/002b6c5e434980df.jpg",
+     "seconds": 0.2959677329999977,
+     "tokens": 12,
+     "truth_tokens": 7,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/002cc8bb1d50cde0.jpg",
+     "seconds": 0.3952100810000161,
+     "tokens": 19,
+     "truth_tokens": 8,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/002ce32086fb7258.jpg",
+     "seconds": 0.6545304829999736,
+     "tokens": 22,
+     "truth_tokens": 7,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/0031bff54b02c9c1.jpg",
+     "seconds": 0.45318989399999055,
+     "tokens": 8,
+     "truth_tokens": 4,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00351a1451e059a5.jpg",
+     "seconds": 0.4036001559999818,
+     "tokens": 9,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/003679d4dc2e6856.jpg",
+     "seconds": 0.8431275140000025,
+     "tokens": 136,
+     "truth_tokens": 13,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/003a8ae2ef43b901.jpg",
+     "seconds": 0.39435535400002664,
+     "tokens": 11,
+     "truth_tokens": 6,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0040aa9c1660068e.jpg",
+     "seconds": 0.43688871100005144,
+     "tokens": 22,
+     "truth_tokens": 9,
+     "found": 8
+    },
+    {
+     "file": "images/textvqa-val/004636433aa3ef48.jpg",
+     "seconds": 0.7008819950000316,
+     "tokens": 90,
+     "truth_tokens": 20,
+     "found": 8
+    },
+    {
+     "file": "images/textvqa-val/00466f2d1b617884.jpg",
+     "seconds": 9.754361300000028,
+     "tokens": 3000,
+     "truth_tokens": 46,
+     "found": 37
+    },
+    {
+     "file": "images/textvqa-val/004cada0dea66c27.jpg",
+     "seconds": 0.5873689300000251,
+     "tokens": 96,
+     "truth_tokens": 37,
+     "found": 21
+    },
+    {
+     "file": "images/textvqa-val/00515166eb5254d4.jpg",
+     "seconds": 0.4439284239999779,
+     "tokens": 30,
+     "truth_tokens": 11,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/00532432aafd3fb7.jpg",
+     "seconds": 0.4963935090000291,
+     "tokens": 20,
+     "truth_tokens": 7,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0053a650ec50c21f.jpg",
+     "seconds": 0.44766793799999505,
+     "tokens": 3,
+     "truth_tokens": 9,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/005d71de0834bd7e.jpg",
+     "seconds": 0.4425012430000379,
+     "tokens": 24,
+     "truth_tokens": 7,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/0065bfca13dd4b6b.jpg",
+     "seconds": 9.023583483999971,
+     "tokens": 3000,
+     "truth_tokens": 13,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0066511fff0f1419.jpg",
+     "seconds": 0.41710466299997506,
+     "tokens": 14,
+     "truth_tokens": 6,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/006f4870f0a038de.jpg",
+     "seconds": 0.4615627219999965,
+     "tokens": 5,
+     "truth_tokens": 4,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/0075f28d995930da.jpg",
+     "seconds": 0.3780208910000056,
+     "tokens": 16,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00780778116614e0.jpg",
+     "seconds": 0.43688259700002163,
+     "tokens": 14,
+     "truth_tokens": 3,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00792db6bb86e0e2.jpg",
+     "seconds": 0.34324372800000447,
+     "tokens": 2,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/007c8c28e1f149b1.jpg",
+     "seconds": 0.6276134160000311,
+     "tokens": 26,
+     "truth_tokens": 13,
+     "found": 9
+    },
+    {
+     "file": "images/textvqa-val/007f097678571e5d.jpg",
+     "seconds": 0.7444604280000249,
+     "tokens": 109,
+     "truth_tokens": 19,
+     "found": 15
+    },
+    {
+     "file": "images/textvqa-val/0080ab49662c727c.jpg",
+     "seconds": 8.915620352999952,
+     "tokens": 3000,
+     "truth_tokens": 50,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/00831662d2ba731a.jpg",
+     "seconds": 0.5752340290000006,
+     "tokens": 22,
+     "truth_tokens": 9,
+     "found": 6
+    },
+    {
+     "file": "images/textvqa-val/00860d45e849ec0c.jpg",
+     "seconds": 0.5000050770000257,
+     "tokens": 5,
+     "truth_tokens": 4,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00915dbaa395904c.jpg",
+     "seconds": 9.425221541000042,
+     "tokens": 3000,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00963eaad91c7da8.jpg",
+     "seconds": 0.5178920760000096,
+     "tokens": 25,
+     "truth_tokens": 10,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/009e76edf23c89df.jpg",
+     "seconds": 9.02087781900002,
+     "tokens": 3000,
+     "truth_tokens": 10,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00a40156a2843195.jpg",
+     "seconds": 0.48617011400000365,
+     "tokens": 21,
+     "truth_tokens": 3,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/00a96e7f361d71e2.jpg",
+     "seconds": 0.5609230080000316,
+     "tokens": 11,
+     "truth_tokens": 8,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00ad17e05c1a1bf5.jpg",
+     "seconds": 0.37189700099997935,
+     "tokens": 28,
+     "truth_tokens": 12,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00afcdd80ab1ba76.jpg",
+     "seconds": 0.4378712440000072,
+     "tokens": 11,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00c618f03ea0b6a2.jpg",
+     "seconds": 0.4159059079999565,
+     "tokens": 28,
+     "truth_tokens": 6,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00c701c3a7421bd9.jpg",
+     "seconds": 0.4792877709999743,
+     "tokens": 26,
+     "truth_tokens": 8,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00c7f84d61adce05.jpg",
+     "seconds": 0.7912732830000095,
+     "tokens": 128,
+     "truth_tokens": 26,
+     "found": 14
+    },
+    {
+     "file": "images/textvqa-val/00c8152e27a63776.jpg",
+     "seconds": 1.4041212489999566,
+     "tokens": 323,
+     "truth_tokens": 81,
+     "found": 75
+    },
+    {
+     "file": "images/textvqa-val/00d07a487147789e.jpg",
+     "seconds": 10.000881280999977,
+     "tokens": 3000,
+     "truth_tokens": 19,
+     "found": 11
+    }
+   ],
+   "score": {
+    "ocr_tokens_found": 0.5243393602225312
+   },
+   "summary": {
+    "median_s": 0.4912818115000164,
+    "p90_s": 9.045258003799972,
+    "total_s": 105.162789255
+   }
+  },
+  {
+   "load_s": 0.8036818379999886,
+   "gpu": {
+    "utilization_median_pct": 78.0,
+    "memory_peak_mib": 2613.0
+   },
+   "items": [
+    {
+     "file": "images/textvqa-val/0004c9478eeda995.jpg",
+     "seconds": 0.28635936200004153,
+     "tokens": 65,
+     "truth_tokens": 10,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00054dab88635bdb.jpg",
+     "seconds": 0.49181519199999,
+     "tokens": 17,
+     "truth_tokens": 9,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/000adfe5b817011c.jpg",
+     "seconds": 9.79858860600001,
+     "tokens": 3000,
+     "truth_tokens": 18,
+     "found": 10
+    },
+    {
+     "file": "images/textvqa-val/000fd38f35d0ad0c.jpg",
+     "seconds": 0.7216548950000288,
+     "tokens": 120,
+     "truth_tokens": 41,
+     "found": 24
+    },
+    {
+     "file": "images/textvqa-val/001512d120e1e800.jpg",
+     "seconds": 0.426538058999995,
+     "tokens": 8,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00155bc9538a26ed.jpg",
+     "seconds": 0.30826922599999307,
+     "tokens": 7,
+     "truth_tokens": 3,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00165f9e139aedaf.jpg",
+     "seconds": 9.456958004,
+     "tokens": 3000,
+     "truth_tokens": 14,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/0017c0c45277ee1a.jpg",
+     "seconds": 9.547315215999959,
+     "tokens": 3000,
+     "truth_tokens": 43,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/001ce300279f1a81.jpg",
+     "seconds": 0.3859559790000162,
+     "tokens": 9,
+     "truth_tokens": 3,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/001e68b987a389d5.jpg",
+     "seconds": 0.3868982919999553,
+     "tokens": 3,
+     "truth_tokens": 6,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/0024fa464b466993.jpg",
+     "seconds": 0.7264252219999889,
+     "tokens": 113,
+     "truth_tokens": 40,
+     "found": 11
+    },
+    {
+     "file": "images/textvqa-val/002a1fb97133ae95.jpg",
+     "seconds": 0.7821462530000076,
+     "tokens": 50,
+     "truth_tokens": 22,
+     "found": 22
+    },
+    {
+     "file": "images/textvqa-val/002b6c5e434980df.jpg",
+     "seconds": 0.30461684300001934,
+     "tokens": 12,
+     "truth_tokens": 7,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/002cc8bb1d50cde0.jpg",
+     "seconds": 0.42126827100003084,
+     "tokens": 19,
+     "truth_tokens": 8,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/002ce32086fb7258.jpg",
+     "seconds": 0.6819711510000275,
+     "tokens": 22,
+     "truth_tokens": 7,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/0031bff54b02c9c1.jpg",
+     "seconds": 0.47567997199996626,
+     "tokens": 8,
+     "truth_tokens": 4,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00351a1451e059a5.jpg",
+     "seconds": 0.4093775069999879,
+     "tokens": 9,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/003679d4dc2e6856.jpg",
+     "seconds": 0.8347512039999856,
+     "tokens": 136,
+     "truth_tokens": 13,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/003a8ae2ef43b901.jpg",
+     "seconds": 0.37315340500003913,
+     "tokens": 11,
+     "truth_tokens": 6,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0040aa9c1660068e.jpg",
+     "seconds": 0.42722000800000615,
+     "tokens": 22,
+     "truth_tokens": 9,
+     "found": 8
+    },
+    {
+     "file": "images/textvqa-val/004636433aa3ef48.jpg",
+     "seconds": 0.6650145300000077,
+     "tokens": 90,
+     "truth_tokens": 20,
+     "found": 8
+    },
+    {
+     "file": "images/textvqa-val/00466f2d1b617884.jpg",
+     "seconds": 9.479504766000048,
+     "tokens": 3000,
+     "truth_tokens": 46,
+     "found": 37
+    },
+    {
+     "file": "images/textvqa-val/004cada0dea66c27.jpg",
+     "seconds": 0.5970585449999817,
+     "tokens": 96,
+     "truth_tokens": 37,
+     "found": 21
+    },
+    {
+     "file": "images/textvqa-val/00515166eb5254d4.jpg",
+     "seconds": 0.4497053800000117,
+     "tokens": 30,
+     "truth_tokens": 11,
+     "found": 7
+    },
+    {
+     "file": "images/textvqa-val/00532432aafd3fb7.jpg",
+     "seconds": 0.48136803300002384,
+     "tokens": 20,
+     "truth_tokens": 7,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0053a650ec50c21f.jpg",
+     "seconds": 0.43136711500000047,
+     "tokens": 3,
+     "truth_tokens": 9,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/005d71de0834bd7e.jpg",
+     "seconds": 0.4308209609999949,
+     "tokens": 24,
+     "truth_tokens": 7,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/0065bfca13dd4b6b.jpg",
+     "seconds": 9.778845343,
+     "tokens": 3000,
+     "truth_tokens": 13,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/0066511fff0f1419.jpg",
+     "seconds": 0.43119387899992034,
+     "tokens": 14,
+     "truth_tokens": 6,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/006f4870f0a038de.jpg",
+     "seconds": 0.4819990729999972,
+     "tokens": 5,
+     "truth_tokens": 4,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/0075f28d995930da.jpg",
+     "seconds": 0.38107906899995214,
+     "tokens": 16,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00780778116614e0.jpg",
+     "seconds": 0.45725882900001125,
+     "tokens": 14,
+     "truth_tokens": 3,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00792db6bb86e0e2.jpg",
+     "seconds": 0.34393325299993194,
+     "tokens": 2,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/007c8c28e1f149b1.jpg",
+     "seconds": 0.6422357800000782,
+     "tokens": 26,
+     "truth_tokens": 13,
+     "found": 9
+    },
+    {
+     "file": "images/textvqa-val/007f097678571e5d.jpg",
+     "seconds": 0.7454351500000485,
+     "tokens": 109,
+     "truth_tokens": 19,
+     "found": 15
+    },
+    {
+     "file": "images/textvqa-val/0080ab49662c727c.jpg",
+     "seconds": 9.706442072999948,
+     "tokens": 3000,
+     "truth_tokens": 50,
+     "found": 5
+    },
+    {
+     "file": "images/textvqa-val/00831662d2ba731a.jpg",
+     "seconds": 0.5068218400000433,
+     "tokens": 22,
+     "truth_tokens": 9,
+     "found": 6
+    },
+    {
+     "file": "images/textvqa-val/00860d45e849ec0c.jpg",
+     "seconds": 0.44922705600004065,
+     "tokens": 5,
+     "truth_tokens": 4,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00915dbaa395904c.jpg",
+     "seconds": 9.332950043999972,
+     "tokens": 3000,
+     "truth_tokens": 2,
+     "found": 0
+    },
+    {
+     "file": "images/textvqa-val/00963eaad91c7da8.jpg",
+     "seconds": 0.5174873400000024,
+     "tokens": 25,
+     "truth_tokens": 10,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/009e76edf23c89df.jpg",
+     "seconds": 9.74132840599998,
+     "tokens": 3000,
+     "truth_tokens": 10,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00a40156a2843195.jpg",
+     "seconds": 0.5025230129999727,
+     "tokens": 21,
+     "truth_tokens": 3,
+     "found": 1
+    },
+    {
+     "file": "images/textvqa-val/00a96e7f361d71e2.jpg",
+     "seconds": 0.5961139019999564,
+     "tokens": 11,
+     "truth_tokens": 8,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00ad17e05c1a1bf5.jpg",
+     "seconds": 0.3816449380000222,
+     "tokens": 28,
+     "truth_tokens": 12,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00afcdd80ab1ba76.jpg",
+     "seconds": 0.4643018289999645,
+     "tokens": 11,
+     "truth_tokens": 3,
+     "found": 2
+    },
+    {
+     "file": "images/textvqa-val/00c618f03ea0b6a2.jpg",
+     "seconds": 0.4303901399999859,
+     "tokens": 28,
+     "truth_tokens": 6,
+     "found": 4
+    },
+    {
+     "file": "images/textvqa-val/00c701c3a7421bd9.jpg",
+     "seconds": 0.48805023100010203,
+     "tokens": 26,
+     "truth_tokens": 8,
+     "found": 3
+    },
+    {
+     "file": "images/textvqa-val/00c7f84d61adce05.jpg",
+     "seconds": 0.7943027040000743,
+     "tokens": 128,
+     "truth_tokens": 26,
+     "found": 14
+    },
+    {
+     "file": "images/textvqa-val/00c8152e27a63776.jpg",
+     "seconds": 1.3517151390000208,
+     "tokens": 323,
+     "truth_tokens": 81,
+     "found": 75
+    },
+    {
+     "file": "images/textvqa-val/00d07a487147789e.jpg",
+     "seconds": 9.895507861000056,
+     "tokens": 3000,
+     "truth_tokens": 19,
+     "found": 11
+    }
+   ],
+   "score": {
+    "ocr_tokens_found": 0.5243393602225312
+   },
+   "summary": {
+    "median_s": 0.489932711500046,
+    "p90_s": 9.563227901699959,
+    "total_s": 108.2025888890002
+   }
+  }
+ ],
+ "summary": {
+  "median_of_trial_medians_s": 0.489932711500046,
+  "spread_s": [
+   0.48141880950001337,
+   0.4943407975000156
+  ],
+  "score": {
+   "ocr_tokens_found": 0.5243393602225312
+  }
+ }
+}

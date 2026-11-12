@@ -1,0 +1,74 @@
+Everything 1.4.1.1032 | Bedrock: C:\measure\work\names\names.idx
+from the drives' tables 1/5: 0.28 s, 72074 entries
+from the drives' tables 2/5: 0.14 s, 72074 entries
+from the drives' tables 3/5: 0.14 s, 72074 entries
+from the drives' tables 4/5: 0.14 s, 72074 entries
+from the drives' tables 5/5: 0.14 s, 72074 entries
+build 1/5: 0.67 s, 72495 entries
+build 2/5: 0.11 s, 72495 entries
+build 3/5: 0.11 s, 72495 entries
+build 4/5: 0.11 s, 72495 entries
+build 5/5: 0.11 s, 72495 entries
+Everything build 1/5: 0.48 s
+Everything build 2/5: 0.45 s
+Everything build 3/5: 0.45 s
+Everything build 4/5: 0.48 s
+Everything build 5/5: 0.42 s
+Everything open 1/5: 0.04 s
+Everything open 2/5: 0.04 s
+Everything open 3/5: 0.04 s
+Everything open 4/5: 0.05 s
+Everything open 5/5: 0.04 s
+query                                 Bedrock Everything        ms        ms
+readme                                      4          4      0.32      2.95
+config                                    518        518      0.48      3.06
+setup                                     195        195      0.43      3.23
+report final                                0          0      0.36      2.99
+zzqxj                                       0          0      0.37      3.31
+e                                       32707      32722      0.81      2.75
+readme | license                          109        109      0.62      4.09
+readme !md                                  2          2      0.31      2.75
+"read me"                                   0          0      0.31      2.79
+<readme | license> ext:md                   2          2      0.15      3.67
+config setup                                0          0      0.33      2.84
+*.dll                                    8259       8259      0.98      2.54
+*.jp*g                                   9579       9584      0.87      4.57
+IMG_????*                                   0          0      0.25      2.16
+*report*.pdf                                0          0      0.42      4.01
+setup.exe                                  15         15      0.42      2.88
+case:README                                 2          2      0.36      2.96
+ww:config                                 202        202      0.54      3.85
+path:system32 .dll                       4945       4945      6.48      6.58
+wfn:readme.md                               2          2      0.37      2.08
+file:readme                                 4          4      0.32      2.81
+folder:config                              44         44      0.42      2.06
+nocase:README                               4          4      0.34      2.91
+startwith:read                             69         70      0.30      2.11
+endwith:.json                             403        403      0.50      2.32
+ext:jpg;png;gif                         13274      13279      0.43      2.26
+ext:flac;wav                             7343       7343      0.28      2.28
+ext:mp4                                  2991       2991      0.22      2.05
+ext:pdf dm:thisyear                         0          0      0.18      2.47
+regex:^[a-f0-9]{32}$                       25         25      0.89      4.59
+regex:"\.(tmp|log)$"                      283        283      0.58      5.53
+len:>60                                  3421       3421      1.62      2.64
+parent:C:\Windows                          93         93      0.25      2.35
+infolder:C:\Windows                        93         93      0.25      2.27
+nosubfolders:C:\Windows                    93         93      0.25      2.28
+dm:today                                  811        824      0.41      2.19
+dm:thisweek                              6889       6906      0.43      2.27
+dm:lastmonth                               25         25      0.22      2.09
+dm:>2025-01-01                           7038       7055      0.42      2.27
+size:>1gb                                   0          0      0.22      1.93
+size:empty                                217        200      0.37      2.06
+size:tiny                               17225      17236      0.64      1.94
+size:1mb..10mb                           3473       3479      0.50      1.96
+size:>10mb ext:mp4                          0          0      0.13      1.81
+a new file found: Bedrock 1.3 ms, Everything 921.3 ms (medians)
+idle for 60 s: Bedrock 0.000 s of CPU, Everything 0.000 s
+changes 1/5: 20000 each; Bedrock 23.4 us of CPU a change, found 5000; Everything 11.719 us, found 5000
+changes 2/5: 20000 each; Bedrock 20.3 us of CPU a change, found 5000; Everything 10.938 us, found 5000
+changes 3/5: 20000 each; Bedrock 15.6 us of CPU a change, found 5000; Everything 10.938 us, found 5000
+changes 4/5: 20000 each; Bedrock 23.4 us of CPU a change, found 5000; Everything 10.156 us, found 5000
+changes 5/5: 20000 each; Bedrock 15.6 us of CPU a change, found 5000; Everything 14.844 us, found 5000
+written: C:\measure\bench\names.json

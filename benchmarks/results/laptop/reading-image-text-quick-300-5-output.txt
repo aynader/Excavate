@@ -1,0 +1,8 @@
+image-text: 300 of 3166 files (a seeded sample), the quick choice, 5 runs
+warm-up (downloads the models the first time)
+run 1/5: 32.6 s, 300 of 300 done (0 failed), 146.3 s of CPU, peak 243 MB
+run 2/5: 32.4 s, 300 of 300 done (0 failed), 151.8 s of CPU, peak 241 MB
+run 3/5: 33.3 s, 300 of 300 done (0 failed), 154.8 s of CPU, peak 243 MB
+run 4/5: 31.6 s, 300 of 300 done (0 failed), 157.9 s of CPU, peak 257 MB
+run 5/5: 37.6 s, 300 of 300 done (0 failed), 164.2 s of CPU, peak 243 MB
+written: reading-image-text-quick-300-5.json

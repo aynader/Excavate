@@ -1,0 +1,8 @@
+image-text: 600 of 3166 files (a seeded sample), the balanced choice, 1 runs
+warm-up (downloads the models the first time)
+  1 min: 125 of 600 done, reading
+  2 min: 273 of 600 done, reading
+  3 min: 415 of 600 done, reading
+  4 min: 532 of 600 done, reading
+run 1/1: 271.7 s, 600 of 600 done (0 failed), 459.3 s of CPU, peak 335 MB
+written: C:\measure\bench\finding-image-text-balanced-600-read.json

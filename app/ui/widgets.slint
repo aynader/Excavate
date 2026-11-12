@@ -1,0 +1,474 @@
+// Excavate's controls, drawn in its own design language (warm strata, one amber accent): Windows 11's shapes and
+// sizes, Excavate's colors. Shared by the popup and the settings window.
+
+import { Theme } from "theme.slint";
+
+export component Glyph inherits Path {
+    // Lucide-style 24-unit strokes.
+    viewbox-width: 24;
+    viewbox-height: 24;
+    stroke-width: 1.8px;
+    fill: transparent;
+    stroke-line-cap: round;
+    stroke-line-join: round;
+}
+
+export component Keycap inherits Rectangle {
+    in property <string> label;
+    in property <bool> large;
+    height: root.large ? 34px : 18px;
+    width: max(self.height, label-text.preferred-width + (root.large ? 22px : 10px));
+    border-radius: root.large ? 7px : 4px;
+    background: Theme.raised;
+    border-width: 1px;
+    border-color: Theme.stroke-strong;
+    drop-shadow-blur: root.large ? 0px : 0px;
+    label-text := Text {
+        text: root.label;
+        font-size: root.large ? 15px : 10.5px;
+        font-weight: root.large ? 600 : 400;
+        font-family: Theme.font;
+        color: root.large ? Theme.text : Theme.text-2;
+    }
+}
+
+export component Button inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary;
+    in property <bool> enabled: true;
+    // It opens a menu.
+    in property <bool> chevron;
+    callback clicked();
+    height: 32px;
+    width: max(84px, label-text.preferred-width + (root.chevron ? 48px : 32px));
+    border-radius: 7px;
+    opacity: root.enabled ? 1 : 0.45;
+    background: root.primary
+        ? (touch.pressed ? Theme.accent.darker(15%) : touch.has-hover ? Theme.accent.brighter(8%) : Theme.accent)
+        : (touch.pressed ? Theme.selected : touch.has-hover ? Theme.hover : Theme.raised);
+    border-width: root.primary ? 0px : 1px;
+    border-color: Theme.stroke;
+    animate background { duration: Theme.quick; }
+    label-text := Text {
+        x: (parent.width - self.width - (root.chevron ? 16px : 0px)) / 2;
+        text: root.label;
+        font-size: 13px;
+        font-weight: root.primary ? 600 : 400;
+        color: root.primary ? Theme.on-accent : Theme.text;
+    }
+    if root.chevron: Glyph {
+        x: label-text.x + label-text.width + 4px;
+        width: 12px;
+        height: 12px;
+        commands: "M6 9l6 6l6-6";
+        stroke: Theme.text-2;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    @children
+}
+
+export component Link inherits Text {
+    callback clicked();
+    font-size: 12.5px;
+    font-weight: 600;
+    color: link-touch.has-hover ? Theme.text : Theme.accent;
+    link-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component Switch inherits Rectangle {
+    in property <bool> on;
+    callback toggled(bool);
+    width: 40px;
+    height: 20px;
+    border-radius: 10px;
+    background: root.on ? Theme.accent : transparent;
+    border-width: root.on ? 0px : 1px;
+    border-color: Theme.text-3;
+    animate background { duration: Theme.quick; }
+    knob := Rectangle {
+        width: root.on ? 12px : 10px;
+        height: self.width;
+        border-radius: self.width / 2;
+        x: root.on ? parent.width - self.width - 4px : 5px;
+        y: (parent.height - self.height) / 2;
+        background: root.on ? Theme.on-accent : Theme.text-2;
+        animate x, width { duration: Theme.quick; easing: ease-out; }
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(!root.on); }
+    }
+}
+
+export component Check inherits Rectangle {
+    in property <bool> on;
+    callback toggled(bool);
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    background: root.on ? Theme.accent : transparent;
+    border-width: root.on ? 0px : 1px;
+    border-color: Theme.text-3;
+    animate background { duration: Theme.quick; }
+    if root.on: Glyph {
+        width: root.width * 0.78;
+        height: root.height * 0.78;
+        commands: "M5 12l5 5l9-10";
+        stroke: Theme.on-accent;
+        stroke-width: 2.4px;
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(!root.on); }
+    }
+}
+
+/// A page's part arriving: it fades in and rises a little, `order` steps after the page opened. Quick, and the steps
+/// short: the whole page is in within a quarter of a second (slower, it felt like waiting for it). In a conditional (`if`)
+/// or repeated element it runs every time the element appears, so it wraps whole blocks, not their rows: pieces of uneven
+/// size arriving one by one look jittery, and a row added later would wait its turn. Without Windows' animation effects
+/// it's just there.
+export component Reveal inherits Rectangle {
+    in property <int> order;
+    property <float> shown: 0;
+    init => { self.shown = 1; }
+    animate shown {
+        duration: Theme.animate ? 150ms : 0ms;
+        delay: Theme.animate ? root.order * 25ms : 0ms;
+        easing: cubic-bezier(0.2, 0.75, 0.25, 1);
+    }
+    opacity: self.shown;
+    // (A child with its own `y` doesn't lend its size to its parent, so it's passed on by hand.)
+    min-width: inner.min-width;
+    preferred-width: inner.preferred-width;
+    min-height: inner.min-height;
+    preferred-height: inner.preferred-height;
+    inner := VerticalLayout {
+        y: (1 - root.shown) * 4px;
+        @children
+    }
+}
+
+/// A row of a `Menu`.
+export struct MenuRow {
+    label: string,
+    // After the label, more quietly: "until 9:30 PM".
+    note: string,
+    checked: bool,
+    // A hairline under it.
+    line: bool,
+}
+
+/// A menu of the app's own, in the popovers' style: the popover color and a hairline, closed by a click elsewhere or Esc,
+/// with the arrow keys and Enter. It goes inside what opens it, and opens below it, or above it with `upward`.
+export component Menu inherits Rectangle {
+    in property <[MenuRow]> rows;
+    in property <length> menu-width: 240px;
+    // Its right edge under the opener's, rather than its left.
+    in property <bool> from-right;
+    // (Reckoned from its rows: an upward menu has no hairlines.)
+    in property <bool> upward;
+    // With room for a check beside each row.
+    in property <bool> checks;
+    callback chosen(int);
+    public function open() {
+        root.active = -1;
+        popup.show();
+    }
+    property <length> row-height: 30px;
+    property <int> active: -1;
+    property <int> closing: Theme.menus-closed;
+    changed closing => { popup.close(); }
+    function choose(index: int) {
+        root.chosen(index);
+        popup.close();
+    }
+    popup := PopupWindow {
+        close-policy: close-on-click-outside;
+        x: root.from-right ? root.width - root.menu-width : 0px;
+        y: root.upward ? -(root.rows.length * root.row-height + 12px) - 6px : root.height + 6px;
+        width: root.menu-width;
+        Rectangle {
+            property <float> shown: 0;
+            init => { self.shown = 1; }
+            animate shown { duration: Theme.quick; }
+            opacity: self.shown;
+            border-radius: 10px;
+            background: Theme.popover;
+            border-width: 1px;
+            border-color: Theme.stroke-strong;
+            drop-shadow-blur: 18px;
+            drop-shadow-offset-y: 4px;
+            drop-shadow-color: #00000050;
+            FocusScope {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                height: parent.height;
+                init => { self.focus(); }
+                key-pressed(event) => {
+                    if (event.text == Key.Escape) { popup.close(); return accept; }
+                    if (event.text == Key.DownArrow) { root.active = mod(root.active + 1, root.rows.length); return accept; }
+                    if (event.text == Key.UpArrow) { root.active = mod(max(root.active, 0) - 1 + root.rows.length, root.rows.length); return accept; }
+                    if (event.text == Key.Return && root.active >= 0) { root.choose(root.active); return accept; }
+                    accept
+                }
+            }
+            VerticalLayout {
+                padding: 6px;
+                for row[index] in root.rows: VerticalLayout {
+                    Rectangle {
+                        height: root.row-height;
+                        border-radius: 6px;
+                        background: index == root.active ? Theme.selected : transparent;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 8px;
+                            if root.checks: Rectangle {
+                                width: 14px;
+                                if row.checked: Glyph {
+                                    width: 14px;
+                                    height: 14px;
+                                    commands: "M5 12l5 5l9-10";
+                                    stroke-width: 2.4px;
+                                    stroke: Theme.accent;
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 4px;
+                                Text { text: row.label; font-size: 13px; color: Theme.text; vertical-alignment: center; overflow: elide; }
+                                if row.note != "": Text { text: "· " + row.note; font-size: 12.5px; color: Theme.text-2; vertical-alignment: center; }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            changed has-hover => {
+                                if (self.has-hover) { root.active = index; } else if (root.active == index) { root.active = -1; }
+                            }
+                            clicked => { root.choose(index); }
+                        }
+                    }
+                    if row.line: Rectangle {
+                        height: 9px;
+                        Rectangle { height: 1px; background: Theme.divider; }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A slim progress bar. Below zero it has no measure: a short piece travels back and forth.
+export component Bar inherits Rectangle {
+    in property <float> progress;
+    height: 5px;
+    border-radius: 2.5px;
+    background: Theme.divider;
+    clip: true;
+    if root.progress >= 0: Rectangle {
+        x: 0px;
+        width: parent.width * clamp(root.progress, 0, 1);
+        border-radius: 2.5px;
+        background: Theme.accent;
+        animate width { duration: Theme.animate ? 300ms : 0ms; easing: ease-out; }
+    }
+    if root.progress < 0: Rectangle {
+        property <float> phase: Theme.animate ? mod(animation-tick() / 1400ms, 1) : 0.5;
+        width: parent.width * 0.3;
+        x: (parent.width - self.width) * (0.5 - 0.5 * cos(self.phase * 360deg));
+        border-radius: 2.5px;
+        background: Theme.accent;
+    }
+}
+
+/// Where a number will be once it's counted.
+export component Skeleton inherits Rectangle {
+    height: 12px;
+    border-radius: 4px;
+    background: Theme.stroke-strong;
+    opacity: Theme.animate ? 0.55 + 0.45 * sin(mod(animation-tick() / 1400ms, 1) * 360deg) : 0.8;
+}
+
+/// A row of a settings page: what it is on the left, its control on the right.
+/// A small pill beside a title: "Experimental".
+export component Badge inherits Rectangle {
+    in property <string> label;
+    height: 18px;
+    width: badge-text.preferred-width + 14px;
+    border-radius: 9px;
+    background: Theme.experimental-soft;
+    border-width: 1px;
+    border-color: Theme.experimental.with-alpha(0.4);
+    badge-text := Text {
+        text: root.label;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        color: Theme.experimental;
+        vertical-alignment: center;
+    }
+}
+
+export component SettingRow inherits Rectangle {
+    in property <string> title;
+    in property <string> detail;
+    in property <bool> compact;
+    // A badge after the title ("EXPERIMENTAL").
+    in property <string> badge;
+    // The layouts here give wrapped text one line's height, so the row works out its own: its texts' heights at the
+    // width they really have (the row's, less its padding and what's at its right), measured off-layout.
+    property <length> text-width: max(1px, root.width - 32px - 16px - side.preferred-width);
+    badge-measure := Badge { visible: false; label: root.badge; }
+    title-line := Text { visible: false; text: root.title; font-size: 13.5px; }
+    // With a badge, the title takes only what it needs and the badge sits right after it; when both don't fit on one
+    // line, the badge goes under the title.
+    property <bool> badge-inline: title-line.preferred-width + 8px + badge-measure.width <= root.text-width;
+    property <length> badge-below: root.badge != "" && !root.badge-inline ? 4px + badge-measure.height : 0px;
+    property <length> title-width: root.badge != "" && root.badge-inline ? title-line.preferred-width + 1px : root.text-width;
+    title-measure := Text { visible: false; width: root.title-width; text: root.title; font-size: 13.5px; wrap: word-wrap; }
+    detail-measure := Text { visible: false; width: root.text-width; text: root.detail; font-size: 12px; wrap: word-wrap; }
+    min-height: max(root.compact ? 44px : 60px,
+        20px + title-measure.preferred-height + root.badge-below + (root.detail != "" ? 3px + detail-measure.preferred-height : 0px));
+    border-radius: Theme.radius;
+    background: Theme.raised;
+    border-width: 1px;
+    border-color: Theme.divider;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 16px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            // Placed by hand: its size is said here, not worked out from the title's (which depends on the row's).
+            Rectangle {
+                min-width: 0px;
+                preferred-width: 0px;
+                height: title-measure.preferred-height + root.badge-below;
+                Text { x: 0px; y: 0px; width: root.title-width; height: title-measure.preferred-height; text: root.title; font-size: 13.5px; color: Theme.text; wrap: word-wrap; }
+                if root.badge != "": Badge {
+                    x: root.badge-inline ? title-line.preferred-width + 8px : 0px;
+                    y: root.badge-inline ? 0px : title-measure.preferred-height + 4px;
+                    label: root.badge;
+                }
+            }
+            if root.detail != "": Text { text: root.detail; font-size: 12px; color: Theme.text-2; wrap: word-wrap; height: detail-measure.preferred-height; }
+        }
+        side := HorizontalLayout {
+            alignment: end;
+            horizontal-stretch: 0;
+            VerticalLayout {
+                alignment: center;
+                @children
+            }
+        }
+    }
+}
+
+export component Segmented inherits Rectangle {
+    in property <[string]> options;
+    in property <int> selected;
+    callback chosen(int);
+    height: 30px;
+    border-radius: 7px;
+    background: Theme.field;
+    border-width: 1px;
+    border-color: Theme.stroke;
+    HorizontalLayout {
+        padding: 2px;
+        spacing: 2px;
+        for option[index] in root.options: Rectangle {
+            width: option-text.preferred-width + 24px;
+            border-radius: 5px;
+            background: index == root.selected ? Theme.chip-on : option-touch.has-hover ? Theme.hover : transparent;
+            animate background { duration: Theme.quick; }
+            option-text := Text {
+                text: option;
+                font-size: 12.5px;
+                font-weight: index == root.selected ? 600 : 400;
+                color: index == root.selected ? Theme.chip-on-text : Theme.text-2;
+            }
+            option-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.chosen(index); }
+            }
+        }
+    }
+}
+
+/// A removable chip ("node_modules ×").
+export component Tag inherits Rectangle {
+    in property <string> label;
+    callback removed();
+    height: 26px;
+    width: tag-row.preferred-width + 18px;
+    border-radius: 13px;
+    background: Theme.raised;
+    border-width: 1px;
+    border-color: Theme.stroke;
+    tag-row := HorizontalLayout {
+        x: 12px;
+        width: self.preferred-width;
+        spacing: 4px;
+        Text { text: root.label; font-size: 12px; color: Theme.text-2; vertical-alignment: center; }
+        Rectangle {
+            width: 16px;
+            Glyph {
+                width: 12px;
+                height: 12px;
+                commands: "M6 6l12 12 M18 6l-12 12";
+                stroke: x-touch.has-hover ? Theme.text : Theme.text-3;
+            }
+            x-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.removed(); }
+            }
+        }
+    }
+}
+
+/// A one-line text field in the house style.
+export component Field inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    callback accepted(string);
+    height: 32px;
+    border-radius: 7px;
+    background: input.has-focus ? Theme.field-focus : Theme.field;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.stroke;
+    input := TextInput {
+        x: 10px;
+        width: parent.width - 20px;
+        height: parent.height;
+        text <=> root.text;
+        font-size: 13px;
+        color: Theme.text;
+        vertical-alignment: center;
+        single-line: true;
+        selection-background-color: Theme.accent-soft;
+        accepted => { root.accepted(self.text); }
+        Text {
+            visible: root.text == "";
+            text: root.placeholder;
+            font-size: 13px;
+            color: Theme.text-3;
+            vertical-alignment: center;
+            x: 0px;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+}

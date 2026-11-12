@@ -1,0 +1,34 @@
+#pragma code_page(65001)
+
+1 ICON "../brand/excavate.ico"
+2 ICON "../brand/tray-dark.ico"
+3 ICON "../brand/tray-light.ico"
+
+1 24 "excavate.manifest"
+
+// VERSION_NUMBERS and VERSION_TEXT: the version in Cargo.toml, passed by build.rs.
+1 VERSIONINFO
+FILEVERSION VERSION_NUMBERS
+PRODUCTVERSION VERSION_NUMBERS
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "Excavate"
+      VALUE "FileDescription", "Excavate"
+      VALUE "FileVersion", VERSION_TEXT
+      VALUE "InternalName", "excavate"
+      VALUE "OriginalFilename", "excavate.exe"
+      VALUE "ProductName", "Excavate"
+      VALUE "ProductVersion", VERSION_TEXT
+      VALUE "LegalCopyright", "MIT License"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

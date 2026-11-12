@@ -1,0 +1,9 @@
+documents: 1000 queries over 3000 files
+  100: first 66, top ten 91
+  200: first 136, top ten 182
+  300: first 198, top ten 269
+  400: first 264, top ten 360
+  500: first 329, top ten 451
+  600: first 395, top ten 537
+first 442 of 662, top ten 594
+written: finding-documents-balanced-3000.json

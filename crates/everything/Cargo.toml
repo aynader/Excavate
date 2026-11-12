@@ -1,0 +1,12 @@
+[package]
+name = "everything"
+description = "Name and path search through voidtools' Everything, by its SDKs compiled in (1.4 IPC and 1.5 pipe)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+
+[build-dependencies]
+cc = "1"

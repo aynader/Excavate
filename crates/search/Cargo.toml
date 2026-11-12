@@ -1,0 +1,13 @@
+[package]
+name = "search"
+description = "Excavate's search logic: filters, the hot tier, ranking, and the plan of queries sent to Everything."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+everything.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+memchr = "2"

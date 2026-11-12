@@ -1,0 +1,23 @@
+speech: 200 of 2620 files (a seeded sample), the quick choice, 5 runs
+warm-up (downloads the models the first time)
+  1 min: 40 of 200 done, reading
+  2 min: 96 of 200 done, reading
+  3 min: 154 of 200 done, reading
+run 1/5: 221.9 s, 200 of 200 done (0 failed), 438.1 s of CPU, peak 1657 MB
+  1 min: 41 of 200 done, reading
+  2 min: 96 of 200 done, reading
+  3 min: 154 of 200 done, reading
+run 2/5: 221.1 s, 200 of 200 done (0 failed), 437.6 s of CPU, peak 1658 MB
+  1 min: 40 of 200 done, reading
+  2 min: 94 of 200 done, reading
+  3 min: 151 of 200 done, reading
+run 3/5: 225.9 s, 200 of 200 done (0 failed), 447.0 s of CPU, peak 1658 MB
+  1 min: 40 of 200 done, reading
+  2 min: 96 of 200 done, reading
+  3 min: 151 of 200 done, reading
+run 4/5: 223.1 s, 200 of 200 done (0 failed), 443.5 s of CPU, peak 1658 MB
+  1 min: 40 of 200 done, reading
+  2 min: 95 of 200 done, reading
+  3 min: 151 of 200 done, reading
+run 5/5: 222.8 s, 200 of 200 done (0 failed), 440.1 s of CPU, peak 1658 MB
+written: C:\measure\bench\reading-speech-quick-200-5.json

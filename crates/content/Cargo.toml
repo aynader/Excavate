@@ -1,0 +1,15 @@
+[package]
+name = "content"
+description = "Excavate's full-text index of what's inside files: the schema, the tokenizer, writing and searching."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+tantivy = { version = "0.27", default-features = false, features = ["mmap", "zstd-compression"] }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+privacy.workspace = true

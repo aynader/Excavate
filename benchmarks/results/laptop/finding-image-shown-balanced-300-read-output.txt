@@ -1,0 +1,4 @@
+image-shown: 300 of 5000 files (a seeded sample), the balanced choice, 1 runs
+warm-up (downloads the models the first time)
+run 1/1: 37.4 s, 300 of 300 done (0 failed), 101.5 s of CPU, peak 2576 MB
+written: finding-image-shown-balanced-300-read.json

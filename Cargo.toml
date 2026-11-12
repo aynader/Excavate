@@ -1,0 +1,97 @@
+[workspace]
+resolver = "3"
+members = ["app", "indexer", "crates/engine", "crates/config", "crates/content", "crates/extract", "crates/privacy", "crates/everything", "crates/mark", "crates/winsys", "crates/search", "crates/sweep", "crates/seeing", "benchmarks/measure"]
+default-members = ["app", "indexer"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.95"
+authors = ["Amr Nader"]
+
+[workspace.dependencies]
+everything = { path = "crates/everything" }
+engine = { path = "crates/engine" }
+mark = { path = "crates/mark" }
+winsys = { path = "crates/winsys" }
+search = { path = "crates/search" }
+sweep = { path = "crates/sweep" }
+seeing = { path = "crates/seeing" }
+config = { path = "crates/config" }
+content = { path = "crates/content" }
+extract = { path = "crates/extract" }
+privacy = { path = "crates/privacy" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+windows-future = "0.3"
+windows = { version = "0.62", features = [
+    "Data_Pdf",
+    "Foundation",
+    "Security_Credentials_UI",
+    "Storage",
+    "Storage_Streams",
+    "Win32_Devices_Display",
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Imaging",
+    "Win32_Media_Audio",
+    "Win32_Media_MediaFoundation",
+    "Win32_Networking_WinHttp",
+    "Win32_Security",
+    "Win32_Security_Cryptography",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_DataExchange",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Performance",
+    "Win32_System_Power",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_System_Time",
+    "Win32_System_WinRT",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+debug = false
+
+# Fast incremental builds while working, but optimized dependencies (Slint's renderer, image decoding). Little debug
+# information: full debug info came to over 550 MB of .pdb files per build.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+# Slint 1.18.1's frame throttle keeps a refresh-rate timer running for a hidden window with a redraw pending (a hidden
+# window never gets the RedrawRequested that would clear it): 60-240 wake-ups a second while the popup is hidden.
+# Patched in vendor/ (frame_throttle.rs only); drop this when a Slint update fixes it.
+[patch.crates-io]
+i-slint-backend-winit = { path = "vendor/i-slint-backend-winit" }

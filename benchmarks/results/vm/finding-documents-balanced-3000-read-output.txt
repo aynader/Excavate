@@ -1,0 +1,7 @@
+documents: 3000 of 16797 files (a seeded sample), the balanced choice, 1 runs
+warm-up (downloads the models the first time)
+  1 min: 850 of 2066 done, reading
+  2 min: 1309 of 2066 done, reading
+  3 min: 1994 of 2066 done, reading
+run 1/1: 186.7 s, 2066 of 2066 done (5 failed), 208.5 s of CPU, peak 691 MB
+written: C:\measure\bench\finding-documents-balanced-3000-read.json

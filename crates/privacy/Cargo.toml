@@ -1,0 +1,10 @@
+[package]
+name = "privacy"
+description = "Finds secrets in text (cards, IBANs, keys, passwords, IDs, seed phrases) to blur in previews and keep out of the index."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+regex-lite = "0.1"

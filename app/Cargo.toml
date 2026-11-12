@@ -1,0 +1,38 @@
+[package]
+name = "excavate"
+description = "Excavate: search anything on your PC."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+slint = { version = "1.18", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "backend-winit",
+    "renderer-femtovg",
+    "renderer-software",
+    "accessibility",
+    "unstable-winit-030",
+    "raw-window-handle-06",
+] }
+config.workspace = true
+content.workspace = true
+mark.workspace = true
+sweep.workspace = true
+privacy.workspace = true
+everything.workspace = true
+engine.workspace = true
+search.workspace = true
+winsys.workspace = true
+windows.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+raw-window-handle = "0.6"
+sha2 = "0.11"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+
+[build-dependencies]
+slint-build = "1.18"
+embed-resource = "3"

@@ -1,0 +1,8 @@
+video-shown: 100 of 2990 files (a seeded sample), the quick choice, 5 runs
+warm-up (downloads the models the first time)
+run 1/5: 15.3 s, 100 of 100 done (0 failed), 10.9 s of CPU, peak 1162 MB
+run 2/5: 13.3 s, 100 of 100 done (0 failed), 12.0 s of CPU, peak 1180 MB
+run 3/5: 14.3 s, 100 of 100 done (0 failed), 11.3 s of CPU, peak 1156 MB
+run 4/5: 14.3 s, 100 of 100 done (0 failed), 11.0 s of CPU, peak 1163 MB
+run 5/5: 14.3 s, 100 of 100 done (0 failed), 11.9 s of CPU, peak 1173 MB
+written: reading-video-shown-quick-100-5.json

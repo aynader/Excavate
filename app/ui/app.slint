@@ -1,0 +1,1552 @@
+// The popup: a search field, kind filters, ranked results, a preview, and a footer with what's happening and the
+// keys that matter. Everything behavioral lives in Rust; this file is layout, look and key routing.
+
+import { ListView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { Bar, Glyph, Keycap, Menu } from "widgets.slint";
+export { Theme }
+export { SettingsWindow, FolderItem, ReadingCard, TagRow, DemoRow } from "settings.slint";
+
+export struct Row {
+    name: styled-text,
+    plain-name: string,
+    detail: string,
+    // Found by its contents: where, and the words that matched (instead of the folder).
+    snippet: styled-text,
+    has-snippet: bool,
+    // The snippet reads right to left (Arabic, Hebrew): it starts at the row's right edge, cut off on its left.
+    rtl: bool,
+    meta: string,
+    badge: string,
+    icon: image,
+    has-icon: bool,
+}
+
+export struct Preview {
+    visible: bool,
+    title: string,
+    kind: string,
+    facts: string,
+    path: string,
+    image: image,
+    has-image: bool,
+    text: string,
+    has-text: bool,
+    // "Text in this image", "Where it matched" (the text comes from the index), or empty (the file's start).
+    text-label: string,
+    // "A password is hidden": what privacy covered in this preview.
+    hidden: string,
+    can-reveal: bool,
+    // An image or a video, and nothing's being presented.
+    can-enlarge: bool,
+    // What the preview plays: 0 nothing, 1 a video muted, 2 a video with its sound, 3 a recording stopped, 4 a
+    // recording playing (app.rs, PLAYER_*). Clicking a video enlarges it (its speaker turns the sound on or off);
+    // clicking a recording plays or stops it.
+    player: int,
+    // Where it is (0 to 1), and "1:23 / 4:05".
+    progress: float,
+    time: string,
+}
+
+/// A small breathing core: the indexer is at work.
+component ReadingPulse inherits Rectangle {
+    // Paused: two still bars instead.
+    in property <bool> paused;
+    property <float> breath: Theme.animate && !root.paused ? 0.5 - 0.5 * cos(mod(animation-tick() / 1600ms, 1) * 360deg) : 1;
+    width: 9px;
+    height: 9px;
+    if !root.paused: Rectangle {
+        width: 9px;
+        height: 9px;
+        border-radius: 4.5px;
+        background: Theme.accent;
+        opacity: 0.18 + 0.2 * root.breath;
+    }
+    if !root.paused: Rectangle {
+        width: 5px;
+        height: 5px;
+        border-radius: 2.5px;
+        background: Theme.accent;
+        opacity: 0.65 + 0.35 * root.breath;
+    }
+    if root.paused: Rectangle {
+        x: 1px;
+        width: 2.5px;
+        height: 9px;
+        border-radius: 1px;
+        background: Theme.accent;
+    }
+    if root.paused: Rectangle {
+        x: 5.5px;
+        width: 2.5px;
+        height: 9px;
+        border-radius: 1px;
+        background: Theme.accent;
+    }
+}
+
+/// How reading is going, above the recent files.
+component ProgressCard inherits Rectangle {
+    in property <string> label;
+    in property <float> progress;
+    in property <bool> paused;
+    callback clicked();
+    border-radius: 8px;
+    background: touch.has-hover ? Theme.hover : Theme.raised;
+    border-width: 1px;
+    border-color: Theme.divider;
+    VerticalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        alignment: center;
+        spacing: 6px;
+        HorizontalLayout {
+            spacing: 8px;
+            ReadingPulse { paused: root.paused; y: (parent.height - self.height) / 2; }
+            Text { text: root.label; font-size: 12.5px; color: Theme.text; overflow: elide; horizontal-stretch: 1; }
+            if root.progress >= 0: Text { text: floor(root.progress * 100) + "%"; font-size: 11.5px; color: Theme.text-2; horizontal-stretch: 0; }
+        }
+        Bar { height: 4px; progress: root.progress; }
+    }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component Hint inherits HorizontalLayout {
+    in property <string> key;
+    in property <string> action;
+    spacing: 6px;
+    alignment: start;
+    Keycap { label: root.key; y: (parent.height - self.height) / 2; }
+    Text { text: root.action; font-size: 11.5px; color: Theme.text-3; vertical-alignment: center; }
+}
+
+component Chip inherits Rectangle {
+    in property <string> label;
+    in property <bool> on;
+    callback clicked();
+    height: 26px;
+    width: label-text.preferred-width + 22px;
+    border-radius: 13px;
+    background: on ? Theme.chip-on : touch.has-hover ? Theme.hover : transparent;
+    border-width: on ? 0px : 1px;
+    border-color: Theme.stroke;
+    animate background { duration: Theme.quick; }
+    label-text := Text {
+        text: root.label;
+        font-size: 12.5px;
+        font-family: Theme.font;
+        font-weight: root.on ? 600 : 400;
+        color: root.on ? Theme.chip-on-text : Theme.text-2;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component ResultRow inherits Rectangle {
+    in property <Row> data;
+    in property <bool> selected;
+    callback clicked();
+    callback double-clicked();
+    callback right-clicked(length, length);
+    height: Theme.row-height;
+
+    background-rect := Rectangle {
+        x: 6px;
+        width: parent.width - 12px;
+        border-radius: 8px;
+        background: root.selected ? Theme.selected : touch.has-hover ? Theme.hover : transparent;
+        animate background { duration: Theme.quick; }
+
+        // The selection's mark: a short amber bar, as beside the page that's open in settings.
+        Rectangle {
+            x: 4px;
+            width: 4px;
+            height: root.selected ? 16px : 0px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 2px;
+            background: Theme.accent;
+            animate height { duration: Theme.quick; easing: ease-out; }
+        }
+
+        HorizontalLayout {
+            padding-left: 14px;
+            padding-right: 14px;
+            spacing: 12px;
+
+            Rectangle {
+                width: 32px;
+                Image {
+                    source: root.data.icon;
+                    visible: root.data.has-icon;
+                    width: 32px;
+                    height: 32px;
+                    image-fit: contain;
+                    image-rendering: smooth;
+                }
+                Rectangle {
+                    visible: !root.data.has-icon;
+                    width: 26px;
+                    height: 30px;
+                    border-radius: 4px;
+                    background: Theme.hover;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Rectangle {
+                        clip: true;
+                        height: 20px;
+                        StyledText {
+                            x: 0px;
+                            width: 2000px;
+                            height: parent.height;
+                            text: root.data.name;
+                            default-color: Theme.text;
+                            default-font-size: 14px;
+                            default-font-family: Theme.font;
+                            vertical-alignment: center;
+                            max-lines: 1;
+                        }
+                    }
+                    if root.data.badge != "": Rectangle {
+                        height: 18px;
+                        y: 1px;
+                        width: badge-text.preferred-width + 12px;
+                        border-radius: 9px;
+                        background: Theme.accent-soft;
+                        horizontal-stretch: 0;
+                        badge-text := Text {
+                            text: root.data.badge;
+                            font-size: 10.5px;
+                            font-weight: 600;
+                            color: Theme.accent;
+                        }
+                    }
+                }
+                if !root.data.has-snippet: Text {
+                    text: root.data.detail;
+                    font-size: 12px;
+                    font-family: Theme.font;
+                    color: Theme.text-3;
+                    overflow: elide;
+                }
+                if root.data.has-snippet: Rectangle {
+                    clip: true;
+                    height: 16px;
+                    StyledText {
+                        x: root.data.rtl ? parent.width - self.width : 0px;
+                        width: 2000px;
+                        height: parent.height;
+                        horizontal-alignment: root.data.rtl ? right : left;
+                        text: root.data.snippet;
+                        default-color: Theme.text-2;
+                        default-font-size: 12px;
+                        default-font-family: Theme.font;
+                        vertical-alignment: center;
+                        max-lines: 1;
+                    }
+                }
+            }
+
+            Text {
+                text: root.data.meta;
+                font-size: 11.5px;
+                font-family: Theme.font;
+                color: Theme.text-3;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+                horizontal-stretch: 0;
+                min-width: self.preferred-width;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+        double-clicked => { root.double-clicked(); }
+        pointer-event(event) => {
+            if (event.button == PointerEventButton.right && event.kind == PointerEventKind.up) {
+                root.right-clicked(self.mouse-x, self.mouse-y);
+            }
+        }
+    }
+}
+
+/// One of the search field's toggles: amber while it's on.
+component FieldToggle inherits Rectangle {
+    in property <string> label;
+    // Instead of a label: an image with a T, for words read from images; or a drawing of its own.
+    in property <bool> image;
+    in property <string> glyph;
+    in property <bool> on;
+    callback clicked();
+    callback hovered(bool);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: root.on ? Theme.accent-soft : touch.has-hover ? Theme.hover : transparent;
+    if root.label != "": Text {
+        text: root.label;
+        font-family: Theme.mono-font;
+        font-size: 12px;
+        font-weight: 600;
+        color: root.on ? Theme.accent : Theme.text-2;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+    if root.image: Glyph {
+        width: 18px;
+        height: 18px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        commands: "M4 5h16v14H4z M8.5 9h7 M12 9v6.5";
+        stroke: root.on ? Theme.accent : Theme.text-2;
+    }
+    if root.glyph != "": Glyph {
+        width: 18px;
+        height: 18px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        commands: root.glyph;
+        stroke: root.on ? Theme.accent : Theme.text-2;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        changed has-hover => { root.hovered(self.has-hover); }
+    }
+}
+
+component PreviewPane inherits Rectangle {
+    in property <Preview> preview;
+    // Its height, as the window's gives it: the image's own height depends on this, so it can't come from the layout.
+    in property <length> room;
+    // How tall its image may be, by the size chosen in Settings.
+    in property <length> image-most: 188px;
+    // Its image's corner dragged: how tall it's made, until the
+    // popup opens again (0: as Settings has it). The width goes to the popup, which also takes the edge's drags.
+    in-out property <length> image-dragged: 0px;
+    // The pointer's place across the popup while the corner is dragged, and where the far edge was when it was taken.
+    callback corner-moved(length);
+    callback corner-taken(length);
+    callback corner-reset();
+    // The corner let go (or double-clicked): the size is kept.
+    callback corner-done();
+    // What room is left for the image: the rest of the pane, as it is, under it.
+    property <length> image-room: root.room - 112px - title-text.preferred-height - kind-text.preferred-height - path-text.preferred-height - (root.preview.hidden != "" ? 26px : 0px) - (root.preview.has-text ? 110px : 0px);
+    callback open();
+    callback reveal();
+    callback reveal-secrets();
+    callback enlarge();
+    callback media-clicked();
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+
+        image-box := Rectangle {
+            // Gives way in a short window, to what's under it; as tall as dragged, while there's room.
+            height: root.image-dragged > 0 ? clamp(root.image-dragged, 96px, max(96px, root.image-room)) : clamp(root.image-room, 96px, root.image-most);
+            border-radius: Theme.radius;
+            background: Theme.field;
+            border-width: 1px;
+            border-color: Theme.divider;
+            clip: true;
+            Image {
+                source: root.preview.image;
+                // It arrives a moment after the row is chosen: in quickly, out at once.
+                opacity: root.preview.has-image ? 1 : 0;
+                animate opacity { duration: root.preview.has-image ? Theme.quick : 0ms; }
+                width: parent.width - 16px;
+                height: parent.height - 16px;
+                image-fit: contain;
+                image-rendering: smooth;
+            }
+            enlarge-touch := TouchArea {
+                enabled: root.preview.can-enlarge || root.preview.player >= 3;
+                mouse-cursor: self.enabled ? pointer : default;
+                clicked => {
+                    if (root.preview.player >= 3) { root.media-clicked(); } else { root.enlarge(); }
+                }
+            }
+            // A recording: play or stop, in the middle.
+            if root.preview.player >= 3: Rectangle {
+                width: 44px;
+                height: 44px;
+                border-radius: 22px;
+                background: enlarge-touch.has-hover ? Theme.accent : Theme.popover;
+                border-width: 1px;
+                border-color: Theme.stroke-strong;
+                Glyph {
+                    width: 20px;
+                    height: 20px;
+                    x: (parent.width - self.width) / 2 + (root.preview.player == 3 ? 1px : 0px);
+                    commands: root.preview.player == 3 ? "M7 4l13 8-13 8z" : "M8 5v14 M16 5v14";
+                    stroke: enlarge-touch.has-hover ? Theme.on-accent : Theme.text;
+                    stroke-width: 2.2px;
+                }
+            }
+            // A video: its sound off or on, in the corner.
+            if root.preview.player == 1 || root.preview.player == 2: Rectangle {
+                x: parent.width - self.width - 7px;
+                y: parent.height - self.height - 13px;
+                width: 26px;
+                height: 26px;
+                border-radius: 6px;
+                background: sound-touch.has-hover ? Theme.accent : Theme.popover;
+                border-width: 1px;
+                border-color: sound-touch.has-hover ? Theme.accent : Theme.stroke-strong;
+                Glyph {
+                    width: 16px;
+                    height: 16px;
+                    // A speaker, struck through while muted, with waves when the sound is on.
+                    commands: root.preview.player == 1
+                        ? "M4 9h4l5-4v14l-5-4H4z M17 9l5 6 M22 9l-5 6"
+                        : "M4 9h4l5-4v14l-5-4H4z M16.5 8.5a5 5 0 0 1 0 7 M19.5 5.5a9 9 0 0 1 0 13";
+                    stroke: sound-touch.has-hover ? Theme.on-accent : Theme.text;
+                }
+                // Only here: a click anywhere else enlarges it.
+                sound-touch := TouchArea { mouse-cursor: pointer; clicked => { root.media-clicked(); } }
+            }
+            // The timeline, along the bottom: where it is, and the time.
+            if root.preview.player != 0: Rectangle {
+                y: parent.height - 4px;
+                height: 4px;
+                background: Theme.divider;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * root.preview.progress;
+                    background: Theme.accent;
+                }
+            }
+            if root.preview.player >= 3 && root.preview.time != "": Text {
+                x: 10px;
+                y: parent.height - self.height - 10px;
+                text: root.preview.time;
+                font-size: 11.5px;
+                color: Theme.text-2;
+            }
+            if root.preview.can-enlarge && enlarge-touch.has-hover: Rectangle {
+                x: parent.width - self.width - 7px;
+                y: 7px;
+                width: 26px;
+                height: 26px;
+                border-radius: 6px;
+                background: Theme.popover;
+                border-width: 1px;
+                border-color: Theme.stroke-strong;
+                Glyph {
+                    width: 16px;
+                    height: 16px;
+                    commands: "M14 4h6v6 M20 4l-7 7 M10 20H4v-6 M4 20l7-7";
+                    stroke: Theme.text;
+                }
+            }
+            // Its corner toward the results: dragged, the preview grows wider and its image taller (a window's corner).
+            // Two short lines show it while the pointer is over the image; double-click: back to Settings' size.
+            if enlarge-touch.has-hover || corner.has-hover || corner.pressed: Glyph {
+                x: 2px;
+                y: parent.height - self.height - 2px;
+                width: 14px;
+                height: 14px;
+                commands: "M4 8l12 12 M4 15l5 5";
+                stroke: corner.has-hover || corner.pressed ? Theme.accent : Theme.text-2;
+                stroke-width: 1.6px;
+            }
+            corner := TouchArea {
+                x: 0px;
+                y: parent.height - self.height;
+                width: 16px;
+                height: 16px;
+                mouse-cursor: nesw-resize;
+                // The image's height and the pointer's place when it was taken.
+                property <length> from-height;
+                property <length> from-y;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                        self.from-height = image-box.height;
+                        self.from-y = self.absolute-position.y + self.mouse-y;
+                        root.corner-taken(self.absolute-position.x + self.mouse-x);
+                    }
+                    if (event.kind == PointerEventKind.up && event.button == PointerEventButton.left) {
+                        root.corner-done();
+                    }
+                }
+                moved => {
+                    if (self.pressed) {
+                        root.image-dragged = max(96px, self.from-height + self.absolute-position.y + self.mouse-y - self.from-y);
+                        root.corner-moved(self.absolute-position.x + self.mouse-x);
+                    }
+                }
+                double-clicked => {
+                    root.image-dragged = 0px;
+                    root.corner-reset();
+                    root.corner-done();
+                }
+            }
+        }
+
+        title-text := Text {
+            text: root.preview.title;
+            font-size: 15px;
+            font-family: Theme.display-font;
+            font-weight: 600;
+            color: Theme.text;
+            wrap: word-wrap;
+            max-lines: 3;
+            overflow: elide;
+        }
+        kind-text := Text {
+            text: root.preview.kind + (root.preview.facts == "" ? "" : "  ·  " + root.preview.facts);
+            font-size: 12px;
+            color: Theme.text-2;
+            wrap: word-wrap;
+        }
+        path-text := Text {
+            text: root.preview.path;
+            font-size: 11.5px;
+            color: Theme.text-3;
+            wrap: char-wrap;
+            max-lines: 3;
+            overflow: elide;
+        }
+
+        if root.preview.hidden != "": HorizontalLayout {
+            spacing: 8px;
+            Glyph {
+                width: 14px;
+                height: 14px;
+                y: (parent.height - self.height) / 2;
+                // A lock.
+                commands: "M6 11h12v9H6z M8.5 11V8a3.5 3.5 0 0 1 7 0v3";
+                stroke: Theme.accent;
+            }
+            Text {
+                text: root.preview.hidden;
+                font-size: 11.5px;
+                color: Theme.text-2;
+                vertical-alignment: center;
+                wrap: word-wrap;
+                horizontal-stretch: 1;
+            }
+            if root.preview.can-reveal: Text {
+                text: "Reveal";
+                font-size: 11.5px;
+                font-weight: 600;
+                color: secrets-touch.has-hover ? Theme.text : Theme.accent;
+                vertical-alignment: center;
+                horizontal-stretch: 0;
+                secrets-touch := TouchArea { mouse-cursor: pointer; clicked => { root.reveal-secrets(); } }
+            }
+        }
+
+        if root.preview.text-label != "" && root.preview.has-text: Text {
+            text: root.preview.text-label;
+            font-size: 11px;
+            font-weight: 600;
+            color: Theme.text-3;
+        }
+
+        if root.preview.has-text: Rectangle {
+            vertical-stretch: 1;
+            // At least four lines, or a tall image left no room and the box showed empty.
+            min-height: 76px;
+            border-radius: 8px;
+            background: Theme.field;
+            border-width: 1px;
+            border-color: Theme.divider;
+            clip: true;
+            Text {
+                x: 10px;
+                y: 8px;
+                width: parent.width - 20px;
+                height: parent.height - 16px;
+                text: root.preview.text;
+                font-family: root.preview.text-label != "" ? Theme.font : Theme.mono-font;
+                font-size: root.preview.text-label != "" ? 12px : 11px;
+                color: Theme.text-2;
+                wrap: root.preview.text-label != "" ? word-wrap : no-wrap;
+                overflow: clip;
+                vertical-alignment: top;
+            }
+        }
+        if !root.preview.has-text: Rectangle { vertical-stretch: 1; }
+
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            Rectangle {
+                height: 30px;
+                width: open-text.preferred-width + 28px;
+                border-radius: 7px;
+                background: open-touch.has-hover ? Theme.text-2 : Theme.chip-on;
+                open-text := Text { text: "Open"; font-size: 12.5px; font-weight: 600; color: Theme.chip-on-text; }
+                open-touch := TouchArea { mouse-cursor: pointer; clicked => { root.open(); } }
+            }
+            Rectangle {
+                height: 30px;
+                width: reveal-text.preferred-width + 28px;
+                border-radius: 7px;
+                background: reveal-touch.has-hover ? Theme.hover : transparent;
+                border-width: 1px;
+                border-color: Theme.stroke;
+                reveal-text := Text { text: "Show in folder"; font-size: 12.5px; color: Theme.text; }
+                reveal-touch := TouchArea { mouse-cursor: pointer; clicked => { root.reveal(); } }
+            }
+        }
+    }
+}
+
+/// An image over the whole popup, to read it without leaving the search. The preview's small one shows at once, and the sharp one
+/// replaces it. The wheel zooms around the pointer, dragging moves around, and a click, or the size in the header, goes between
+/// fitting and actual size.
+component EnlargedView inherits Rectangle {
+    in property <Preview> preview;
+    // The sharp one, once it's here.
+    in property <image> sharp;
+    in property <bool> sharp-ready;
+    // The file's own size in pixels, once it's known. Until then the small one says what shape it is.
+    in property <int> file-width;
+    in property <int> file-height;
+    in property <int> position;
+    in property <int> count;
+    // How large it is, 1 being actual size. 0: to fit.
+    in-out property <float> zoom;
+    callback close();
+    // It changed size. Whether more may be on its way, from the wheel.
+    callback zoomed(bool);
+    callback reveal-secrets();
+    // A video's speaker was clicked.
+    callback media-clicked();
+    // A video plays here, zoomed like an image (decoded again at the size it's shown once the wheel rests); its
+    // speaker turns the sound on and off.
+    property <bool> video: root.preview.player == 1 || root.preview.player == 2;
+    property <int> known-width: root.file-width > 0 ? root.file-width : max(1, root.preview.image.width);
+    property <int> known-height: root.file-height > 0 ? root.file-height : max(1, root.preview.image.height);
+    // The stage's height, from the popup's: what the footer says depends on it, so it can't come from the layout.
+    property <length> room-height: self.height - 82px;
+    // Where its corner has been moved to, for while it's larger than the room.
+    property <length> moved-x;
+    property <length> moved-y;
+    // To this size, keeping what's at (x, y) of the stage where it is.
+    function zoom-to(to: float, x: length, y: length) {
+        root.moved-x = x - (x - stage.image-x) / stage.shown * to;
+        root.moved-y = y - (y - stage.image-y) / stage.shown * to;
+        root.zoom = abs(to - stage.fit) < 0.001 ? 0 : to;
+    }
+    function toggle(x: length, y: length) {
+        root.zoom-to(root.zoom > 0 ? stage.fit : 1, x, y);
+        root.zoomed(false);
+    }
+    function wheel(notches: float, x: length, y: length) {
+        let to = clamp(stage.shown * pow(1.25, notches), min(stage.fit, 1), 8);
+        // Actual size is a stop on the way.
+        root.zoom-to((stage.shown < 1 && to > 1) || (stage.shown > 1 && to < 1) ? 1 : to, x, y);
+        root.zoomed(true);
+    }
+    background: Theme.base;
+    property <float> shown: 0;
+    init => { self.shown = 1; }
+    animate shown { duration: Theme.quick; }
+    opacity: self.shown;
+    // Nothing beneath hears the pointer.
+    TouchArea {
+        scroll-event(event) => { accept }
+    }
+    VerticalLayout {
+        HorizontalLayout {
+            height: 44px;
+            padding-left: 18px;
+            padding-right: 10px;
+            spacing: 10px;
+            Text {
+                text: root.preview.title;
+                font-size: 14px;
+                font-family: Theme.display-font;
+                font-weight: 600;
+                color: Theme.text;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 0;
+                min-width: 80px;
+            }
+            Text {
+                text: root.position + " of " + root.count;
+                font-size: 12px;
+                color: Theme.text-3;
+                vertical-alignment: center;
+                horizontal-stretch: 0;
+            }
+            if root.preview.hidden != "": HorizontalLayout {
+                spacing: 6px;
+                horizontal-stretch: 0;
+                Glyph {
+                    width: 14px;
+                    height: 14px;
+                    y: (parent.height - self.height) / 2;
+                    commands: "M6 11h12v9H6z M8.5 11V8a3.5 3.5 0 0 1 7 0v3";
+                    stroke: Theme.accent;
+                }
+                Text { text: root.preview.hidden; font-size: 12px; color: Theme.text-2; vertical-alignment: center; }
+                if root.preview.can-reveal: Text {
+                    text: "Reveal";
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: reveal-touch.has-hover ? Theme.text : Theme.accent;
+                    vertical-alignment: center;
+                    reveal-touch := TouchArea { mouse-cursor: pointer; clicked => { root.reveal-secrets(); } }
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Rectangle {
+                width: size-text.preferred-width + 20px;
+                height: 26px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 7px;
+                background: size-touch.has-hover ? Theme.hover : transparent;
+                border-width: 1px;
+                border-color: Theme.stroke;
+                size-text := Text {
+                    text: root.zoom <= 0 ? "Fit" : abs(root.zoom - 1) < 0.001 ? "Actual size" : round(root.zoom * 100) + "%";
+                    font-size: 12px;
+                    color: Theme.text-2;
+                }
+                size-touch := TouchArea { mouse-cursor: pointer; clicked => { root.toggle(stage.width / 2, stage.height / 2); } }
+            }
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 7px;
+                background: close-touch.has-hover ? Theme.hover : transparent;
+                Glyph {
+                    width: 16px;
+                    height: 16px;
+                    commands: "M6 6l12 12 M18 6L6 18";
+                    stroke: Theme.text-2;
+                }
+                close-touch := TouchArea { mouse-cursor: pointer; clicked => { root.close(); } }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.divider; }
+        stage := Rectangle {
+            // To fit: as large as the room allows, up to twice its size.
+            property <float> fit: min(2, (root.width - 24px) / (root.known-width * 1phx), (root.room-height - 24px) / (root.known-height * 1phx));
+            property <float> shown: root.zoom > 0 ? root.zoom : self.fit;
+            // In whole pixels, as an image decoded for this size has: a pixel more and all of it would be stretched, and blurred.
+            property <length> image-width: max(1, floor(root.known-width * self.shown)) * 1phx;
+            property <length> image-height: max(1, floor(root.known-height * self.shown)) * 1phx;
+            // In the middle while it fits. Larger, where it's been moved to, with no empty room past its edges.
+            property <length> image-x: round((self.image-width <= root.width ? (root.width - self.image-width) / 2 : clamp(root.moved-x, root.width - self.image-width, 0px)) / 1phx) * 1phx;
+            property <length> image-y: round((self.image-height <= root.room-height ? (root.room-height - self.image-height) / 2 : clamp(root.moved-y, root.room-height - self.image-height, 0px)) / 1phx) * 1phx;
+            property <bool> can-move: self.image-width > root.width || self.image-height > root.room-height;
+            property <image> source: root.sharp-ready ? root.sharp : root.preview.image;
+            // Only the part that shows is drawn, in the source's own pixels: the software renderer draws nothing more than 4096 pixels into one.
+            property <float> per-x: max(0.001, self.source.width / (self.image-width / 1px));
+            property <float> per-y: max(0.001, self.source.height / (self.image-height / 1px));
+            property <int> left: max(0, floor(-self.image-x / 1px * self.per-x));
+            property <int> top: max(0, floor(-self.image-y / 1px * self.per-y));
+            property <int> right: min(self.source.width, ceil((root.width - self.image-x) / 1px * self.per-x));
+            property <int> bottom: min(self.source.height, ceil((root.room-height - self.image-y) / 1px * self.per-y));
+            changed fit => { root.zoomed(true); }
+            vertical-stretch: 1;
+            background: Theme.backdrop;
+            clip: true;
+            Image {
+                x: stage.image-x + stage.left / stage.per-x * 1px;
+                y: stage.image-y + stage.top / stage.per-y * 1px;
+                width: (stage.right - stage.left) / stage.per-x * 1px;
+                height: (stage.bottom - stage.top) / stage.per-y * 1px;
+                source: stage.source;
+                source-clip-x: stage.left;
+                source-clip-y: stage.top;
+                source-clip-width: stage.right - stage.left;
+                source-clip-height: stage.bottom - stage.top;
+                image-fit: fill;
+                image-rendering: smooth;
+            }
+            TouchArea {
+                // Where the image was when the press came, and whether it has become a drag.
+                property <length> from-x;
+                property <length> from-y;
+                property <bool> dragged;
+                mouse-cursor: !stage.can-move ? pointer : self.pressed ? grabbing : grab;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        self.from-x = stage.image-x;
+                        self.from-y = stage.image-y;
+                        self.dragged = false;
+                    }
+                }
+                moved => {
+                    if (abs(self.mouse-x - self.pressed-x) > 3px || abs(self.mouse-y - self.pressed-y) > 3px) {
+                        self.dragged = true;
+                    }
+                    if (self.dragged) {
+                        root.moved-x = self.from-x + self.mouse-x - self.pressed-x;
+                        root.moved-y = self.from-y + self.mouse-y - self.pressed-y;
+                    }
+                }
+                clicked => {
+                    if (!self.dragged) {
+                        root.toggle(self.mouse-x, self.mouse-y);
+                    }
+                }
+                scroll-event(event) => {
+                    // (Its size isn't known yet: nothing to zoom from.)
+                    if (root.file-width > 0) {
+                        root.wheel(event.delta-y / 60px, self.mouse-x, self.mouse-y);
+                    }
+                    accept
+                }
+            }
+            // A video: the timeline along the bottom, the time, and the speaker.
+            if root.video: Rectangle {
+                y: parent.height - 4px;
+                height: 4px;
+                background: Theme.divider;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * root.preview.progress;
+                    background: Theme.accent;
+                }
+            }
+            if root.video && root.preview.time != "": Text {
+                x: 14px;
+                y: parent.height - self.height - 14px;
+                text: root.preview.time;
+                font-size: 12px;
+                color: Theme.text-2;
+            }
+            if root.video: Rectangle {
+                x: parent.width - self.width - 12px;
+                y: parent.height - self.height - 16px;
+                width: 32px;
+                height: 32px;
+                border-radius: 7px;
+                background: big-sound-touch.has-hover ? Theme.accent : Theme.popover;
+                border-width: 1px;
+                border-color: big-sound-touch.has-hover ? Theme.accent : Theme.stroke-strong;
+                Glyph {
+                    width: 18px;
+                    height: 18px;
+                    commands: root.preview.player == 1
+                        ? "M4 9h4l5-4v14l-5-4H4z M17 9l5 6 M22 9l-5 6"
+                        : "M4 9h4l5-4v14l-5-4H4z M16.5 8.5a5 5 0 0 1 0 7 M19.5 5.5a9 9 0 0 1 0 13";
+                    stroke: big-sound-touch.has-hover ? Theme.on-accent : Theme.text;
+                }
+                big-sound-touch := TouchArea { mouse-cursor: pointer; clicked => { root.media-clicked(); } }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.divider; }
+        HorizontalLayout {
+            height: 36px;
+            padding-left: 18px;
+            padding-right: 16px;
+            spacing: 16px;
+            Text {
+                text: root.video ? (stage.can-move ? "Drag to move around. " : "Scroll to zoom. ")
+                        + (root.preview.player == 1 ? "Click the speaker for sound" : "Click the speaker to mute")
+                    : stage.can-move ? "Scroll to zoom. Drag to move around" : "Click for actual size. Scroll to zoom";
+                font-size: 11.5px;
+                color: Theme.text-3;
+                vertical-alignment: center;
+                horizontal-stretch: 0;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Hint { key: "↑↓"; action: "Next"; }
+            Hint { key: "Enter"; action: "Open"; }
+            Hint { key: "Esc"; action: "Back to results"; }
+        }
+    }
+}
+
+export component Popup inherits Window {
+    title: "Excavate";
+    no-frame: true;
+    always-on-top: true;
+    background: Theme.base;
+    default-font-family: Theme.font;
+    preferred-width: 960px;
+    preferred-height: 600px;
+    // Also `SMALLEST` in popup.rs.
+    min-width: 720px;
+    min-height: 480px;
+    // It has no frame: without this only a pixel along its top can be dragged.
+    resize-border-width: 5px;
+    forward-focus: field;
+
+    in-out property <string> query;
+    in property <[Row]> rows;
+    in-out property <int> selected: 0;
+    in property <[string]> filters;
+    in-out property <int> filter: 0;
+    in property <string> section;
+    in property <string> status;
+    in property <string> timing;
+    in property <string> banner;
+    in property <string> banner-action;
+    // Something's wrong (the warning's color), rather than worth knowing (the theme's).
+    in property <bool> banner-warning;
+    in property <string> sort-label: "Best match";
+    in property <bool> match-case;
+    in property <bool> match-whole-word;
+    in property <bool> match-path;
+    in property <bool> match-regex;
+    in property <bool> image-text;
+    // Only images, by what they show; offered while "Find images by what they show" is on.
+    in property <bool> image-shown;
+    in property <bool> seeing-on;
+    // The toggles for videos and recordings (the text videos show, what they show, what's said in recordings): which
+    // is on (-1: none), and which are offered, by what's read.
+    in property <int> media-on: -1;
+    in property <bool> video-text-offered;
+    in property <bool> video-shown-offered;
+    in property <bool> said-offered;
+    // The selected image over the whole popup.
+    in-out property <bool> enlarged;
+    // How large it is, 1 being actual size. 0: to fit.
+    in-out property <float> enlarged-zoom;
+    in property <image> enlarged-sharp;
+    in property <bool> enlarged-sharp-ready;
+    in property <int> enlarged-width;
+    in property <int> enlarged-height;
+    in property <string> more-label;
+    in property <string> empty-title;
+    in property <string> empty-detail;
+    in-out property <bool> show-preview: true;
+    // The preview's size, chosen in Settings: its width, and how tall its image may be.
+    in property <length> preview-width: 320px;
+    // Under the field while `>` or `<` starts it, what that search does ("Words in videos: on screen and said.").
+    in property <styled-text> prefix-help;
+    in property <bool> prefix-help-shown;
+    // Dragged wider or narrower by the line before it, like a window's edge (0: as Settings has it). Between
+    // 220 px and half the popup. Kept (Settings' `preview-dragged-width`), until a double-click or a size chosen there.
+    in-out property <length> preview-dragged: 0px;
+    // And its image's height, by its corner (0: as Settings has it), kept the same way.
+    in-out property <length> preview-image-dragged: 0px;
+    // The edge or the corner let go, or double-clicked: what they're at now is kept.
+    callback preview-resized();
+    // Where the preview's far edge is from the pointer, while its edge or its corner is dragged.
+    property <length> preview-grab;
+    property <length> preview-shown: root.preview-dragged > 0 ? clamp(root.preview-dragged, 220px, max(220px, root.width / 2)) : root.preview-width;
+    in property <length> preview-image: 188px;
+    in property <Preview> preview;
+    in property <float> appear: 1;
+    // "Reading 1,234 of 5,678 files", "Paused on battery power": empty when there's nothing going on.
+    in property <string> reading;
+    // 0 to 1, or below 0 when there's no measure yet.
+    in property <float> reading-progress;
+    in property <bool> reading-paused;
+
+    callback reading-clicked();
+    callback edited(string);
+    callback activated(int, string);
+    callback filter-chosen(int);
+    // The text's length in bytes, as the field's caret counts (popup.rs).
+    pure callback text-bytes(string) -> int;
+    callback selection-moved(int);
+    callback context-menu(int, length, length);
+    callback visible-rows(int, int);
+    callback sort-chosen(int);
+    // Match case, whole words, match path, regular expression, words read from images.
+    callback toggle-chosen(int);
+    callback enlarged-changed(bool);
+    callback enlarged-zoomed(bool);
+    callback enlarged-move(int);
+    callback show-more();
+    callback banner-clicked();
+    callback escape();
+    callback settings-clicked();
+    callback reveal();
+    callback preview-toggled(bool);
+    // The preview's video or recording was clicked.
+    callback preview-media();
+
+    public function focus-field() {
+        field.focus();
+        field.select-all();
+    }
+
+    function move(by: int) {
+        if (root.rows.length == 0) { return; }
+        root.selected = max(0, min(root.rows.length - 1, root.selected + by));
+        root.reveal-selected();
+        root.selection-moved(root.selected);
+    }
+
+    function open-enlarged() {
+        root.enlarged-zoom = 0;
+        root.enlarged = true;
+        root.enlarged-changed(true);
+    }
+
+    public function close-enlarged() {
+        root.enlarged = false;
+        root.enlarged-changed(false);
+    }
+
+    public function reveal-selected() {
+        if (root.selected * Theme.row-height + list.content-y < 0) {
+            list.content-y = -root.selected * Theme.row-height;
+        } else if ((root.selected + 1) * Theme.row-height + list.content-y > list.visible-height) {
+            list.content-y = list.visible-height - (root.selected + 1) * Theme.row-height;
+        }
+    }
+
+    public function scroll-to-top() {
+        list.content-y = 0;
+    }
+
+    // The footer gives way as the popup narrows, or to what's happening: first the time a search took, then the keys, the last first.
+    // Its padding and spacing, and the cog at its end.
+    property <length> footer-room: self.width - footer-left.preferred-width - 104px;
+    property <bool> timing-on: self.footer-room >= 480px;
+    property <length> hints-room: self.footer-room - (self.timing-on ? timing-text.preferred-width + 16px : 0px);
+
+    // What a toggle does, under it, once the pointer has rested on it.
+    property <string> tip;
+    property <string> tip-key;
+    property <length> tip-x;
+    property <bool> tip-shown;
+    property <bool> tip-waiting;
+    function toggle-hovered(on: bool, tip: string, key: string, x: length) {
+        root.tip-shown = false;
+        root.tip-waiting = on;
+        if (on) {
+            root.tip = tip;
+            root.tip-key = key;
+            root.tip-x = x;
+        }
+    }
+    Timer {
+        interval: 350ms;
+        running: root.tip-waiting;
+        triggered => {
+            root.tip-waiting = false;
+            root.tip-shown = true;
+        }
+    }
+
+    content := Rectangle {
+        opacity: root.appear;
+        y: (1 - root.appear) * 10px;
+
+        keys := FocusScope {
+            capture-key-pressed(event) => {
+                // Enlarged: Enter and the rest work as usual, and typing goes back to the results (see the field).
+                if (root.enlarged) {
+                    if (event.text == Key.Escape || (event.modifiers.control && event.text == " ")) { root.close-enlarged(); return accept; }
+                    if (event.text == Key.DownArrow) { root.enlarged-move(1); return accept; }
+                    if (event.text == Key.UpArrow) { root.enlarged-move(-1); return accept; }
+                    if (event.text == Key.Tab || event.text == Key.Backtab) { return accept; }
+                }
+                if (event.modifiers.control && event.text == " " && root.preview.can-enlarge) { root.open-enlarged(); return accept; }
+                if (event.text == Key.DownArrow) { root.move(1); return accept; }
+                if (event.text == Key.UpArrow) { root.move(-1); return accept; }
+                if (event.text == Key.PageDown) { root.move(max(1, floor(list.visible-height / Theme.row-height) - 1)); return accept; }
+                if (event.text == Key.PageUp) { root.move(-max(1, floor(list.visible-height / Theme.row-height) - 1)); return accept; }
+                if (event.modifiers.control && event.text == Key.Home) { root.move(-root.rows.length); return accept; }
+                if (event.modifiers.control && event.text == Key.End) { root.move(root.rows.length); return accept; }
+                if (event.text == Key.Escape) { root.escape(); return accept; }
+                if (event.text == Key.Tab) { root.filter-chosen(mod(root.filter + 1, root.filters.length)); return accept; }
+                // Left and right go across the chips while the caret rests at the end of the text (Home, a click or
+                // Ctrl+Left put it inside, and then they move it as usual).
+                if ((event.text == Key.LeftArrow || event.text == Key.RightArrow) && !event.modifiers.shift && !event.modifiers.control
+                        && !event.modifiers.alt && field.anchor-position-byte-offset == field.cursor-position-byte-offset
+                        && field.cursor-position-byte-offset >= root.text-bytes(root.query)) {
+                    if (event.text == Key.RightArrow && root.filter < root.filters.length - 1) { root.filter-chosen(root.filter + 1); }
+                    if (event.text == Key.LeftArrow && root.filter > 0) { root.filter-chosen(root.filter - 1); }
+                    return accept;
+                }
+                if (event.text == Key.Backtab) { root.filter-chosen(mod(root.filter - 1 + root.filters.length, root.filters.length)); return accept; }
+                if (event.text == Key.Return) {
+                    if (event.modifiers.control && event.modifiers.shift) { root.activated(root.selected, "runas"); }
+                    else if (event.modifiers.control) { root.activated(root.selected, "reveal"); }
+                    else if (event.modifiers.alt) { root.activated(root.selected, "properties"); }
+                    else { root.activated(root.selected, "open"); }
+                    return accept;
+                }
+                if (event.modifiers.control && !event.modifiers.alt) {
+                    // As in Everything.
+                    if (event.text == "i" || event.text == "I") { root.toggle-chosen(0); return accept; }
+                    if (event.text == "b" || event.text == "B") { root.toggle-chosen(1); return accept; }
+                    if (event.text == "u" || event.text == "U") { root.toggle-chosen(2); return accept; }
+                    if (event.text == "r" || event.text == "R") { root.toggle-chosen(3); return accept; }
+                    if (event.text == "p" || event.text == "P") {
+                        root.show-preview = !root.show-preview;
+                        root.preview-toggled(root.show-preview);
+                        return accept;
+                    }
+                    if ((event.text == "c" || event.text == "C") && field.anchor-position-byte-offset == field.cursor-position-byte-offset) {
+                        root.activated(root.selected, event.modifiers.shift ? "copy-path" : "copy");
+                        return accept;
+                    }
+                    if (event.text == "o" || event.text == "O") { root.activated(root.selected, "open-with"); return accept; }
+                    if (event.text == ",") { root.settings-clicked(); return accept; }
+                    if (event.text >= "1" && event.text <= "9") {
+                        root.filter-chosen(min(root.filters.length - 1, event.text.to-float() - 1));
+                        return accept;
+                    }
+                }
+                if (event.text == Key.Menu || (event.modifiers.shift && event.text == Key.F10)) {
+                    root.context-menu(root.selected, 120px, (root.selected + 1) * Theme.row-height + list.content-y);
+                    return accept;
+                }
+                reject
+            }
+
+            VerticalLayout {
+                // Search field.
+                top := VerticalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    padding-top: 14px;
+                    padding-bottom: 10px;
+                    spacing: 10px;
+
+                    Rectangle {
+                        height: 46px;
+                        border-radius: Theme.radius;
+                        background: field.has-focus ? Theme.field-focus : Theme.field;
+                        border-width: 1px;
+                        border-color: field.has-focus ? Theme.stroke-strong : Theme.stroke;
+                        drop-shadow-blur: Theme.dark ? 0px : 6px;
+                        drop-shadow-color: #00000010;
+
+                        HorizontalLayout {
+                            padding-left: 14px;
+                            padding-right: 12px;
+                            spacing: 10px;
+                            Glyph {
+                                width: 18px;
+                                height: 18px;
+                                y: (parent.height - self.height) / 2;
+                                commands: "M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14z M20 20l-4-4";
+                                stroke: Theme.text-2;
+                            }
+                            field := TextInput {
+                                text <=> root.query;
+                                font-size: 17px;
+                                font-family: Theme.display-font;
+                                color: Theme.text;
+                                selection-background-color: Theme.accent-soft;
+                                selection-foreground-color: Theme.text;
+                                single-line: true;
+                                vertical-alignment: center;
+                                edited => {
+                                    if (root.enlarged) { root.close-enlarged(); }
+                                    root.edited(self.text);
+                                }
+                                Text {
+                                    visible: root.query == "";
+                                    text: "Search apps, files and folders";
+                                    font-size: 17px;
+                                    font-family: Theme.display-font;
+                                    color: Theme.text-3;
+                                    vertical-alignment: center;
+                                    horizontal-alignment: left;
+                                    x: 0px;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 2px;
+                                padding-top: 9px;
+                                padding-bottom: 9px;
+                                FieldToggle {
+                                    label: "Aa";
+                                    on: root.match-case;
+                                    clicked => { root.toggle-chosen(0); }
+                                    hovered(on) => { root.toggle-hovered(on, "Match case", "Ctrl+I", self.absolute-position.x + self.width / 2); }
+                                }
+                                FieldToggle {
+                                    label: "Abl";
+                                    on: root.match-whole-word;
+                                    clicked => { root.toggle-chosen(1); }
+                                    hovered(on) => { root.toggle-hovered(on, "Whole words", "Ctrl+B", self.absolute-position.x + self.width / 2); }
+                                }
+                                FieldToggle {
+                                    label: "..\\";
+                                    on: root.match-path;
+                                    clicked => { root.toggle-chosen(2); }
+                                    hovered(on) => { root.toggle-hovered(on, "Match the full path", "Ctrl+U", self.absolute-position.x + self.width / 2); }
+                                }
+                                FieldToggle {
+                                    label: ".*";
+                                    on: root.match-regex;
+                                    clicked => { root.toggle-chosen(3); }
+                                    hovered(on) => { root.toggle-hovered(on, "Regular expression", "Ctrl+R", self.absolute-position.x + self.width / 2); }
+                                }
+                                FieldToggle {
+                                    image: true;
+                                    on: root.image-text;
+                                    clicked => { root.toggle-chosen(4); }
+                                    hovered(on) => { root.toggle-hovered(on, "Only words read from images", "", self.absolute-position.x + self.width / 2); }
+                                }
+                                if root.seeing-on: FieldToggle {
+                                    // An image of hills under a sun: what it shows.
+                                    glyph: "M4 5h16v14H4z M4 16l5-5l4 4l2.5-2.5l4.5 4.5 M16 8.2a1.3 1.3 0 1 0 0.01 0";
+                                    on: root.image-shown;
+                                    clicked => { root.toggle-chosen(5); }
+                                    hovered(on) => { root.toggle-hovered(on, "Only images, by what they show", "", self.absolute-position.x + self.width / 2); }
+                                }
+                                // The Folders page's drawings for the same kinds: a film camera, with a T for its text.
+                                if root.video-text-offered: FieldToggle {
+                                    glyph: "M3 6h13v12H3z M16 10.5l5-3v9l-5-3 M6 9.5h7 M9.5 9.5v5.5";
+                                    on: root.media-on == 0;
+                                    clicked => { root.toggle-chosen(6); }
+                                    hovered(on) => { root.toggle-hovered(on, "Only words shown in videos", "", self.absolute-position.x + self.width / 2); }
+                                }
+                                if root.video-shown-offered: FieldToggle {
+                                    glyph: "M3 6h13v12H3z M16 10.5l5-3v9l-5-3";
+                                    on: root.media-on == 1;
+                                    clicked => { root.toggle-chosen(7); }
+                                    hovered(on) => { root.toggle-hovered(on, "Only videos, by what they show", "", self.absolute-position.x + self.width / 2); }
+                                }
+                                if root.said-offered: FieldToggle {
+                                    glyph: "M4 9.5h3.5l4.5-4v13l-4.5-4H4z M15.5 9a4.5 4.5 0 0 1 0 6 M18 6.5a8 8 0 0 1 0 11";
+                                    on: root.media-on == 2;
+                                    clicked => { root.toggle-chosen(8); }
+                                    hovered(on) => { root.toggle-hovered(on, "Only recordings, by what's said", "", self.absolute-position.x + self.width / 2); }
+                                }
+                            }
+                            sort-button := Rectangle {
+                                width: sort-row.preferred-width + 16px;
+                                height: 28px;
+                                y: (parent.height - self.height) / 2;
+                                border-radius: 6px;
+                                background: sort-touch.has-hover ? Theme.hover : transparent;
+                                sort-row := HorizontalLayout {
+                                    padding-left: 8px;
+                                    spacing: 4px;
+                                    Text { text: root.sort-label; font-size: 12px; color: Theme.text-2; vertical-alignment: center; }
+                                    Glyph {
+                                        width: 12px; height: 12px; y: (parent.height - self.height) / 2;
+                                        commands: "M6 9l6 6l6-6";
+                                        stroke: Theme.text-2;
+                                    }
+                                }
+                                sort-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { sort-menu.open(); }
+                                }
+                                sort-menu := Menu {
+                                    checks: true;
+                                    from-right: true;
+                                    menu-width: 190px;
+                                    rows: [
+                                        { label: "Best match", checked: root.sort-label == "Best match" },
+                                        { label: "Fuzzy match", checked: root.sort-label == "Fuzzy match", line: true },
+                                        { label: "Name", checked: root.sort-label == "Name" },
+                                        { label: "Date modified", checked: root.sort-label == "Date modified" },
+                                        { label: "Size", checked: root.sort-label == "Size" },
+                                        { label: "Path", checked: root.sort-label == "Path" },
+                                        { label: "Recently opened", checked: root.sort-label == "Recently opened" },
+                                    ];
+                                    chosen(index) => { root.sort-chosen(index); }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.prefix-help-shown: HorizontalLayout {
+                        padding-left: 6px;
+                        padding-top: 0px;
+                        StyledText {
+                            text: root.prefix-help;
+                            default-font-size: 12.5px;
+                            default-font-family: Theme.font;
+                            default-color: Theme.text-2;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        for label[index] in root.filters: Chip {
+                            label: label;
+                            on: index == root.filter;
+                            clicked => { root.filter-chosen(index); }
+                        }
+                    }
+                }
+
+                // At a scale like 125% the software renderer can wipe this row when what's under it changes, and not draw it again.
+                // So it counts as changed along with them: anything read here marks it, whatever the answer.
+                Rectangle {
+                    property <int> list-changed: (root.query == "" ? 1 : 0) + (root.rows.length == 0 ? 1 : 0) + (root.preview.visible ? 1 : 0) + (root.section == "" ? 1 : 0);
+                    height: 1px;
+                    background: self.list-changed >= 0 ? Theme.divider : Theme.divider;
+                }
+
+                HorizontalLayout {
+                    vertical-stretch: 1;
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        padding-top: 6px;
+
+                        // With nothing typed, how reading is going.
+                        if root.query == "" && root.reading != "": Rectangle {
+                            height: 54px;
+                            ProgressCard {
+                                x: 12px;
+                                y: 2px;
+                                width: parent.width - 24px;
+                                height: 48px;
+                                label: root.reading;
+                                progress: root.reading-progress;
+                                paused: root.reading-paused;
+                                clicked => { root.reading-clicked(); }
+                            }
+                        }
+
+                        if root.section != "": Text {
+                            text: root.section;
+                            height: 24px;
+                            x: 20px;
+                            font-size: 11.5px;
+                            font-weight: 600;
+                            color: Theme.text-3;
+                            vertical-alignment: center;
+                        }
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                            list := ListView {
+                                visible: root.rows.length > 0;
+                                changed content-y => { root.visible-rows(floor(-self.content-y / Theme.row-height), ceil(self.visible-height / Theme.row-height) + 1); }
+                                changed visible-height => { root.visible-rows(floor(-self.content-y / Theme.row-height), ceil(self.visible-height / Theme.row-height) + 1); }
+                                for row[index] in root.rows: ResultRow {
+                                    data: row;
+                                    selected: index == root.selected;
+                                    clicked => {
+                                        root.selected = index;
+                                        root.selection-moved(index);
+                                        keys.focus();
+                                        field.focus();
+                                    }
+                                    double-clicked => { root.activated(index, "open"); }
+                                    right-clicked(x, y) => {
+                                        root.selected = index;
+                                        root.selection-moved(index);
+                                        root.context-menu(index, self.absolute-position.x + x, self.absolute-position.y + y);
+                                    }
+                                }
+                            }
+
+                            if root.rows.length == 0 && root.empty-title != "": VerticalLayout {
+                                alignment: center;
+                                spacing: 6px;
+                                Text {
+                                    text: root.empty-title;
+                                    font-size: 15px;
+                                    font-family: Theme.display-font;
+                                    font-weight: 600;
+                                    color: Theme.text;
+                                    horizontal-alignment: center;
+                                }
+                                Text {
+                                    text: root.empty-detail;
+                                    font-size: 12.5px;
+                                    color: Theme.text-2;
+                                    horizontal-alignment: center;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                    }
+
+                    if root.show-preview && root.preview.visible: Rectangle {
+                        width: 1px;
+                        background: edge.pressed || edge.has-hover ? Theme.accent : Theme.divider;
+                        // The handle reaches over the results (whatever comes later is on top of it on the right).
+                        edge := TouchArea {
+                            x: -5px;
+                            width: 6px;
+                            mouse-cursor: ew-resize;
+                            // Where the preview's far edge is, from the pointer: kept while dragging.
+                            property <length> grab;
+                            pointer-event(event) => {
+                                if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                                    self.grab = self.absolute-position.x + self.mouse-x + root.preview-shown;
+                                }
+                                if (event.kind == PointerEventKind.up && event.button == PointerEventButton.left) {
+                                    root.preview-resized();
+                                }
+                            }
+                            moved => {
+                                if (self.pressed) {
+                                    root.preview-dragged = clamp(self.grab - self.absolute-position.x - self.mouse-x, 220px, max(220px, root.width / 2));
+                                }
+                            }
+                            double-clicked => {
+                                root.preview-dragged = 0px;
+                                root.preview-resized();
+                            }
+                        }
+                    }
+                    if root.show-preview && root.preview.visible: PreviewPane {
+                        width: root.preview-shown;
+                        // Never taller than its room, whatever it holds: the footer stays in the window.
+                        min-height: 0px;
+                        clip: true;
+                        image-most: root.preview-image;
+                        image-dragged <=> root.preview-image-dragged;
+                        corner-taken(x) => { root.preview-grab = x + root.preview-shown; }
+                        corner-moved(x) => { root.preview-dragged = clamp(root.preview-grab - x, 220px, max(220px, root.width / 2)); }
+                        corner-reset => { root.preview-dragged = 0px; }
+                        corner-done => { root.preview-resized(); }
+                        // What's above it as it is (the help line under the field takes room too: without it the
+                        // preview would run taller than its room and push the footer out of the window), the two lines and the footer.
+                        room: root.height - top.preferred-height - 38px;
+                        preview: root.preview;
+                        open => { root.activated(root.selected, "open"); }
+                        reveal => { root.activated(root.selected, "reveal"); }
+                        reveal-secrets => { root.reveal(); }
+                        enlarge => { root.open-enlarged(); }
+                        media-clicked => { root.preview-media(); }
+                    }
+                }
+
+                Rectangle { height: 1px; background: Theme.divider; }
+
+                // Footer: what happened, and the keys that matter.
+                HorizontalLayout {
+                    height: 36px;
+                    padding-left: 18px;
+                    padding-right: 10px;
+                    spacing: 16px;
+
+                    footer-left := HorizontalLayout {
+                        spacing: 16px;
+                        horizontal-stretch: 0;
+
+                        if root.reading != "": Rectangle {
+                            horizontal-stretch: 0;
+                            width: reading-row.preferred-width;
+                            reading-row := HorizontalLayout {
+                                spacing: 7px;
+                                ReadingPulse { paused: root.reading-paused; y: (parent.height - self.height) / 2; }
+                                Text { text: root.reading; font-size: 11.5px; color: reading-touch.has-hover ? Theme.text : Theme.text-2; vertical-alignment: center; }
+                            }
+                            reading-touch := TouchArea { mouse-cursor: pointer; clicked => { root.reading-clicked(); } }
+                        }
+
+                        if root.banner != "": HorizontalLayout {
+                            spacing: 8px;
+                            horizontal-stretch: 0;
+                            Rectangle {
+                                width: 7px; height: 7px; border-radius: 3.5px; background: root.banner-warning ? Theme.warning : Theme.accent;
+                                y: (parent.height - self.height) / 2;
+                            }
+                            Text { text: root.banner; font-size: 11.5px; color: Theme.text-2; vertical-alignment: center; }
+                            if root.banner-action != "": Text {
+                                text: root.banner-action;
+                                font-size: 11.5px;
+                                font-weight: 600;
+                                color: Theme.accent;
+                                vertical-alignment: center;
+                                TouchArea { mouse-cursor: pointer; clicked => { root.banner-clicked(); } }
+                            }
+                        }
+
+                        Text {
+                            text: root.status;
+                            font-size: 11.5px;
+                            color: Theme.text-3;
+                            vertical-alignment: center;
+                            horizontal-stretch: 0;
+                        }
+                        if root.more-label != "": Text {
+                            text: root.more-label;
+                            font-size: 11.5px;
+                            font-weight: 600;
+                            color: more-touch.has-hover ? Theme.text : Theme.text-2;
+                            vertical-alignment: center;
+                            horizontal-stretch: 0;
+                            more-touch := TouchArea { mouse-cursor: pointer; clicked => { root.show-more(); } }
+                        }
+                    }
+                    timing-text := Text {
+                        text: root.timing-on ? root.timing : "";
+                        font-size: 11px;
+                        color: Theme.text-3;
+                        vertical-alignment: center;
+                        horizontal-stretch: 0;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Hint { key: "Enter"; action: "Open"; }
+                    Hint { key: "Ctrl+Enter"; action: "Show in folder"; }
+                    if root.hints-room >= 318px: Hint { key: "Ctrl+C"; action: "Copy"; }
+                    if root.hints-room >= 431px && root.preview.can-enlarge: Hint { key: "Ctrl+Space"; action: "Enlarge"; }
+                    if root.hints-room >= (root.preview.can-enlarge ? 513px : 400px): Hint { key: "Tab"; action: "Filter"; }
+                    // Settings (also Ctrl+,). It stays when the window narrows: the keys give way first.
+                    Rectangle {
+                        width: 28px;
+                        height: 28px;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 6px;
+                        background: cog-touch.has-hover ? Theme.hover : transparent;
+                        accessible-role: button;
+                        accessible-label: "Settings";
+                        accessible-action-default => { root.settings-clicked(); }
+                        Glyph {
+                            width: 16px;
+                            height: 16px;
+                            commands: "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z M15 12a3 3 0 1 1-6 0a3 3 0 1 1 6 0z";
+                            stroke-width: 1.5px;
+                            stroke: cog-touch.has-hover ? Theme.text : Theme.text-3;
+                        }
+                        cog-touch := TouchArea { mouse-cursor: pointer; clicked => { root.settings-clicked(); } }
+                    }
+                }
+            }
+        }
+
+        if root.enlarged: EnlargedView {
+            preview: root.preview;
+            sharp: root.enlarged-sharp;
+            sharp-ready: root.enlarged-sharp-ready;
+            file-width: root.enlarged-width;
+            file-height: root.enlarged-height;
+            position: root.selected + 1;
+            count: root.rows.length;
+            zoom <=> root.enlarged-zoom;
+            close => { root.close-enlarged(); }
+            zoomed(settling) => { root.enlarged-zoomed(settling); }
+            reveal-secrets => { root.reveal(); }
+            media-clicked => { root.preview-media(); }
+        }
+
+        // Last, so it's above what's under the field.
+        if root.tip-shown: Rectangle {
+            x: min(root.tip-x - self.width / 2, parent.width - self.width - 8px);
+            y: 62px;
+            width: tip-row.preferred-width + 20px;
+            height: 28px;
+            border-radius: 7px;
+            background: Theme.popover;
+            border-width: 1px;
+            border-color: Theme.stroke-strong;
+            drop-shadow-blur: 12px;
+            drop-shadow-offset-y: 2px;
+            drop-shadow-color: #00000040;
+            tip-row := HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                spacing: 8px;
+                Text { text: root.tip; font-size: 12px; color: Theme.text; vertical-alignment: center; }
+                if root.tip-key != "": Text { text: root.tip-key; font-size: 11.5px; color: Theme.text-3; vertical-alignment: center; }
+            }
+        }
+    }
+}

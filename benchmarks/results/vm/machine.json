@@ -1,0 +1,10 @@
+﻿{
+    "windows":  "Microsoft Windows 11 Pro 10.0.22621",
+    "processor":  "13th Gen Intel(R) Core(TM) i9-13900HX",
+    "cores":  4,
+    "memory_gb":  8,
+    "avx":  true,
+    "avx2":  true,
+    "uac":  true,
+    "release":  "Excavate-0.1.0-windows-x64.zip"
+}

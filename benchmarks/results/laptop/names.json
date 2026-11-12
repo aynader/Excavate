@@ -1,0 +1,1387 @@
+{
+  "at": 1794377272,
+  "machine": {
+    "cores": 32,
+    "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+  },
+  "measured": "names",
+  "result": {
+    "bedrock": {
+      "answering_after_ms": {
+        "max": 26.07,
+        "median": 24.688,
+        "median_95": [
+          22.897,
+          26.07
+        ],
+        "min": 22.897,
+        "n": 5,
+        "p95": 25.959
+      },
+      "build_cpu_seconds": {
+        "max": 225.8,
+        "median": 189.8,
+        "median_95": [
+          180.3,
+          225.8
+        ],
+        "min": 180.3,
+        "n": 5,
+        "p95": 221.0
+      },
+      "build_from_the_drives_tables_seconds": {
+        "max": 11.489,
+        "median": 10.059,
+        "median_95": [
+          9.996,
+          11.489
+        ],
+        "min": 9.996,
+        "n": 5,
+        "p95": 11.248
+      },
+      "build_seconds": {
+        "max": 352.2,
+        "median": 237.2,
+        "median_95": [
+          203.3,
+          352.2
+        ],
+        "min": 203.3,
+        "n": 5,
+        "p95": 332.5
+      },
+      "bytes_per_entry": 9.709,
+      "facts": {
+        "drives": [
+          "C:\\",
+          "D:\\"
+        ],
+        "entries": 9453012,
+        "refused_folders": 9
+      },
+      "from_the_drives_tables": {
+        "drives_read": [
+          "C:\\",
+          "D:\\"
+        ],
+        "drives_walked": [],
+        "entries": 9321916
+      },
+      "memory_mb": {
+        "max": 89.129,
+        "median": 87.523,
+        "median_95": [
+          86.871,
+          89.129
+        ],
+        "min": 86.871,
+        "n": 5,
+        "p95": 88.957
+      },
+      "open_seconds": {
+        "max": 0.1586,
+        "median": 0.06675,
+        "median_95": [
+          0.06462,
+          0.1586
+        ],
+        "min": 0.06462,
+        "n": 5,
+        "p95": 0.14035
+      },
+      "size_on_disk_mb": 339.7
+    },
+    "changes": {
+      "bedrock_cpu_us": {
+        "max": 149.2,
+        "median": 101.6,
+        "median_95": [
+          96.875,
+          149.2
+        ],
+        "min": 96.875,
+        "n": 5,
+        "p95": 143.3
+      },
+      "changes_each_run": 20000,
+      "everything_cpu_us": {
+        "max": 452.3,
+        "median": 425.8,
+        "median_95": [
+          399.2,
+          452.3
+        ],
+        "min": 399.2,
+        "n": 5,
+        "p95": 448.8
+      },
+      "runs_where_both_agree": 5
+    },
+    "everything": {
+      "build_seconds": {
+        "max": 31.999,
+        "median": 27.88,
+        "median_95": [
+          27.259,
+          31.999
+        ],
+        "min": 27.259,
+        "n": 5,
+        "p95": 31.516
+      },
+      "memory_mb": {
+        "both": 800.4,
+        "each": [
+          798.5,
+          1.836
+        ]
+      },
+      "memory_mb_after_its_restarts": {
+        "both": 742.0,
+        "each": [
+          740.2,
+          1.836
+        ]
+      },
+      "open_seconds": {
+        "max": 2.13,
+        "median": 2.103,
+        "median_95": [
+          2.061,
+          2.13
+        ],
+        "min": 2.061,
+        "n": 5,
+        "p95": 2.129
+      },
+      "size_on_disk_mb": 338.1
+    },
+    "everything_version": "1.4.1.1026",
+    "idle": {
+      "bedrock_cpu_seconds": 0.6875,
+      "everything_cpu_seconds": 0.14063,
+      "seconds": 60
+    },
+    "new_file_found_ms": {
+      "bedrock": {
+        "max": 212.3,
+        "median": 6.153,
+        "median_95": [
+          5.923,
+          6.523
+        ],
+        "min": 4.653,
+        "n": 50,
+        "p95": 19.49
+      },
+      "everything": {
+        "max": 947.6,
+        "median": 926.5,
+        "median_95": [
+          920.4,
+          932.7
+        ],
+        "min": 550.9,
+        "n": 50,
+        "p95": 945.4
+      },
+      "files": 50
+    },
+    "queries": {
+      "each": [
+        {
+          "bedrock_count": 24209,
+          "bedrock_ms": {
+            "max": 8.249,
+            "median": 6.252,
+            "median_95": [
+              5.725,
+              6.792
+            ],
+            "min": 4.958,
+            "n": 30,
+            "p95": 7.772
+          },
+          "everything_count": 24208,
+          "everything_ms": {
+            "max": 31.462,
+            "median": 26.602,
+            "median_95": [
+              26.435,
+              27.423
+            ],
+            "min": 25.442,
+            "n": 30,
+            "p95": 29.603
+          },
+          "query": "readme"
+        },
+        {
+          "bedrock_count": 185547,
+          "bedrock_ms": {
+            "max": 8.143,
+            "median": 6.658,
+            "median_95": [
+              6.426,
+              6.999
+            ],
+            "min": 5.676,
+            "n": 30,
+            "p95": 7.903
+          },
+          "everything_count": 185546,
+          "everything_ms": {
+            "max": 36.689,
+            "median": 30.554,
+            "median_95": [
+              30.106,
+              31.425
+            ],
+            "min": 28.835,
+            "n": 30,
+            "p95": 33.174
+          },
+          "query": "config"
+        },
+        {
+          "bedrock_count": 7221,
+          "bedrock_ms": {
+            "max": 6.471,
+            "median": 5.084,
+            "median_95": [
+              4.963,
+              5.259
+            ],
+            "min": 4.538,
+            "n": 30,
+            "p95": 6.209
+          },
+          "everything_count": 7221,
+          "everything_ms": {
+            "max": 33.467,
+            "median": 30.77,
+            "median_95": [
+              30.039,
+              31.487
+            ],
+            "min": 28.183,
+            "n": 30,
+            "p95": 32.577
+          },
+          "query": "setup"
+        },
+        {
+          "bedrock_count": 10,
+          "bedrock_ms": {
+            "max": 6.324,
+            "median": 5.291,
+            "median_95": [
+              5.092,
+              5.55
+            ],
+            "min": 4.377,
+            "n": 30,
+            "p95": 5.927
+          },
+          "everything_count": 10,
+          "everything_ms": {
+            "max": 35.236,
+            "median": 31.926,
+            "median_95": [
+              31.112,
+              32.374
+            ],
+            "min": 28.368,
+            "n": 30,
+            "p95": 34.705
+          },
+          "query": "report final"
+        },
+        {
+          "bedrock_count": 0,
+          "bedrock_ms": {
+            "max": 5.874,
+            "median": 4.817,
+            "median_95": [
+              4.539,
+              4.938
+            ],
+            "min": 4.083,
+            "n": 30,
+            "p95": 5.727
+          },
+          "everything_count": 0,
+          "everything_ms": {
+            "max": 37.124,
+            "median": 29.579,
+            "median_95": [
+              28.958,
+              30.02
+            ],
+            "min": 27.378,
+            "n": 30,
+            "p95": 33.381
+          },
+          "query": "zzqxj"
+        },
+        {
+          "bedrock_count": 6435315,
+          "bedrock_ms": {
+            "max": 36.398,
+            "median": 28.841,
+            "median_95": [
+              27.932,
+              30.545
+            ],
+            "min": 25.424,
+            "n": 30,
+            "p95": 33.429
+          },
+          "everything_count": 6433448,
+          "everything_ms": {
+            "max": 29.915,
+            "median": 27.531,
+            "median_95": [
+              26.806,
+              27.865
+            ],
+            "min": 25.746,
+            "n": 30,
+            "p95": 29.309
+          },
+          "query": "e"
+        },
+        {
+          "bedrock_count": 63806,
+          "bedrock_ms": {
+            "max": 7.695,
+            "median": 6.218,
+            "median_95": [
+              6.053,
+              6.39
+            ],
+            "min": 5.458,
+            "n": 30,
+            "p95": 7.267
+          },
+          "everything_count": 63805,
+          "everything_ms": {
+            "max": 62.29,
+            "median": 56.309,
+            "median_95": [
+              55.145,
+              58.309
+            ],
+            "min": 52.313,
+            "n": 30,
+            "p95": 62.012
+          },
+          "query": "readme | license"
+        },
+        {
+          "bedrock_count": 2778,
+          "bedrock_ms": {
+            "max": 15.589,
+            "median": 5.554,
+            "median_95": [
+              5.365,
+              5.876
+            ],
+            "min": 4.442,
+            "n": 30,
+            "p95": 12.823
+          },
+          "everything_count": 2778,
+          "everything_ms": {
+            "max": 35.565,
+            "median": 32.019,
+            "median_95": [
+              31.193,
+              32.525
+            ],
+            "min": 28.453,
+            "n": 30,
+            "p95": 33.698
+          },
+          "query": "readme !md"
+        },
+        {
+          "bedrock_count": 7,
+          "bedrock_ms": {
+            "max": 6.057,
+            "median": 5.136,
+            "median_95": [
+              4.982,
+              5.38
+            ],
+            "min": 4.307,
+            "n": 30,
+            "p95": 5.814
+          },
+          "everything_count": 7,
+          "everything_ms": {
+            "max": 34.854,
+            "median": 30.82,
+            "median_95": [
+              29.843,
+              31.552
+            ],
+            "min": 27.236,
+            "n": 30,
+            "p95": 33.971
+          },
+          "query": "\"read me\""
+        },
+        {
+          "bedrock_count": 23345,
+          "bedrock_ms": {
+            "max": 10.488,
+            "median": 8.695,
+            "median_95": [
+              8.339,
+              8.968
+            ],
+            "min": 7.252,
+            "n": 30,
+            "p95": 9.806
+          },
+          "everything_count": 23345,
+          "everything_ms": {
+            "max": 69.577,
+            "median": 58.554,
+            "median_95": [
+              57.396,
+              61.117
+            ],
+            "min": 53.682,
+            "n": 30,
+            "p95": 66.715
+          },
+          "query": "<readme | license> ext:md"
+        },
+        {
+          "bedrock_count": 90,
+          "bedrock_ms": {
+            "max": 7.116,
+            "median": 6.411,
+            "median_95": [
+              6.121,
+              6.656
+            ],
+            "min": 4.729,
+            "n": 30,
+            "p95": 7.064
+          },
+          "everything_count": 90,
+          "everything_ms": {
+            "max": 42.469,
+            "median": 37.38,
+            "median_95": [
+              36.252,
+              38.772
+            ],
+            "min": 29.861,
+            "n": 30,
+            "p95": 40.728
+          },
+          "query": "config setup"
+        },
+        {
+          "bedrock_count": 158399,
+          "bedrock_ms": {
+            "max": 8.906,
+            "median": 7.245,
+            "median_95": [
+              7.021,
+              7.42
+            ],
+            "min": 6.078,
+            "n": 30,
+            "p95": 8.26
+          },
+          "everything_count": 158399,
+          "everything_ms": {
+            "max": 14.571,
+            "median": 12.707,
+            "median_95": [
+              12.571,
+              13.087
+            ],
+            "min": 11.801,
+            "n": 30,
+            "p95": 14.161
+          },
+          "query": "*.dll"
+        },
+        {
+          "bedrock_count": 58465,
+          "bedrock_ms": {
+            "max": 8.393,
+            "median": 7.218,
+            "median_95": [
+              7.105,
+              7.536
+            ],
+            "min": 6.315,
+            "n": 30,
+            "p95": 8.269
+          },
+          "everything_count": 57160,
+          "everything_ms": {
+            "max": 72.758,
+            "median": 66.319,
+            "median_95": [
+              65.624,
+              66.986
+            ],
+            "min": 62.529,
+            "n": 30,
+            "p95": 70.23
+          },
+          "query": "*.jp*g"
+        },
+        {
+          "bedrock_count": 5824,
+          "bedrock_ms": {
+            "max": 5.988,
+            "median": 5.181,
+            "median_95": [
+              5.083,
+              5.289
+            ],
+            "min": 4.674,
+            "n": 30,
+            "p95": 5.736
+          },
+          "everything_count": 5812,
+          "everything_ms": {
+            "max": 13.293,
+            "median": 11.893,
+            "median_95": [
+              11.673,
+              12.38
+            ],
+            "min": 11.147,
+            "n": 30,
+            "p95": 13.17
+          },
+          "query": "IMG_????*"
+        },
+        {
+          "bedrock_count": 113,
+          "bedrock_ms": {
+            "max": 7.172,
+            "median": 6.178,
+            "median_95": [
+              5.964,
+              6.44
+            ],
+            "min": 5.483,
+            "n": 30,
+            "p95": 7.004
+          },
+          "everything_count": 113,
+          "everything_ms": {
+            "max": 69.039,
+            "median": 64.065,
+            "median_95": [
+              63.392,
+              64.482
+            ],
+            "min": 59.443,
+            "n": 30,
+            "p95": 67.751
+          },
+          "query": "*report*.pdf"
+        },
+        {
+          "bedrock_count": 190,
+          "bedrock_ms": {
+            "max": 6.762,
+            "median": 5.476,
+            "median_95": [
+              5.323,
+              5.607
+            ],
+            "min": 5.128,
+            "n": 30,
+            "p95": 6.252
+          },
+          "everything_count": 190,
+          "everything_ms": {
+            "max": 34.005,
+            "median": 31.549,
+            "median_95": [
+              31.342,
+              32.129
+            ],
+            "min": 30.199,
+            "n": 30,
+            "p95": 33.666
+          },
+          "query": "setup.exe"
+        },
+        {
+          "bedrock_count": 20203,
+          "bedrock_ms": {
+            "max": 7.687,
+            "median": 6.407,
+            "median_95": [
+              6.264,
+              6.514
+            ],
+            "min": 5.771,
+            "n": 30,
+            "p95": 7.242
+          },
+          "everything_count": 20202,
+          "everything_ms": {
+            "max": 36.197,
+            "median": 32.236,
+            "median_95": [
+              31.422,
+              32.675
+            ],
+            "min": 29.363,
+            "n": 30,
+            "p95": 35.326
+          },
+          "query": "case:README"
+        },
+        {
+          "bedrock_count": 150558,
+          "bedrock_ms": {
+            "max": 13.903,
+            "median": 7.957,
+            "median_95": [
+              7.584,
+              8.198
+            ],
+            "min": 6.472,
+            "n": 30,
+            "p95": 9.314
+          },
+          "everything_count": 150557,
+          "everything_ms": {
+            "max": 59.974,
+            "median": 51.485,
+            "median_95": [
+              49.825,
+              53.027
+            ],
+            "min": 40.308,
+            "n": 30,
+            "p95": 57.34
+          },
+          "query": "ww:config"
+        },
+        {
+          "bedrock_count": 8217,
+          "bedrock_ms": {
+            "max": 51.092,
+            "median": 38.54,
+            "median_95": [
+              34.927,
+              44.011
+            ],
+            "min": 32.013,
+            "n": 30,
+            "p95": 49.739
+          },
+          "everything_count": 8217,
+          "everything_ms": {
+            "max": 243.8,
+            "median": 232.8,
+            "median_95": [
+              230.5,
+              235.6
+            ],
+            "min": 225.8,
+            "n": 30,
+            "p95": 241.0
+          },
+          "query": "path:system32 .dll"
+        },
+        {
+          "bedrock_count": 20949,
+          "bedrock_ms": {
+            "max": 7.685,
+            "median": 6.185,
+            "median_95": [
+              6.101,
+              6.329
+            ],
+            "min": 5.692,
+            "n": 30,
+            "p95": 7.208
+          },
+          "everything_count": 20949,
+          "everything_ms": {
+            "max": 17.689,
+            "median": 12.901,
+            "median_95": [
+              12.069,
+              13.254
+            ],
+            "min": 11.593,
+            "n": 30,
+            "p95": 14.857
+          },
+          "query": "wfn:readme.md"
+        },
+        {
+          "bedrock_count": 24197,
+          "bedrock_ms": {
+            "max": 8.021,
+            "median": 6.859,
+            "median_95": [
+              6.697,
+              7.132
+            ],
+            "min": 6.264,
+            "n": 30,
+            "p95": 7.541
+          },
+          "everything_count": 24196,
+          "everything_ms": {
+            "max": 29.141,
+            "median": 26.743,
+            "median_95": [
+              26.411,
+              26.98
+            ],
+            "min": 25.366,
+            "n": 30,
+            "p95": 28.457
+          },
+          "query": "file:readme"
+        },
+        {
+          "bedrock_count": 50724,
+          "bedrock_ms": {
+            "max": 10.331,
+            "median": 6.755,
+            "median_95": [
+              6.334,
+              7.729
+            ],
+            "min": 5.384,
+            "n": 30,
+            "p95": 9.476
+          },
+          "everything_count": 50724,
+          "everything_ms": {
+            "max": 14.398,
+            "median": 10.201,
+            "median_95": [
+              9.838,
+              11.137
+            ],
+            "min": 8.766,
+            "n": 30,
+            "p95": 12.758
+          },
+          "query": "folder:config"
+        },
+        {
+          "bedrock_count": 24209,
+          "bedrock_ms": {
+            "max": 7.147,
+            "median": 6.343,
+            "median_95": [
+              6.143,
+              6.466
+            ],
+            "min": 5.456,
+            "n": 30,
+            "p95": 6.977
+          },
+          "everything_count": 24208,
+          "everything_ms": {
+            "max": 37.627,
+            "median": 34.187,
+            "median_95": [
+              33.462,
+              34.865
+            ],
+            "min": 32.411,
+            "n": 30,
+            "p95": 36.46
+          },
+          "query": "nocase:README"
+        },
+        {
+          "bedrock_count": 28783,
+          "bedrock_ms": {
+            "max": 8.296,
+            "median": 6.418,
+            "median_95": [
+              6.061,
+              6.817
+            ],
+            "min": 5.764,
+            "n": 30,
+            "p95": 7.714
+          },
+          "everything_count": 28785,
+          "everything_ms": {
+            "max": 14.283,
+            "median": 12.611,
+            "median_95": [
+              12.121,
+              13.004
+            ],
+            "min": 10.939,
+            "n": 30,
+            "p95": 13.836
+          },
+          "query": "startwith:read"
+        },
+        {
+          "bedrock_count": 1196703,
+          "bedrock_ms": {
+            "max": 38.245,
+            "median": 22.766,
+            "median_95": [
+              22.318,
+              23.835
+            ],
+            "min": 19.56,
+            "n": 30,
+            "p95": 30.263
+          },
+          "everything_count": 1196703,
+          "everything_ms": {
+            "max": 20.623,
+            "median": 14.443,
+            "median_95": [
+              14.175,
+              14.824
+            ],
+            "min": 12.617,
+            "n": 30,
+            "p95": 16.36
+          },
+          "query": "endwith:.json"
+        },
+        {
+          "bedrock_count": 276552,
+          "bedrock_ms": {
+            "max": 9.123,
+            "median": 8.369,
+            "median_95": [
+              8.179,
+              8.543
+            ],
+            "min": 6.443,
+            "n": 30,
+            "p95": 9.013
+          },
+          "everything_count": 274524,
+          "everything_ms": {
+            "max": 14.638,
+            "median": 11.877,
+            "median_95": [
+              11.556,
+              12.112
+            ],
+            "min": 10.798,
+            "n": 30,
+            "p95": 12.98
+          },
+          "query": "ext:jpg;png;gif"
+        },
+        {
+          "bedrock_count": 26519,
+          "bedrock_ms": {
+            "max": 8.215,
+            "median": 6.806,
+            "median_95": [
+              6.714,
+              7.099
+            ],
+            "min": 5.926,
+            "n": 30,
+            "p95": 7.746
+          },
+          "everything_count": 26519,
+          "everything_ms": {
+            "max": 13.465,
+            "median": 11.897,
+            "median_95": [
+              11.654,
+              12.115
+            ],
+            "min": 10.843,
+            "n": 30,
+            "p95": 13.188
+          },
+          "query": "ext:flac;wav"
+        },
+        {
+          "bedrock_count": 6760,
+          "bedrock_ms": {
+            "max": 6.927,
+            "median": 6.476,
+            "median_95": [
+              6.368,
+              6.562
+            ],
+            "min": 4.877,
+            "n": 30,
+            "p95": 6.863
+          },
+          "everything_count": 6425,
+          "everything_ms": {
+            "max": 13.291,
+            "median": 11.66,
+            "median_95": [
+              11.435,
+              11.885
+            ],
+            "min": 10.601,
+            "n": 30,
+            "p95": 12.906
+          },
+          "query": "ext:mp4"
+        },
+        {
+          "bedrock_count": 1329,
+          "bedrock_ms": {
+            "max": 7.508,
+            "median": 7.038,
+            "median_95": [
+              6.847,
+              7.155
+            ],
+            "min": 5.416,
+            "n": 30,
+            "p95": 7.432
+          },
+          "everything_count": 1328,
+          "everything_ms": {
+            "max": 14.704,
+            "median": 12.359,
+            "median_95": [
+              12.118,
+              12.885
+            ],
+            "min": 11.264,
+            "n": 30,
+            "p95": 13.837
+          },
+          "query": "ext:pdf dm:thisyear"
+        },
+        {
+          "bedrock_count": 93724,
+          "bedrock_ms": {
+            "max": 23.437,
+            "median": 21.437,
+            "median_95": [
+              20.645,
+              21.818
+            ],
+            "min": 19.336,
+            "n": 30,
+            "p95": 23.25
+          },
+          "everything_count": 93724,
+          "everything_ms": {
+            "max": 319.3,
+            "median": 298.6,
+            "median_95": [
+              295.2,
+              300.4
+            ],
+            "min": 273.6,
+            "n": 30,
+            "p95": 313.6
+          },
+          "query": "regex:^[a-f0-9]{32}$"
+        },
+        {
+          "bedrock_count": 32234,
+          "bedrock_ms": {
+            "max": 9.134,
+            "median": 6.612,
+            "median_95": [
+              6.421,
+              7.121
+            ],
+            "min": 5.755,
+            "n": 30,
+            "p95": 9.081
+          },
+          "everything_count": 32235,
+          "everything_ms": {
+            "max": 346.7,
+            "median": 317.8,
+            "median_95": [
+              312.4,
+              321.7
+            ],
+            "min": 288.1,
+            "n": 30,
+            "p95": 329.6
+          },
+          "query": "regex:\"\\.(tmp|log)$\""
+        },
+        {
+          "bedrock_count": 311098,
+          "bedrock_ms": {
+            "max": 31.877,
+            "median": 28.53,
+            "median_95": [
+              27.709,
+              29.664
+            ],
+            "min": 21.704,
+            "n": 30,
+            "p95": 31.139
+          },
+          "everything_count": 310708,
+          "everything_ms": {
+            "max": 21.547,
+            "median": 17.89,
+            "median_95": [
+              17.566,
+              18.357
+            ],
+            "min": 16.594,
+            "n": 30,
+            "p95": 19.668
+          },
+          "query": "len:>60"
+        },
+        {
+          "bedrock_count": 121,
+          "bedrock_ms": {
+            "max": 14.081,
+            "median": 9.596,
+            "median_95": [
+              8.942,
+              11.741
+            ],
+            "min": 7.313,
+            "n": 30,
+            "p95": 14.001
+          },
+          "everything_count": 121,
+          "everything_ms": {
+            "max": 158.7,
+            "median": 139.1,
+            "median_95": [
+              138.0,
+              141.5
+            ],
+            "min": 132.3,
+            "n": 30,
+            "p95": 154.1
+          },
+          "query": "parent:C:\\Windows"
+        },
+        {
+          "bedrock_count": 121,
+          "bedrock_ms": {
+            "max": 14.348,
+            "median": 9.921,
+            "median_95": [
+              9.21,
+              11.26
+            ],
+            "min": 7.903,
+            "n": 30,
+            "p95": 14.074
+          },
+          "everything_count": 121,
+          "everything_ms": {
+            "max": 153.3,
+            "median": 136.4,
+            "median_95": [
+              134.8,
+              137.8
+            ],
+            "min": 130.2,
+            "n": 30,
+            "p95": 148.8
+          },
+          "query": "infolder:C:\\Windows"
+        },
+        {
+          "bedrock_count": 121,
+          "bedrock_ms": {
+            "max": 14.901,
+            "median": 12.349,
+            "median_95": [
+              9.948,
+              13.34
+            ],
+            "min": 7.87,
+            "n": 30,
+            "p95": 14.512
+          },
+          "everything_count": 121,
+          "everything_ms": {
+            "max": 155.4,
+            "median": 137.3,
+            "median_95": [
+              136.4,
+              139.6
+            ],
+            "min": 130.6,
+            "n": 30,
+            "p95": 148.3
+          },
+          "query": "nosubfolders:C:\\Windows"
+        },
+        {
+          "bedrock_count": 61481,
+          "bedrock_ms": {
+            "max": 15.528,
+            "median": 13.747,
+            "median_95": [
+              13.404,
+              14.054
+            ],
+            "min": 11.413,
+            "n": 30,
+            "p95": 15.071
+          },
+          "everything_count": 61515,
+          "everything_ms": {
+            "max": 15.829,
+            "median": 12.155,
+            "median_95": [
+              11.47,
+              12.42
+            ],
+            "min": 10.694,
+            "n": 30,
+            "p95": 13.894
+          },
+          "query": "dm:today"
+        },
+        {
+          "bedrock_count": 309757,
+          "bedrock_ms": {
+            "max": 16.59,
+            "median": 15.226,
+            "median_95": [
+              15.01,
+              15.604
+            ],
+            "min": 13.654,
+            "n": 30,
+            "p95": 16.179
+          },
+          "everything_count": 309719,
+          "everything_ms": {
+            "max": 15.395,
+            "median": 12.688,
+            "median_95": [
+              12.482,
+              12.97
+            ],
+            "min": 11.517,
+            "n": 30,
+            "p95": 13.879
+          },
+          "query": "dm:thisweek"
+        },
+        {
+          "bedrock_count": 1663225,
+          "bedrock_ms": {
+            "max": 21.94,
+            "median": 18.915,
+            "median_95": [
+              18.424,
+              19.239
+            ],
+            "min": 16.685,
+            "n": 30,
+            "p95": 20.647
+          },
+          "everything_count": 1663168,
+          "everything_ms": {
+            "max": 17.435,
+            "median": 14.414,
+            "median_95": [
+              14.192,
+              14.716
+            ],
+            "min": 12.766,
+            "n": 30,
+            "p95": 15.312
+          },
+          "query": "dm:lastmonth"
+        },
+        {
+          "bedrock_count": 7326626,
+          "bedrock_ms": {
+            "max": 32.717,
+            "median": 28.668,
+            "median_95": [
+              27.882,
+              29.247
+            ],
+            "min": 22.769,
+            "n": 30,
+            "p95": 31.771
+          },
+          "everything_count": 7324269,
+          "everything_ms": {
+            "max": 27.304,
+            "median": 23.295,
+            "median_95": [
+              22.861,
+              24.166
+            ],
+            "min": 21.447,
+            "n": 30,
+            "p95": 26.941
+          },
+          "query": "dm:>2025-01-01"
+        },
+        {
+          "bedrock_count": 360,
+          "bedrock_ms": {
+            "max": 16.84,
+            "median": 15.696,
+            "median_95": [
+              15.321,
+              16.084
+            ],
+            "min": 14.342,
+            "n": 30,
+            "p95": 16.721
+          },
+          "everything_count": 334,
+          "everything_ms": {
+            "max": 14.066,
+            "median": 10.973,
+            "median_95": [
+              10.466,
+              11.196
+            ],
+            "min": 9.534,
+            "n": 30,
+            "p95": 11.789
+          },
+          "query": "size:>1gb"
+        },
+        {
+          "bedrock_count": 154196,
+          "bedrock_ms": {
+            "max": 18.253,
+            "median": 16.669,
+            "median_95": [
+              16.329,
+              16.973
+            ],
+            "min": 12.941,
+            "n": 30,
+            "p95": 17.822
+          },
+          "everything_count": 154044,
+          "everything_ms": {
+            "max": 13.382,
+            "median": 11.4,
+            "median_95": [
+              11.178,
+              11.7
+            ],
+            "min": 10.215,
+            "n": 30,
+            "p95": 12.443
+          },
+          "query": "size:empty"
+        },
+        {
+          "bedrock_count": 5392990,
+          "bedrock_ms": {
+            "max": 51.672,
+            "median": 25.464,
+            "median_95": [
+              23.574,
+              27.773
+            ],
+            "min": 20.644,
+            "n": 30,
+            "p95": 32.139
+          },
+          "everything_count": 5392315,
+          "everything_ms": {
+            "max": 26.622,
+            "median": 20.551,
+            "median_95": [
+              19.924,
+              20.771
+            ],
+            "min": 18.493,
+            "n": 30,
+            "p95": 23.074
+          },
+          "query": "size:tiny"
+        },
+        {
+          "bedrock_count": 123800,
+          "bedrock_ms": {
+            "max": 18.646,
+            "median": 16.888,
+            "median_95": [
+              16.678,
+              17.05
+            ],
+            "min": 14.089,
+            "n": 30,
+            "p95": 18.445
+          },
+          "everything_count": 123671,
+          "everything_ms": {
+            "max": 15.138,
+            "median": 11.588,
+            "median_95": [
+              11.154,
+              11.889
+            ],
+            "min": 10.045,
+            "n": 30,
+            "p95": 13.922
+          },
+          "query": "size:1mb..10mb"
+        },
+        {
+          "bedrock_count": 719,
+          "bedrock_ms": {
+            "max": 6.345,
+            "median": 5.287,
+            "median_95": [
+              5.149,
+              5.489
+            ],
+            "min": 4.188,
+            "n": 30,
+            "p95": 6.045
+          },
+          "everything_count": 529,
+          "everything_ms": {
+            "max": 14.158,
+            "median": 11.54,
+            "median_95": [
+              11.36,
+              11.934
+            ],
+            "min": 10.402,
+            "n": 30,
+            "p95": 13.256
+          },
+          "query": "size:>10mb ext:mp4"
+        }
+      ],
+      "queries": 44,
+      "repeat": 30,
+      "same_count": 19
+    }
+  }
+}

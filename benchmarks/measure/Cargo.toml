@@ -1,0 +1,29 @@
+[package]
+name = "measure"
+description = "The benchmarks: Bedrock against Everything, reading, and finding, each written to a JSON file."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+engine.workspace = true
+everything.workspace = true
+config.workspace = true
+content.workspace = true
+winsys.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dependencies.windows-sys]
+version = "0.59"
+features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_Console",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_JobObjects",
+  "Win32_System_ProcessStatus",
+  "Win32_System_RemoteDesktop",
+  "Win32_System_Threading",
+]

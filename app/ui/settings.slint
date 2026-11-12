@@ -1,0 +1,4112 @@
+// Onboarding and settings, one window: the same pages, walked through once with Continue (onboarding), then reached
+// from a rail on the left (settings). Changes apply as they're made; there's no Save.
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { Glyph, Keycap, Button, Link, Switch, Check, SettingRow, Segmented, Tag, Field, Reveal, Bar, Skeleton, Menu, MenuRow } from "widgets.slint";
+import { WelcomeSearch, WelcomeInside, WelcomeImages, PrivacyDemo, Clock, SceneLine, SceneBadge, DemoRow } from "demos.slint";
+export { DemoRow }
+
+export struct FolderItem {
+    path: string,
+    name: string,
+    // "1,204 files · 340 images", or progress while reading.
+    detail: string,
+    on: bool,
+    // 0 to 1 while reading (settings), -1 when not known.
+    progress: float,
+    // Every step done for it ("✓ All read · 322 files"): the check before the detail.
+    done: bool,
+    // Added by the person (can be removed), not one of Windows' own folders.
+    custom: bool,
+    // What's read in it, in `KindToggle` order (text in images, what images show, text in videos, what videos show,
+    // what's said in videos, what's said in recordings): on for this folder, and on on its own page (off there, it
+    // shows faded and can't be changed here), and what each says on hover ("Off under Videos" when it's off there).
+    kinds: [bool],
+    kinds-anywhere: [bool],
+    kind-tips: [string],
+}
+
+/// The kinds a folder can leave out, in order: their icons, and what each says on hover.
+component KindToggle inherits Rectangle {
+    in property <int> kind;
+    in property <bool> on;
+    in property <bool> anywhere: true;
+    in property <string> tip;
+    callback toggled();
+    property <bool> tip-shown;
+    width: 30px;
+    height: 28px;
+    border-radius: 7px;
+    background: !root.anywhere ? transparent : root.on ? Theme.accent-soft : touch.has-hover ? Theme.hover : transparent;
+    border-width: root.on && root.anywhere ? 0px : 1px;
+    border-color: root.anywhere ? Theme.divider : transparent;
+    animate background { duration: Theme.quick; }
+    // The search window's own drawings for text and images (its toggles), so the two read alike.
+    Glyph {
+        width: 18px;
+        height: 18px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        opacity: root.anywhere ? 1 : 0.35;
+        commands: root.kind == 0 || root.kind == 2 ? "M4 5h16v14H4z M8.5 9h7 M12 9v6.5"
+            : root.kind == 1 ? "M4 5h16v14H4z M4 16l5-5l4 4l2.5-2.5l4.5 4.5 M16 8.2a1.3 1.3 0 1 0 0.01 0"
+            : root.kind == 3 ? "M3 6h13v12H3z M16 10.5l5-3v9l-5-3"
+            : "M4 9.5h3.5l4.5-4v13l-4.5-4H4z M15.5 9a4.5 4.5 0 0 1 0 6 M18 6.5a8 8 0 0 1 0 11";
+        stroke: root.on && root.anywhere ? Theme.accent : Theme.text-3;
+    }
+    touch := TouchArea {
+        // Hovered even when it's off on its own page: the tip says where to turn it on.
+        mouse-cursor: root.anywhere ? pointer : default;
+        clicked => {
+            if (root.anywhere) { root.toggled(); }
+        }
+        changed has-hover => {
+            if (!self.has-hover) { root.tip-shown = false; }
+        }
+    }
+    Timer {
+        interval: 450ms;
+        running: touch.has-hover && !root.tip-shown && root.tip != "";
+        triggered => { root.tip-shown = true; }
+    }
+    // Above the icon, over what's drawn before it (the row above, or the column names).
+    if root.tip-shown: Rectangle {
+        width: tip-text.preferred-width + 16px;
+        height: 24px;
+        x: (parent.width - self.width) / 2;
+        y: -self.height - 5px;
+        border-radius: 6px;
+        background: Theme.popover;
+        border-width: 1px;
+        border-color: Theme.stroke-strong;
+        drop-shadow-blur: 8px;
+        drop-shadow-offset-y: 2px;
+        drop-shadow-color: #00000040;
+        tip-text := Text { text: root.tip; font-size: 11.5px; color: Theme.text; vertical-alignment: center; }
+    }
+}
+
+/// A folder's toggles in three groups (images, videos, recordings), each group's own room, and the line between two:
+/// the column names over the list use the same widths.
+global KindColumns {
+    out property <length> toggle: 30px;
+    out property <length> gap: 4px;
+    // Between two groups, with a line in the middle.
+    out property <length> between: 17px;
+    // The room after the groups in a row: the remove button and the spacing before it, and the row's padding.
+    out property <length> after: 54px;
+}
+
+/// Exclusions laid out in rows (wrapped in Rust, which knows the widths).
+export struct TagRow {
+    tags: [string],
+    // The index of the row's first tag in the whole list.
+    start: int,
+}
+
+// A way a choice can run, in its device menu: "GPU, Vulkan" on the card, "Graphics card, Vulkan" and a note in the menu.
+export struct CardWay {
+    label: string,
+    title: string,
+    note: string,
+}
+
+export struct ReadingCard {
+    id: string,
+    title: string,
+    // What it does, a line each.
+    lines: [string],
+    // "Requires a GPU", with a check when this PC has one.
+    requires: string,
+    requires-met: bool,
+    // "About 20 min for your 6,214 images".
+    estimate: string,
+    // The count isn't in yet: a skeleton in the estimate's place.
+    counting: bool,
+    // "6 MB" and "CPU": green when this PC has what they ask for, red when it doesn't.
+    size: string,
+    size-ok: bool,
+    device: string,
+    device-ok: bool,
+    recommended: bool,
+    available: bool,
+    // The (i): a paragraph each, with links.
+    info: [styled-text],
+    // Where it can run, when there's a choice: the device becomes a menu. `way` is the one chosen.
+    ways: [CardWay],
+    way: int,
+}
+
+/// A choice in a card's dropdown, with more to say than a `Menu`'s row.
+export struct PickerRow {
+    label: string,
+    // What it means for someone who doesn't know the models.
+    detail: string,
+    // The models themselves, more quietly.
+    models: string,
+    // "+725 MB": green when it's the choice, grey when it isn't.
+    size: string,
+    available: bool,
+}
+
+/// A theme, as its tile shows it.
+export struct ThemeTile {
+    name: string,
+    // Its accent, for light or dark, whichever is showing.
+    color: color,
+    // Made in the Workshop: it can be removed.
+    own: bool,
+}
+
+/// A stage of reading, on the Activity page.
+/// A stage's half, as a stage has it.
+export struct StagePart {
+    state: int,
+    count: string,
+    note: string,
+    progress: float,
+}
+
+export struct StageRow {
+    name: string,
+    // 0 still to come, 1 going, 2 waiting, 3 done.
+    state: int,
+    // "612 of 834 images".
+    count: string,
+    // How fast and how long, or why it's waiting.
+    note: string,
+    // 0 to 1, -1 when it has no measure.
+    progress: float,
+    // Images, split in two: reading their text (the fields above, under `part`) and looking at what they show (`shown`,
+    // under `shown-part`, "What they show" when it's empty). Videos can have a third part (`extra`, under `third-part`).
+    split: bool,
+    part: string,
+    shown: StagePart,
+    shown-part: string,
+    third: bool,
+    third-part: string,
+    extra: StagePart,
+}
+
+
+/// What's being read right now.
+export struct NowRow {
+    // "First read · PP-OCRv6 small · Processor · 430 MB".
+    what: string,
+    file: string,
+    // The whole path, for "Skip".
+    path: string,
+    // Whether it can be skipped: work long enough on one file to (a video's text or frames, what's said).
+    skip: bool,
+}
+
+/// A file that couldn't be read.
+export struct ProblemRow {
+    name: string,
+    path: string,
+    why: string,
+}
+
+component StepDot inherits Rectangle {
+    in property <int> state; // 0 upcoming, 1 current, 2 done
+    in property <length> size: 10px;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: root.state == 1 ? Theme.accent : root.state == 2 ? Theme.clay : transparent;
+    border-width: root.state == 0 ? 1.5px : 0px;
+    border-color: Theme.text-3;
+}
+
+component RailItem inherits Rectangle {
+    in property <string> label;
+    in property <int> state; // onboarding: 0 upcoming, 1 current, 2 done; settings: 1 current, 0 not
+    in property <bool> clickable;
+    in property <bool> dots;
+    // A step within the one above it.
+    in property <bool> sub;
+    callback clicked();
+    height: root.sub ? 28px : 36px;
+    border-radius: 7px;
+    background: root.state == 1 && !root.dots ? Theme.selected : touch.has-hover && root.clickable ? Theme.hover : transparent;
+    animate background { duration: Theme.quick; }
+    HorizontalLayout {
+        padding-left: root.sub ? 30px : 12px;
+        spacing: root.sub ? 10px : 12px;
+        if root.dots: StepDot { state: root.state; size: root.sub ? 7px : 10px; y: (parent.height - self.height) / 2; }
+        if !root.dots: Rectangle {
+            width: 4px;
+            height: 16px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 2px;
+            background: root.state == 1 ? Theme.accent : transparent;
+        }
+        Text {
+            text: root.label;
+            font-size: root.sub ? 12.5px : 13.5px;
+            font-weight: root.state == 1 ? 600 : 400;
+            color: root.state == 0 && root.dots ? Theme.text-3 : Theme.text;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.clickable;
+        mouse-cursor: root.clickable ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// A page's title (it arrives first) and subtitle (right after).
+component Heading inherits VerticalLayout {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <length> title-size: 26px;
+    in property <length> subtitle-size: 14px;
+    spacing: 6px;
+    Reveal {
+        order: 0;
+        Text {
+            text: root.title;
+            font-family: Theme.display-font;
+            font-size: root.title-size;
+            font-weight: 600;
+            color: Theme.text;
+            wrap: word-wrap;
+        }
+    }
+    if root.subtitle != "": Reveal {
+        order: 1;
+        Text {
+            text: root.subtitle;
+            font-size: root.subtitle-size;
+            color: Theme.text-2;
+            wrap: word-wrap;
+        }
+    }
+}
+
+component SectionTitle inherits Text {
+    font-size: 12px;
+    font-weight: 600;
+    color: Theme.text-3;
+}
+
+/// A group's name on a long page (General): a little room above it, none for the first.
+component GroupTitle inherits VerticalLayout {
+    in property <string> text;
+    in property <bool> first;
+    padding-top: root.first ? 0px : 12px;
+    padding-left: 2px;
+    SectionTitle { text: root.text; }
+}
+
+component Subheader inherits Text {
+    font-family: Theme.display-font;
+    font-size: 18px;
+    font-weight: 600;
+    color: Theme.text;
+}
+
+/// A welcome card: what Excavate does in a few words, and a live scene showing it. A card waits its turn as a quiet
+/// placeholder; while it plays, a thin line along its bottom fills, and when that's full the next one wakes. Under the
+/// pointer its scene freezes on the exact frame (a tap toggles that on a touch screen), and a waiting card offers to show
+/// itself.
+component DemoCard inherits Rectangle {
+    in property <string> title;
+    in property <float> k: 1;
+    in property <bool> waiting;
+    // How far its line has come, 0 to 1, and whether it's there at all.
+    in property <float> line;
+    in property <bool> line-shown;
+    in property <int> segments: 1;
+    // A waiting card's soft pulse, 0 to 1.
+    in property <float> pulse;
+    callback show-now();
+    // "Show now" asked to see it: the pointer still there doesn't pause it, until it comes back.
+    property <bool> asked;
+    property <bool> pinned;
+    // `line-shown` may follow the clock: taken only when it changes, or the whole line is drawn again every frame.
+    property <bool> line-on;
+    init => { self.line-on = self.line-shown; }
+    changed line-shown => { self.line-on = self.line-shown; }
+    out property <bool> paused: Theme.animate && !root.waiting && (root.pinned || (touch.has-hover && !root.asked));
+    out property <float> seconds: clock.seconds;
+    clock := Clock { paused: root.paused; running: !root.waiting; }
+    border-radius: 12px * root.k;
+    background: Theme.raised;
+    border-width: 1px;
+    border-color: root.paused || (root.waiting && touch.has-hover) ? Theme.accent : Theme.divider;
+    animate border-color { duration: Theme.animate ? 120ms : 0ms; }
+    clip: true;
+    HorizontalLayout {
+        padding-left: 18px * root.k;
+        padding-right: 14px * root.k;
+        padding-top: 12px * root.k;
+        padding-bottom: 12px * root.k;
+        spacing: 18px * root.k;
+        Text {
+            width: 138px * root.k;
+            text: root.title;
+            font-family: Theme.display-font;
+            font-size: 16px * root.k;
+            font-weight: 600;
+            color: root.waiting ? Theme.text-3 : Theme.text;
+            animate color { duration: Theme.animate ? 300ms : 0ms; }
+            wrap: word-wrap;
+            vertical-alignment: center;
+        }
+        if root.waiting: Rectangle {
+            opacity: 0.3 + 0.3 * root.pulse;
+            Rectangle { x: 0px; y: 2px * root.k; width: 112px * root.k; height: 22px * root.k; border-radius: 6px * root.k; background: Theme.stroke-strong; }
+            Rectangle { x: 0px; y: 34px * root.k; width: parent.width; height: parent.height - 38px * root.k; border-radius: 7px * root.k; background: Theme.stroke-strong; }
+        }
+        @children
+    }
+    SceneLine {
+        x: 0px;
+        y: parent.height - self.height;
+        width: parent.width;
+        k: root.k;
+        // Once it's gone it stops following the clock. It's full by then.
+        progress: root.line-on ? root.line : 1;
+        segments: root.segments;
+        opacity: root.line-on ? 1 : 0;
+        animate opacity { duration: Theme.animate ? 300ms : 0ms; }
+    }
+    SceneBadge {
+        x: parent.width - self.width - 5px * root.k;
+        y: 5px * root.k;
+        k: root.k;
+        label: root.waiting ? "Show now" : "";
+        shown: root.paused || (root.waiting && touch.has-hover);
+    }
+    touch := TouchArea {
+        mouse-cursor: root.waiting ? pointer : default;
+        clicked => {
+            if (root.waiting) {
+                root.asked = true;
+                root.show-now();
+            } else if (Theme.touch) {
+                root.pinned = !root.pinned;
+            }
+        }
+        changed has-hover => {
+            if (!self.has-hover) { root.asked = false; }
+        }
+    }
+}
+
+/// The whole page scales with the window, as a slide does: what's on it was laid out for 640 by 617 px.
+component WelcomePage inherits HorizontalLayout {
+    in property <[DemoRow]> search-rows;
+    in property <string> search-typed;
+    in property <string> search-time;
+    in property <length> available-width;
+    in property <length> available-height;
+    // Been here before: all the cards at once, no lines. The first time, they wake one at a time, each after the one before
+    // has shown what it does, and they all keep going. Each line fills, then fades for good, the last one's too.
+    in property <bool> seen;
+    // The first card's typing runs in Rust.
+    callback search-paused(bool);
+    property <float> k: clamp(min(root.available-width / 640px, root.available-height / 617px), 0.85, 2.4);
+    property <bool> at-once: root.seen || !Theme.animate;
+    property <float> second-at: 8;
+    property <float> third-at: 14.5;
+    // The sequence's clock: it goes along while the card that's playing plays, and a click on a waiting card moves it on.
+    property <duration> begun;
+    property <duration> held;
+    property <bool> stopped;
+    init => { self.begun = animation-tick(); }
+    property <float> elapsed: root.at-once ? 100 : root.stopped ? root.held / 1s : (animation-tick() - root.begun) / 1s;
+    property <bool> holding: (root.elapsed < root.second-at && first-card.paused) || (root.elapsed >= root.second-at && root.elapsed < root.third-at && second-card.paused);
+    changed holding => {
+        if (self.holding) {
+            root.held = animation-tick() - root.begun;
+            root.stopped = true;
+        } else {
+            root.begun = animation-tick() - root.held;
+            root.stopped = false;
+        }
+    }
+    function jump(to: float) {
+        root.begun = animation-tick() - to * 1s;
+        root.held = to * 1s;
+    }
+    property <float> pulse: 0.5 + 0.5 * sin(root.elapsed * 150deg);
+    property <bool> search-held: first-card.paused;
+    changed search-held => { root.search-paused(self.search-held); }
+    alignment: center;
+    VerticalLayout {
+        width: min(root.available-width, 740px * root.k);
+        spacing: 14px * root.k;
+        Heading {
+            title-size: 32px * root.k;
+            subtitle-size: 14px * root.k;
+            title: "Search, the way it should be.";
+            subtitle: "Everything, everywhere, inside every file, image and video. In milliseconds.";
+        }
+        Reveal {
+            order: 2;
+            first-card := DemoCard {
+                k: root.k;
+                height: 130px * root.k;
+                title: "Searches instantly, as you type";
+                line: clamp(root.elapsed / root.second-at, 0, 1);
+                line-shown: !root.at-once && root.elapsed < root.second-at;
+                WelcomeSearch { k: root.k; rows: root.search-rows; typed: root.search-typed; time: root.search-time; t: first-card.seconds; }
+            }
+        }
+        Reveal {
+            order: 3;
+            second-card := DemoCard {
+                k: root.k;
+                height: 128px * root.k;
+                title: "Searches inside files, images, videos and recordings";
+                waiting: root.elapsed < root.second-at;
+                pulse: root.pulse;
+                line: clamp((root.elapsed - root.second-at) / (root.third-at - root.second-at), 0, 1);
+                line-shown: !root.at-once && root.elapsed < root.third-at;
+                show-now => { root.jump(root.second-at); }
+                if !second-card.waiting: Reveal { WelcomeInside { k: root.k; clock: second-card.seconds; } }
+            }
+        }
+        Reveal {
+            order: 4;
+            third-card := DemoCard {
+                k: root.k;
+                height: 216px * root.k;
+                title: "Even finds what you describe";
+                waiting: root.elapsed < root.third-at;
+                pulse: root.pulse;
+                // One for each example, once round: Wi-Fi, the lecture, the passport and the lease.
+                segments: 4;
+                line: clamp(third-card.seconds / 28, 0, 1);
+                line-shown: !root.at-once && third-card.seconds < 28;
+                show-now => { root.jump(root.third-at); }
+                if !third-card.waiting: Reveal { WelcomeImages { k: root.k; time: third-card.seconds; } }
+            }
+        }
+        Reveal {
+            order: 5;
+            Text { text: "Setting up takes a minute. You can change everything later in Settings."; font-size: 12.5px * root.k; color: Theme.text-3; wrap: word-wrap; }
+        }
+    }
+}
+
+component ShortcutSection inherits VerticalLayout {
+    in property <[string]> keys;
+    in property <bool> recording;
+    in property <string> note;
+    in property <string> error;
+    callback record();
+    callback pressed(bool, bool, bool, bool, string);
+    callback cancel();
+    spacing: 14px;
+    Rectangle {
+        height: 96px;
+        border-radius: Theme.radius;
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: root.recording ? Theme.accent : Theme.divider;
+        HorizontalLayout {
+            padding-left: 20px;
+            padding-right: 20px;
+            spacing: 16px;
+            alignment: space-between;
+            if !root.recording: HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                for part in root.keys: Keycap { label: part; large: true; y: (parent.height - self.height) / 2; }
+            }
+            if root.recording: VerticalLayout {
+                alignment: center;
+                spacing: 4px;
+                Text { text: "Press the new shortcut"; font-size: 15px; font-weight: 600; color: Theme.text; }
+                Text { text: "Hold Ctrl, Alt, Shift or Win and press a key. Esc cancels."; font-size: 12px; color: Theme.text-2; }
+            }
+            VerticalLayout {
+                alignment: center;
+                Button {
+                    label: root.recording ? "Cancel" : "Change";
+                    clicked => {
+                        if (root.recording) { root.cancel(); } else { root.record(); recorder.focus(); }
+                    }
+                }
+            }
+        }
+        recorder := FocusScope {
+            enabled: root.recording;
+            key-pressed(event) => {
+                if (!root.recording) { return reject; }
+                if (event.text == Key.Escape) { root.cancel(); return accept; }
+                if (event.text == Key.Shift || event.text == Key.Control || event.text == Key.Alt || event.text == Key.AltGr
+                    || event.text == Key.Meta || event.text == Key.ShiftR || event.text == Key.ControlR) {
+                    return accept;
+                }
+                root.pressed(event.modifiers.control, event.modifiers.alt, event.modifiers.shift, event.modifiers.meta,
+                    event.text == " " ? "Space"
+                    : event.text == Key.F1 ? "F1" : event.text == Key.F2 ? "F2" : event.text == Key.F3 ? "F3"
+                    : event.text == Key.F4 ? "F4" : event.text == Key.F5 ? "F5" : event.text == Key.F6 ? "F6"
+                    : event.text == Key.F7 ? "F7" : event.text == Key.F8 ? "F8" : event.text == Key.F9 ? "F9"
+                    : event.text == Key.F10 ? "F10" : event.text == Key.F11 ? "F11" : event.text == Key.F12 ? "F12"
+                    : event.text);
+                accept
+            }
+        }
+    }
+    if root.error != "": Text { text: root.error; font-size: 12.5px; color: Theme.warning; wrap: word-wrap; }
+    if root.note != "": HorizontalLayout {
+        spacing: 10px;
+        Rectangle { width: 7px; height: 7px; y: 6px; border-radius: 3.5px; background: Theme.accent; }
+        Text { text: root.note; font-size: 12.5px; color: Theme.text-2; wrap: word-wrap; }
+    }
+}
+
+component EverythingSection inherits VerticalLayout {
+    // "running", "installed", "missing", "checking", "installing", "failed"; "loading" its list, "behind" (it can't see
+    // new files), "fixing" that.
+    in property <string> state;
+    // What would get it seeing new files again ("Start its service").
+    in property <string> fix;
+    in property <string> detail;
+    // 0 to 1 while downloading, -1 while waiting on something that has no measure.
+    in property <float> progress: -1;
+    callback action();
+    callback custom();
+    spacing: 8px;
+    Rectangle {
+        min-height: 72px;
+        border-radius: Theme.radius;
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: Theme.divider;
+        VerticalLayout {
+            padding-left: 18px;
+            padding-right: 18px;
+            padding-top: 12px;
+            padding-bottom: 12px;
+            spacing: 10px;
+            alignment: center;
+            HorizontalLayout {
+                spacing: 14px;
+                Rectangle {
+                    width: 10px;
+                    height: 10px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 5px;
+                    background: root.state == "running" || root.state == "own" ? Theme.ok
+                        : root.state == "checking" || root.state == "installing" || root.state == "loading" || root.state == "fixing" || root.state == "own-building" ? Theme.text-3
+                        : Theme.warning;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 3px;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: root.state == "own" ? "Excavate's own index finds names"
+                            : root.state == "own-building" ? "Excavate is listing your drives"
+                            : root.state == "own-failed" ? "Excavate's own index couldn't start"
+                            : root.state == "running" ? "Everything is running"
+                            : root.state == "installed" ? "Everything is installed, but not running"
+                            : root.state == "checking" ? "Looking for Everything…"
+                            : root.state == "installing" ? "Installing Everything"
+                            : root.state == "failed" ? "Everything couldn't be installed"
+                            : root.state == "loading" ? "Everything is loading its list of files"
+                            : root.state == "behind" ? "Everything can't see new files"
+                            : root.state == "fixing" ? "Getting Everything to see new files" : "Everything isn't installed";
+                        font-size: 14px;
+                        font-weight: 600;
+                        color: Theme.text;
+                    }
+                    if root.detail != "": Text { text: root.detail; font-size: 12px; color: Theme.text-2; wrap: word-wrap; }
+                }
+                if root.state == "installed" || root.state == "missing" || root.state == "failed" || root.state == "behind": VerticalLayout {
+                    alignment: center;
+                    Button {
+                        primary: true;
+                        label: root.state == "behind" ? root.fix : root.state == "installed" ? "Start Everything" : "Install Everything";
+                        clicked => { root.action(); }
+                    }
+                }
+            }
+            if root.state == "installing" || root.state == "fixing" || root.state == "loading" || root.state == "own-building": Bar { progress: root.state == "installing" ? root.progress : -1; }
+        }
+    }
+    if root.state == "missing" || root.state == "failed": HorizontalLayout {
+        alignment: end;
+        Link { text: "Custom installation"; font-weight: 400; clicked => { root.custom(); } }
+    }
+}
+
+component FolderRow inherits Rectangle {
+    in property <FolderItem> folder;
+    // Only showing how far it's come: no checkbox.
+    in property <bool> progress-only;
+    callback toggled(bool);
+    callback removed();
+    callback kind-toggled(int);
+    // Two lines: the name with what's read in it, the path under it (not on the icons' line).
+    height: self.preferred-height;
+    border-radius: Theme.radius;
+    background: Theme.raised;
+    border-width: 1px;
+    border-color: Theme.divider;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 12px;
+        padding-top: 7px;
+        padding-bottom: 8px;
+        spacing: 14px;
+        // (Placed in holders as tall as the row, so they sit in its middle.)
+        if !root.progress-only: Rectangle {
+            width: 16px;
+            horizontal-stretch: 0;
+            Check { x: 0; y: (parent.height - self.height) / 2; width: 16px; height: 16px; on: root.folder.on; toggled(on) => { root.toggled(on); } }
+        }
+        Rectangle {
+            width: 17px;
+            horizontal-stretch: 0;
+            Glyph {
+                x: 0;
+                y: (parent.height - self.height) / 2;
+                width: 17px;
+                height: 17px;
+                commands: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z";
+                stroke: Theme.clay;
+            }
+        }
+        VerticalLayout {
+            spacing: 1px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 14px;
+                min-height: 28px;
+                Text {
+                    text: root.folder.name;
+                    font-size: 13.5px;
+                    color: root.folder.on ? Theme.text : Theme.text-3;
+                    overflow: elide;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                if !root.progress-only: HorizontalLayout {
+                    horizontal-stretch: 0;
+                    spacing: 0px;
+                    for group[g] in [[0, 1], [2, 3, 4], [5]]: HorizontalLayout {
+                        spacing: 0px;
+                        if g > 0: Rectangle {
+                            width: KindColumns.between;
+                            Rectangle { x: (parent.width - 1px) / 2; y: 5px; width: 1px; height: parent.height - 10px; background: Theme.divider; }
+                        }
+                        HorizontalLayout {
+                            spacing: KindColumns.gap;
+                            for kind in group: KindToggle {
+                                kind: kind;
+                                on: root.folder.kinds[kind];
+                                // A folder that isn't read reads none of them.
+                                anywhere: root.folder.on && root.folder.kinds-anywhere[kind];
+                                tip: root.folder.kind-tips[kind];
+                                toggled => { root.kind-toggled(kind); }
+                            }
+                        }
+                    }
+                }
+                if !root.progress-only: Rectangle {
+                    width: 28px;
+                    horizontal-stretch: 0;
+                    Glyph {
+                        width: 14px;
+                        height: 14px;
+                        commands: "M6 6l12 12 M18 6l-12 12";
+                        stroke: remove-touch.has-hover ? Theme.text : Theme.text-3;
+                    }
+                    remove-touch := TouchArea { mouse-cursor: pointer; clicked => { root.removed(); } }
+                }
+            }
+            HorizontalLayout {
+                spacing: 12px;
+                Text { text: root.folder.path; font-size: 11.5px; color: Theme.text-3; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+                if root.folder.done && root.folder.on: Rectangle {
+                    width: 13px;
+                    horizontal-stretch: 0;
+                    Glyph {
+                        x: 0;
+                        y: (parent.height - self.height) / 2;
+                        width: 13px;
+                        height: 13px;
+                        stroke-width: 2px;
+                        commands: "M5 12l5 5l9-10";
+                        stroke: Theme.ok;
+                    }
+                }
+                Text { text: root.folder.detail; font-size: 11.5px; color: Theme.text-2; horizontal-alignment: right; vertical-alignment: center; horizontal-stretch: 0; }
+                if root.folder.progress >= 0 && root.folder.on: Rectangle {
+                    width: 100px;
+                    horizontal-stretch: 0;
+                    Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        height: 3px;
+                        border-radius: 1.5px;
+                        background: Theme.divider;
+                        Rectangle {
+                            x: 0px;
+                            width: parent.width * min(1, root.folder.progress);
+                            border-radius: 1.5px;
+                            background: Theme.clay;
+                            animate width { duration: 300ms; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The (i) in a card's corner: a short popover, closed by a click elsewhere.
+component InfoDot inherits Rectangle {
+    in property <[styled-text]> info;
+    callback link(string);
+    width: 22px;
+    height: 22px;
+    border-radius: 11px;
+    background: info-touch.has-hover ? Theme.hover : transparent;
+    Glyph {
+        width: 16px;
+        height: 16px;
+        stroke-width: 1.6px;
+        commands: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 11v5.5 M12 7.5v.01";
+        stroke: info-touch.has-hover ? Theme.text : Theme.text-3;
+    }
+    info-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { popover.show(); }
+    }
+    popover := PopupWindow {
+        close-policy: close-on-click-outside;
+        // Inside the content area, whichever card it's on.
+        x: max(-278px, 256px - root.absolute-position.x);
+        y: 26px;
+        width: 300px;
+        Rectangle {
+            border-radius: 10px;
+            background: Theme.popover;
+            border-width: 1px;
+            border-color: Theme.stroke-strong;
+            drop-shadow-blur: 18px;
+            drop-shadow-offset-y: 4px;
+            drop-shadow-color: #00000050;
+            VerticalLayout {
+                padding: 14px;
+                spacing: 9px;
+                for line in root.info: StyledText {
+                    text: line;
+                    default-font-size: 12.5px;
+                    default-font-family: Theme.font;
+                    default-color: Theme.text-2;
+                    link-color: Theme.accent;
+                    link-clicked(link) => { root.link(link); }
+                }
+            }
+        }
+    }
+}
+
+component FoldersSection inherits VerticalLayout {
+    in property <[FolderItem]> folders;
+    // Names come from Excavate's own index, not Everything.
+    in property <bool> own-index;
+    in property <[TagRow]> exclusions;
+    in property <int> names-scope;
+    in property <bool> leave-out-apps;
+    in property <[TagRow]> name-folders;
+    // Some folders being read aren't in the name filter's list.
+    in property <bool> name-folders-missing;
+    in property <[styled-text]> leave-out-info;
+    in-out property <string> new-exclusion;
+    in-out property <string> exclusion-error;
+    callback folder-toggled(int, bool);
+    callback folder-kind-toggled(int, int);
+    callback add-folder();
+    callback remove-folder(int);
+    callback exclusion-removed(int);
+    // Whether it went in the list (a regular expression has to make sense).
+    callback exclusion-added(string) -> bool;
+    callback exclude-folder();
+    callback names-scope-chosen(int);
+    callback leave-out-apps-toggled(bool);
+    callback name-folder-added();
+    callback name-folder-removed(int);
+    callback add-read-folders();
+    callback link(string);
+    changed new-exclusion => { root.exclusion-error = ""; }
+    function add-exclusion() {
+        if (root.exclusion-added(root.new-exclusion)) { root.new-exclusion = ""; }
+    }
+    spacing: 22px;
+    // Three whole blocks, each arriving at once.
+    Reveal {
+        order: 1;
+        VerticalLayout {
+            spacing: 8px;
+            SettingRow {
+                compact: true;
+                title: "Find files by name in";
+                Segmented {
+                    options: [root.own-index ? "All drives" : "Everything's whole index", "Only these folders"];
+                    selected: root.names-scope;
+                    chosen(index) => { root.names-scope-chosen(index); }
+                }
+            }
+            Text {
+                text: root.own-index ? "Only names in these folders show. Bedrock still lists every drive, so \"All drives\" finds everything again at once."
+                    : "Only names in these folders show. Everything still indexes every drive: that's set in Everything, under Tools > Options > Indexes.";
+                font-size: 12px;
+                color: Theme.text-2;
+                wrap: word-wrap;
+            }
+            // Eases open.
+            Rectangle {
+                clip: true;
+                height: root.names-scope == 1 ? name-list.preferred-height : 0px;
+                animate height { duration: Theme.animate ? 180ms : 0ms; easing: ease-out; }
+                name-list := VerticalLayout {
+                    y: 0px;
+                    height: self.preferred-height;
+                    spacing: 6px;
+                    SettingRow {
+                        compact: true;
+                        title: "Leave out apps too";
+                        detail: "Apps show from anywhere, so Excavate keeps opening them. Turn this on to see only these folders.";
+                        Switch { on: root.leave-out-apps; toggled(on) => { root.leave-out-apps-toggled(on); } }
+                    }
+                    for row in root.name-folders: HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        for folder[index] in row.tags: Tag {
+                            label: folder;
+                            removed => { root.name-folder-removed(row.start + index); }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 14px;
+                        alignment: start;
+                        Button { label: "Add a folder…"; clicked => { root.name-folder-added(); } }
+                        if root.name-folders-missing: Link { text: "Add the folders being read"; vertical-alignment: center; clicked => { root.add-read-folders(); } }
+                    }
+                }
+            }
+        }
+    }
+    Reveal {
+        order: 2;
+        VerticalLayout {
+            spacing: 10px;
+            VerticalLayout {
+                spacing: 3px;
+                Subheader { text: "Read inside these folders"; }
+                Text { text: "Documents, code and images here become searchable by what's inside them. The icons choose what else is read in each."; font-size: 12px; color: Theme.text-2; wrap: word-wrap; }
+            }
+            // Names the icons once, over their columns: each group's name ("Images", "Videos", "Audio") over a bracket,
+            // and what each icon reads under it.
+            VerticalLayout {
+                spacing: 1px;
+                HorizontalLayout {
+                    alignment: end;
+                    padding-right: KindColumns.after;
+                    height: 14px;
+                    for group[g] in [{ name: "Images", count: 2 }, { name: "Videos", count: 3 }, { name: "Audio", count: 1 }]: HorizontalLayout {
+                        if g > 0: Rectangle { width: KindColumns.between; }
+                        Rectangle {
+                            width: group.count * KindColumns.toggle + (group.count - 1) * KindColumns.gap;
+                            Text { x: -10px; width: parent.width + 20px; text: group.name; font-size: 10.5px; color: Theme.text-3; horizontal-alignment: center; vertical-alignment: top; }
+                            // A bracket over its columns.
+                            if group.count > 1: Rectangle { y: parent.height - 1px; x: 4px; width: parent.width - 8px; height: 1px; background: Theme.divider; }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    padding-right: KindColumns.after;
+                    height: 13px;
+                    for group[g] in [["Text", "Shows"], ["Text", "Shows", "Said"], ["Said"]]: HorizontalLayout {
+                        spacing: KindColumns.gap;
+                        if g > 0: Rectangle { width: KindColumns.between - KindColumns.gap; }
+                        for label in group: Rectangle {
+                            width: KindColumns.toggle;
+                            // (A little wider than its column, centered on it.)
+                            Text { x: -6px; width: 42px; text: label; font-size: 10.5px; color: Theme.text-3; horizontal-alignment: center; }
+                        }
+                    }
+                }
+            }
+            for folder[index] in root.folders: FolderRow {
+                folder: folder;
+                toggled(on) => { root.folder-toggled(index, on); }
+                removed => { root.remove-folder(index); }
+                kind-toggled(kind) => { root.folder-kind-toggled(index, kind); }
+            }
+            HorizontalLayout {
+                alignment: start;
+                Button { label: "Add a folder…"; clicked => { root.add-folder(); } }
+            }
+        }
+    }
+    Reveal {
+        order: 3;
+        VerticalLayout {
+            spacing: 10px;
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                Subheader { text: "Leave out"; }
+                InfoDot {
+                    y: (parent.height - self.height) / 2;
+                    info: root.leave-out-info;
+                    link(link) => { root.link(link); }
+                }
+            }
+            Text {
+                text: "Folders and names that are never read: what programs download, build or cache. A name leaves out every folder or file called that; * matches anything.";
+                font-size: 12px;
+                color: Theme.text-2;
+                wrap: word-wrap;
+            }
+            for row in root.exclusions: HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                for exclusion[index] in row.tags: Tag {
+                    label: exclusion;
+                    removed => { root.exclusion-removed(row.start + index); }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                Field {
+                    text <=> root.new-exclusion;
+                    placeholder: "A name, a pattern like *.log, or regex:…";
+                    accepted(text) => { root.add-exclusion(); }
+                }
+                Button { label: "Leave out"; clicked => { root.add-exclusion(); } }
+                Button { label: "A folder…"; clicked => { root.exclude-folder(); } }
+            }
+            if root.exclusion-error != "": Text { text: root.exclusion-error; font-size: 12px; color: Theme.bad; wrap: word-wrap; }
+        }
+    }
+}
+
+component Card inherits Rectangle {
+    in property <ReadingCard> card;
+    in property <bool> chosen;
+    in property <bool> dimmed;
+    callback clicked();
+    callback link(string);
+    callback way-chosen(int);
+    border-radius: 12px;
+    background: root.chosen && !root.dimmed ? Theme.accent-soft : touch.has-hover && root.card.available ? Theme.hover : Theme.raised;
+    border-width: root.chosen && !root.dimmed ? 1.5px : 1px;
+    border-color: root.chosen && !root.dimmed ? Theme.accent : Theme.divider;
+    animate background, border-color { duration: Theme.quick; }
+    // Passed on by hand: left to itself, the row of cards measured the wrapped text a line short.
+    min-height: lay.min-height;
+    // Under what's on the card, so a control on it gets its own clicks.
+    touch := TouchArea {
+        enabled: root.card.available;
+        mouse-cursor: root.card.available ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+    lay := VerticalLayout {
+        opacity: root.dimmed ? 0.45 : 1;
+        animate opacity { duration: Theme.animate ? 160ms : 0ms; }
+        padding: 15px;
+        padding-top: 13px;
+        spacing: 3px;
+        HorizontalLayout {
+            spacing: 8px;
+            padding-right: 18px;
+            padding-bottom: 5px;
+            Rectangle {
+                width: 16px;
+                height: 16px;
+                y: 3px;
+                border-radius: 8px;
+                border-width: root.chosen && !root.dimmed ? 5px : 1.5px;
+                border-color: root.chosen && !root.dimmed ? Theme.accent : Theme.text-3;
+                animate border-width { duration: Theme.quick; }
+            }
+            Text { text: root.card.title; font-family: Theme.display-font; font-size: 16px; font-weight: 600; color: Theme.text; wrap: word-wrap; horizontal-stretch: 1; }
+        }
+        if root.card.recommended: HorizontalLayout {
+            alignment: start;
+            padding-bottom: 5px;
+            Rectangle {
+                height: 18px;
+                width: recommended-text.preferred-width + 14px;
+                border-radius: 9px;
+                background: Theme.accent-soft;
+                recommended-text := Text { text: "Recommended for this PC"; font-size: 10.5px; font-weight: 600; color: Theme.accent; }
+            }
+        }
+        for line in root.card.lines: Text { text: line; font-size: 12.5px; color: Theme.text-2; wrap: word-wrap; }
+        if root.card.requires != "": HorizontalLayout {
+            spacing: 5px;
+            padding-top: 2px;
+            Glyph {
+                width: 15px;
+                height: 15px;
+                y: 1px;
+                commands: "M5 12l5 5l9-10";
+                stroke-width: 2.4px;
+                stroke: root.card.requires-met ? Theme.ok : Theme.text-3;
+            }
+            Text {
+                text: root.card.requires;
+                font-size: 12.5px;
+                color: root.card.requires-met ? Theme.ok : Theme.text-3;
+                horizontal-stretch: 1;
+            }
+        }
+        @children
+        Rectangle { vertical-stretch: 1; min-height: 6px; }
+        Rectangle { height: 1px; background: Theme.divider; }
+        Rectangle { height: 5px; }
+        if !root.card.counting: Text { text: root.card.estimate; font-size: 12px; color: Theme.text; wrap: word-wrap; }
+        if root.card.counting: HorizontalLayout {
+            alignment: start;
+            padding-top: 2px;
+            padding-bottom: 2px;
+            Skeleton { width: 150px; }
+        }
+        HorizontalLayout {
+            spacing: 5px;
+            alignment: start;
+            Text { text: root.card.size; font-size: 11.5px; font-weight: 600; color: root.card.size-ok ? Theme.ok : Theme.bad; vertical-alignment: center; }
+            Text { text: "·"; font-size: 11.5px; color: Theme.text-3; vertical-alignment: center; }
+            if root.card.ways.length == 0: Text { text: root.card.device; font-size: 11.5px; font-weight: 600; color: root.card.device-ok ? Theme.ok : Theme.bad; vertical-alignment: center; }
+            // Its words line up with the size's; the hover's outline reaches around them (and the arrow) without moving them.
+            if root.card.ways.length > 0: device-chip := Rectangle {
+                width: chip-row.preferred-width;
+                Rectangle {
+                    x: -6px;
+                    y: -3px;
+                    width: parent.width + 11px;
+                    height: parent.height + 6px;
+                    border-radius: 6px;
+                    background: chip-touch.has-hover ? Theme.hover : transparent;
+                    border-width: chip-touch.has-hover ? 1px : 0px;
+                    border-color: Theme.divider;
+                }
+                chip-row := HorizontalLayout {
+                    spacing: 3px;
+                    Text { text: root.card.device; font-size: 11.5px; font-weight: 600; color: root.card.device-ok ? Theme.ok : Theme.bad; vertical-alignment: center; }
+                    VerticalLayout {
+                        alignment: center;
+                        Glyph {
+                            width: 11px;
+                            height: 11px;
+                            stroke-width: 2px;
+                            commands: "M6 9l6 6l6-6";
+                            stroke: root.card.device-ok ? Theme.ok : Theme.bad;
+                        }
+                    }
+                }
+                chip-touch := TouchArea {
+                    x: -6px;
+                    y: -3px;
+                    width: parent.width + 11px;
+                    height: parent.height + 6px;
+                    mouse-cursor: pointer;
+                    clicked => { ways-menu.show(); }
+                }
+                ways-menu := PopupWindow {
+                    close-policy: close-on-click-outside;
+                    x: -6px;
+                    y: parent.height + 4px;
+                    width: 270px;
+                    Rectangle {
+                        border-radius: 10px;
+                        background: Theme.popover;
+                        border-width: 1px;
+                        border-color: Theme.stroke-strong;
+                        drop-shadow-blur: 18px;
+                        drop-shadow-offset-y: 4px;
+                        drop-shadow-color: #00000050;
+                        VerticalLayout {
+                            padding: 5px;
+                            spacing: 1px;
+                            for way[index] in root.card.ways: Rectangle {
+                                border-radius: 6px;
+                                background: way-touch.has-hover ? Theme.hover : transparent;
+                                HorizontalLayout {
+                                    padding: 8px;
+                                    spacing: 8px;
+                                    Rectangle {
+                                        width: 14px;
+                                        if index == root.card.way: Glyph {
+                                            width: 14px;
+                                            height: 14px;
+                                            y: 1px;
+                                            commands: "M5 12l5 5l9-10";
+                                            stroke-width: 2.4px;
+                                            stroke: Theme.accent;
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        spacing: 1px;
+                                        Text { text: way.title; font-size: 12.5px; color: Theme.text; wrap: word-wrap; }
+                                        Text { text: way.note; font-size: 11.5px; color: Theme.text-2; wrap: word-wrap; }
+                                    }
+                                }
+                                way-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        root.way-chosen(index);
+                                        ways-menu.close();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    InfoDot {
+        x: parent.width - self.width - 9px;
+        y: 10px;
+        info: root.card.info;
+        link(link) => { root.link(link); }
+    }
+}
+
+/// A little stepper for the time of day.
+component TimeStepper inherits Rectangle {
+    in property <string> time;
+    callback step(int);
+    height: 30px;
+    width: 124px;
+    border-radius: 7px;
+    background: Theme.field;
+    border-width: 1px;
+    border-color: Theme.stroke;
+    HorizontalLayout {
+        for sign[index] in [-1, 0, 1]: Rectangle {
+            width: sign == 0 ? 72px : 26px;
+            background: sign != 0 && step-touch.has-hover ? Theme.hover : transparent;
+            border-radius: 6px;
+            if sign == 0: Text { text: root.time; font-size: 12.5px; color: Theme.text; }
+            if sign != 0: Glyph {
+                width: 12px;
+                height: 12px;
+                commands: sign < 0 ? "M15 6l-6 6l6 6" : "M9 6l6 6l-6 6";
+                stroke: Theme.text-2;
+            }
+            step-touch := TouchArea {
+                enabled: sign != 0;
+                mouse-cursor: sign != 0 ? pointer : default;
+                clicked => { root.step(sign); }
+            }
+        }
+    }
+}
+
+/// A dropdown on a card: the choice on one line, and when it opens, what each choice means.
+component Picker inherits Rectangle {
+    in property <[PickerRow]> rows;
+    in property <int> selected;
+    in property <bool> enabled: true;
+    callback chosen(int);
+    property <int> active: -1;
+    property <int> closing: Theme.menus-closed;
+    changed closing => { menu.close(); }
+    function choose(index: int) {
+        if (root.rows[index].available) {
+            root.chosen(index);
+            menu.close();
+        }
+    }
+    height: 30px;
+    border-radius: 7px;
+    opacity: root.enabled ? 1 : 0.45;
+    background: touch.pressed ? Theme.selected : touch.has-hover ? Theme.hover : Theme.field;
+    border-width: 1px;
+    border-color: Theme.stroke-strong;
+    animate background { duration: Theme.quick; }
+    accessible-role: combobox;
+    accessible-label: root.rows[root.selected].label;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 8px;
+        spacing: 6px;
+        Text {
+            text: root.rows[root.selected].label;
+            font-size: 12.5px;
+            color: Theme.text;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        Glyph {
+            width: 12px;
+            height: 12px;
+            y: (parent.height - self.height) / 2;
+            commands: "M6 9l6 6l6-6";
+            stroke: Theme.text-2;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            root.active = -1;
+            menu.show();
+        }
+    }
+    menu := PopupWindow {
+        close-policy: close-on-click-outside;
+        // Inside the content area, whichever card it's on.
+        x: max(root.width - 340px, 256px - root.absolute-position.x);
+        y: root.height + 6px;
+        width: 340px;
+        Rectangle {
+            property <float> shown: 0;
+            init => { self.shown = 1; }
+            animate shown { duration: Theme.quick; }
+            opacity: self.shown;
+            border-radius: 10px;
+            background: Theme.popover;
+            border-width: 1px;
+            border-color: Theme.stroke-strong;
+            drop-shadow-blur: 18px;
+            drop-shadow-offset-y: 4px;
+            drop-shadow-color: #00000050;
+            FocusScope {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                height: parent.height;
+                init => { self.focus(); }
+                key-pressed(event) => {
+                    if (event.text == Key.Escape) { menu.close(); return accept; }
+                    if (event.text == Key.DownArrow) { root.active = mod(root.active + 1, root.rows.length); return accept; }
+                    if (event.text == Key.UpArrow) { root.active = mod(max(root.active, 0) - 1 + root.rows.length, root.rows.length); return accept; }
+                    if (event.text == Key.Return && root.active >= 0) { root.choose(root.active); return accept; }
+                    accept
+                }
+            }
+            VerticalLayout {
+                padding: 6px;
+                spacing: 2px;
+                for row[index] in root.rows: Rectangle {
+                    border-radius: 6px;
+                    background: index == root.active && row.available ? Theme.selected : transparent;
+                    min-height: row-lay.min-height;
+                    row-lay := HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 12px;
+                        padding-top: 8px;
+                        padding-bottom: 8px;
+                        spacing: 8px;
+                        opacity: row.available ? 1 : 0.55;
+                        Rectangle {
+                            width: 14px;
+                            if index == root.selected: Glyph {
+                                y: 2px;
+                                width: 14px;
+                                height: 14px;
+                                commands: "M5 12l5 5l9-10";
+                                stroke-width: 2.4px;
+                                stroke: Theme.accent;
+                            }
+                        }
+                        VerticalLayout {
+                            spacing: 2px;
+                            horizontal-stretch: 1;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Text { text: row.label; font-size: 13px; font-weight: 600; color: Theme.text; horizontal-stretch: 1; }
+                                Text { text: row.size; font-size: 11.5px; font-weight: 600; color: index == root.selected ? Theme.ok : Theme.text-3; vertical-alignment: center; }
+                            }
+                            Text { text: row.detail; font-size: 12px; color: Theme.text-2; wrap: word-wrap; }
+                            Text { text: row.models; font-size: 11.5px; color: Theme.text-3; wrap: word-wrap; }
+                        }
+                    }
+                    TouchArea {
+                        mouse-cursor: row.available ? pointer : default;
+                        changed has-hover => {
+                            if (self.has-hover) { root.active = index; } else if (root.active == index) { root.active = -1; }
+                        }
+                        clicked => { root.choose(index); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// How often new images are read, whichever way: on the text step in onboarding, under both tabs in settings.
+component ScheduleBlock inherits VerticalLayout {
+    in property <int> schedule;
+    in property <int> schedule-every;
+    in property <string> schedule-at;
+    in property <string> schedule-note;
+    // Each Images tab has its own.
+    in property <string> title: "How often should Excavate read new images?";
+    in property <string> now-label: "Read new images now";
+    callback schedule-chosen(int);
+    callback every-chosen(int);
+    callback at-stepped(int);
+    callback read-now();
+    spacing: 8px;
+    Text { text: root.title; font-size: 13.5px; font-weight: 600; color: Theme.text; }
+    HorizontalLayout {
+        spacing: 12px;
+        alignment: start;
+        Segmented {
+            options: ["As they arrive", "Scheduled", "Manually"];
+            selected: root.schedule;
+            chosen(index) => { root.schedule-chosen(index); }
+        }
+        if root.schedule == 2: Button { height: 30px; label: root.now-label; clicked => { root.read-now(); } }
+    }
+    if root.schedule == 1: HorizontalLayout {
+        spacing: 10px;
+        alignment: start;
+        Segmented {
+            options: ["Every day", "Every week", "Every month"];
+            selected: root.schedule-every;
+            chosen(index) => { root.every-chosen(index); }
+        }
+        Text { text: "at"; font-size: 12.5px; color: Theme.text-2; vertical-alignment: center; }
+        TimeStepper {
+            time: root.schedule-at;
+            step(by) => { root.at-stepped(by); }
+        }
+    }
+    if root.schedule-note != "": Text { text: root.schedule-note; font-size: 12px; color: Theme.text-3; wrap: word-wrap; }
+}
+
+component ReadingSection inherits VerticalLayout {
+    in property <[ReadingCard]> cards;
+    in property <string> reading;
+    in property <bool> pictures-on;
+    in property <bool> settings;
+    in property <bool> read-on-battery;
+    in property <string> measured;
+    in property <int> schedule;
+    in property <int> schedule-every;
+    in property <string> schedule-at;
+    in property <string> schedule-note;
+    in property <string> sweep-note;
+    in property <bool> reading-all;
+    in property <string> read-all-note;
+    callback read-all(bool);
+    callback chosen(string);
+    callback way-chosen(string, int);
+    callback reread();
+    callback battery-toggled(bool);
+    callback pictures-toggled(bool);
+    callback schedule-chosen(int);
+    callback every-chosen(int);
+    callback at-stepped(int);
+    callback read-now();
+    callback link(string);
+    spacing: 14px;
+    Reveal {
+        order: 2;
+        // As tall as the card with the most to say, and the others as tall as it.
+        HorizontalLayout {
+            spacing: 12px;
+            for card in root.cards: Card {
+                // Equal shares of the row, whatever their text (wrapped text asks for its unwrapped width).
+                preferred-width: 0px;
+                min-width: 0px;
+                horizontal-stretch: 1;
+                card: card;
+                chosen: card.id == root.reading;
+                dimmed: !root.pictures-on;
+                clicked => { root.chosen(card.id); }
+                way-chosen(index) => { root.way-chosen(card.id, index); }
+                link(link) => { root.link(link); }
+            }
+        }
+    }
+    Reveal {
+        order: 2;
+        Text { text: "All three read the words in your images. None of them looks at what an image shows."; font-size: 12.5px; color: Theme.text-2; wrap: word-wrap; opacity: root.pictures-on ? 1 : 0.45; }
+    }
+    if root.sweep-note != "": Reveal {
+        order: 2;
+        Text { text: root.sweep-note; font-size: 12.5px; color: Theme.text-2; wrap: word-wrap; opacity: root.pictures-on ? 1 : 0.45; }
+    }
+    // (In settings, these two are under both tabs.)
+    if !root.settings: Reveal {
+        order: 3;
+        ScheduleBlock {
+            opacity: root.pictures-on ? 1 : 0.45;
+            schedule: root.schedule;
+            schedule-every: root.schedule-every;
+            schedule-at: root.schedule-at;
+            schedule-note: root.schedule-note;
+            schedule-chosen(index) => { root.schedule-chosen(index); }
+            every-chosen(index) => { root.every-chosen(index); }
+            at-stepped(by) => { root.at-stepped(by); }
+            read-now => { root.read-now(); }
+        }
+    }
+    Reveal {
+        order: 4;
+        VerticalLayout {
+            spacing: 8px;
+            SettingRow {
+                compact: true;
+                title: "Read text in images";
+                Switch { on: root.pictures-on; toggled(on) => { root.pictures-toggled(on); } }
+            }
+            if !root.settings: SettingRow {
+                compact: true;
+                title: "Keep reading on battery power";
+                Switch { on: root.read-on-battery; toggled(on) => { root.battery-toggled(on); } }
+            }
+            if root.settings: SettingRow {
+                title: "Re-read my images";
+                detail: root.measured != "" ? root.measured : "With the reader chosen above. Images already read are read again.";
+                Button { label: "Re-read"; clicked => { root.reread(); } }
+            }
+            if root.settings: SettingRow {
+                title: "Read everything now";
+                detail: root.read-all-note;
+                Button { label: root.reading-all ? "Stop" : "Read everything now"; clicked => { root.read-all(!root.reading-all); } }
+            }
+        }
+    }
+}
+
+/// Finding images by what they show: the second half of the Images page.
+component SeeingSection inherits VerticalLayout {
+    in property <[ReadingCard]> cards;
+    in property <string> seeing;
+    in property <bool> seeing-on;
+    in property <bool> settings;
+    in property <[PickerRow]> deep-rows;
+    in property <int> deep-choice;
+    in property <[styled-text]> deep-info;
+    in property <string> relook-note;
+    // How far each model has got ("EmbeddingGemma 2 has looked at 120 of 352 images"), in settings.
+    in property <string> progress;
+    // "Read everything now", for what images show.
+    in property <bool> looking-all;
+    in property <string> look-all-note;
+    callback look-all(bool);
+    callback chosen(string);
+    callback way-chosen(string, int);
+    callback deep-chosen(int);
+    callback toggled(bool);
+    callback relook();
+    callback link(string);
+    spacing: 14px;
+    Reveal {
+        order: 2;
+        HorizontalLayout {
+            spacing: 12px;
+            for card in root.cards: Card {
+                preferred-width: 0px;
+                min-width: 0px;
+                horizontal-stretch: 1;
+                card: card;
+                chosen: card.id == root.seeing;
+                dimmed: !root.seeing-on;
+                clicked => { root.chosen(card.id); }
+                way-chosen(index) => { root.way-chosen(card.id, index); }
+                link(link) => { root.link(link); }
+                // Thorough's second model. Choosing one chooses the card.
+                if card.id == "deep": HorizontalLayout {
+                    padding-top: 8px;
+                    spacing: 4px;
+                    Picker {
+                        horizontal-stretch: 1;
+                        rows: root.deep-rows;
+                        selected: root.deep-choice;
+                        enabled: card.available;
+                        chosen(index) => { root.deep-chosen(index); }
+                    }
+                    InfoDot {
+                        y: (parent.height - self.height) / 2;
+                        info: root.deep-info;
+                        link(link) => { root.link(link); }
+                    }
+                }
+            }
+        }
+    }
+    Reveal {
+        order: 2;
+        Text {
+            text: "These find images by what they show. The words in your images are read " + (root.settings ? "under Text in images." : "on the previous page.");
+            font-size: 12.5px;
+            color: Theme.text-2;
+            wrap: word-wrap;
+            opacity: root.seeing-on ? 1 : 0.45;
+        }
+    }
+    Reveal {
+        order: 3;
+        VerticalLayout {
+            spacing: 8px;
+            SettingRow {
+                compact: true;
+                title: "Find images by what they show";
+                Switch { on: root.seeing-on; toggled(on) => { root.toggled(on); } }
+            }
+            if root.settings && root.progress != "": Text {
+                text: root.progress;
+                font-size: 12.5px;
+                color: Theme.text-2;
+                wrap: word-wrap;
+                opacity: root.seeing-on ? 1 : 0.45;
+            }
+            if root.settings: SettingRow {
+                title: "Look at my images again";
+                detail: root.relook-note != "" ? root.relook-note : "With the choice above. Images already done are done again.";
+                Button { label: "Look again"; clicked => { root.relook(); } }
+            }
+            if root.settings: SettingRow {
+                title: "Read everything now";
+                detail: root.look-all-note;
+                Button { label: root.looking-all ? "Stop" : "Read everything now"; clicked => { root.look-all(!root.looking-all); } }
+            }
+        }
+    }
+}
+
+/// Recordings by what's said in them: the Audio page, in settings and onboarding.
+component AudioSection inherits VerticalLayout {
+    in property <[ReadingCard]> cards;
+    in property <string> listening;
+    in property <bool> listening-on;
+    in property <bool> settings;
+    // "English and Arabic, from Windows."
+    in property <string> languages-note;
+    in property <string> progress;
+    in property <string> relisten-note;
+    in property <bool> listening-all;
+    in property <string> listen-all-note;
+    // When to listen, shown here in onboarding (in settings, at the foot of the page).
+    in property <int> schedule;
+    in property <int> schedule-every;
+    in property <string> schedule-at;
+    in property <string> schedule-note;
+    in property <bool> on-battery;
+    callback chosen(string);
+    callback toggled(bool);
+    callback way-chosen(string, int);
+    callback open-languages();
+    callback relisten();
+    callback listen-all(bool);
+    callback schedule-chosen(int);
+    callback every-chosen(int);
+    callback at-stepped(int);
+    callback listen-now();
+    callback battery-toggled(bool);
+    callback link(string);
+    spacing: 14px;
+    Reveal {
+        order: 2;
+        HorizontalLayout {
+            spacing: 12px;
+            for card in root.cards: Card {
+                preferred-width: 0px;
+                min-width: 0px;
+                horizontal-stretch: 1;
+                card: card;
+                chosen: card.id == root.listening;
+                dimmed: !root.listening-on;
+                clicked => { root.chosen(card.id); }
+                link(link) => { root.link(link); }
+                way-chosen(index) => { root.way-chosen(card.id, index); }
+            }
+        }
+    }
+    Reveal {
+        order: 2;
+        Text {
+            text: "All three write down what's said and when, so a result opens at that moment.";
+            font-size: 12.5px;
+            color: Theme.text-2;
+            wrap: word-wrap;
+            opacity: root.listening-on ? 1 : 0.45;
+        }
+    }
+    if !root.settings: Reveal {
+        order: 3;
+        ScheduleBlock {
+            opacity: root.listening-on ? 1 : 0.45;
+            title: "How often should Excavate listen to new recordings?";
+            now-label: "Listen to new recordings now";
+            schedule: root.schedule;
+            schedule-every: root.schedule-every;
+            schedule-at: root.schedule-at;
+            schedule-note: root.schedule-note;
+            schedule-chosen(index) => { root.schedule-chosen(index); }
+            every-chosen(index) => { root.every-chosen(index); }
+            at-stepped(by) => { root.at-stepped(by); }
+            read-now => { root.listen-now(); }
+        }
+    }
+    Reveal {
+        order: 4;
+        VerticalLayout {
+            spacing: 8px;
+            SettingRow {
+                compact: true;
+                title: "Find recordings by what's said in them";
+                Switch { on: root.listening-on; toggled(on) => { root.toggled(on); } }
+            }
+            if !root.settings: SettingRow {
+                compact: true;
+                title: "Keep listening on battery power";
+                Switch { on: root.on-battery; toggled(on) => { root.battery-toggled(on); } }
+            }
+            SettingRow {
+                title: "Languages you speak";
+                detail: root.languages-note;
+                Button { label: "Change in Windows"; clicked => { root.open-languages(); } }
+            }
+            if root.settings && root.progress != "": Text {
+                text: root.progress;
+                font-size: 12.5px;
+                color: Theme.text-2;
+                wrap: word-wrap;
+                opacity: root.listening-on ? 1 : 0.45;
+            }
+            if root.settings: SettingRow {
+                title: "Listen to my recordings again";
+                detail: root.relisten-note != "" ? root.relisten-note : "With the choice above. Recordings already done are done again.";
+                Button { label: "Listen again"; clicked => { root.relisten(); } }
+            }
+            if root.settings: SettingRow {
+                title: "Listen to everything now";
+                detail: root.listen-all-note;
+                Button { label: root.listening-all ? "Stop" : "Listen to everything now"; clicked => { root.listen-all(!root.listening-all); } }
+            }
+        }
+    }
+}
+
+/// The Videos page, in settings and onboarding: a tab (or an onboarding sub-step) for each thing done with videos.
+/// 0: the text they show, at its own pace. 1: what they show, by the models chosen under Images. 2: what's said, by
+/// the listener chosen under Audio.
+component VideoSection inherits VerticalLayout {
+    in property <int> tab;
+    in property <[ReadingCard]> cards;
+    in property <string> chosen-id;
+    in property <[ReadingCard]> text-cards;
+    in property <string> text-chosen-id;
+    in property <bool> videos-on;
+    in property <bool> text-on;
+    in property <bool> speech-on;
+    in property <bool> settings;
+    in property <string> progress;
+    in property <string> relook-note;
+    // "Listener: Whisper turbo · GPU, Vulkan".
+    in property <string> listener;
+    callback chosen(string);
+    callback text-chosen(string);
+    callback toggled(bool);
+    callback text-toggled(bool);
+    callback speech-toggled(bool);
+    callback way-chosen(string, int);
+    callback relook();
+    callback open-audio();
+    callback link(string);
+    spacing: 14px;
+    if root.tab == 0: Reveal {
+        order: 2;
+        HorizontalLayout {
+            spacing: 12px;
+            for card in root.text-cards: Card {
+                preferred-width: 0px;
+                min-width: 0px;
+                horizontal-stretch: 1;
+                card: card;
+                chosen: card.id == root.text-chosen-id;
+                dimmed: !root.text-on;
+                clicked => { root.text-chosen(card.id); }
+                link(link) => { root.link(link); }
+            }
+        }
+    }
+    if root.tab == 0: Reveal {
+        order: 2;
+        Text {
+            text: "All three read with the models that read your images, and open a result at the moment its text shows.";
+            font-size: 12.5px;
+            color: Theme.text-2;
+            wrap: word-wrap;
+            opacity: root.text-on ? 1 : 0.45;
+        }
+    }
+    if root.tab == 0: Reveal {
+        order: 4;
+        SettingRow {
+            compact: true;
+            title: "Read text in videos";
+            detail: "Slides, screen recordings, captions and signs, each found at its moment.";
+            Switch { on: root.text-on; toggled(on) => { root.text-toggled(on); } }
+        }
+    }
+    if root.tab == 1: Reveal {
+        order: 2;
+        HorizontalLayout {
+            spacing: 12px;
+            for card in root.cards: Card {
+                preferred-width: 0px;
+                min-width: 0px;
+                horizontal-stretch: 1;
+                card: card;
+                chosen: card.id == root.chosen-id;
+                dimmed: !root.videos-on;
+                clicked => { root.chosen(card.id); }
+                link(link) => { root.link(link); }
+                way-chosen(index) => { root.way-chosen(card.id, index); }
+            }
+        }
+    }
+    if root.tab == 1: Reveal {
+        order: 2;
+        Text {
+            text: "All three use the model chosen under Images, and open a result at its moment. Longer videos are looked at further apart.";
+            font-size: 12.5px;
+            color: Theme.text-2;
+            wrap: word-wrap;
+            opacity: root.videos-on ? 1 : 0.45;
+        }
+    }
+    if root.tab == 1: Reveal {
+        order: 4;
+        VerticalLayout {
+            spacing: 8px;
+            SettingRow {
+                compact: true;
+                title: "Find videos by what they show";
+                Switch { on: root.videos-on; toggled(on) => { root.toggled(on); } }
+            }
+            if root.settings && root.progress != "": Text {
+                text: root.progress;
+                font-size: 12.5px;
+                color: Theme.text-2;
+                wrap: word-wrap;
+                opacity: root.videos-on ? 1 : 0.45;
+            }
+            if root.settings: SettingRow {
+                title: "Look at my videos again";
+                detail: root.relook-note != "" ? root.relook-note : "With the choice above. Videos already done are done again.";
+                Button { label: "Look again"; clicked => { root.relook(); } }
+            }
+        }
+    }
+    if root.tab == 2: Reveal {
+        order: 2;
+        VerticalLayout {
+            spacing: 8px;
+            SettingRow {
+                compact: true;
+                title: "Find videos by what's said in them";
+                detail: "Heard after your recordings. Music and silence are skipped.";
+                Switch { on: root.speech-on; toggled(on) => { root.speech-toggled(on); } }
+            }
+            SettingRow {
+                opacity: root.speech-on ? 1 : 0.45;
+                title: root.listener;
+                detail: "The one chosen under Audio, on its device.";
+                Button { label: "Change under Audio"; clicked => { root.open-audio(); } }
+            }
+        }
+    }
+}
+
+component PrivacySection inherits VerticalLayout {
+    in property <bool> blur-secrets;
+    in property <bool> blur-sharing;
+    in property <length> available-width;
+    // What's left of the page for the demo.
+    in property <length> available-height;
+    callback blur-secrets-toggled(bool);
+    callback blur-sharing-toggled(bool);
+    callback learn-more();
+    property <float> k: clamp(min(root.available-width / 640px, (root.available-height - 250px) / 250px), 0.85, 1.8);
+    spacing: 10px;
+    Reveal {
+        order: 1;
+        Rectangle {
+            border-radius: Theme.radius;
+            background: Theme.accent-soft;
+            HorizontalLayout {
+                padding: 16px;
+                spacing: 14px;
+                VerticalLayout {
+                    alignment: center;
+                    Glyph {
+                        width: 28px;
+                        height: 28px;
+                        stroke-width: 1.6px;
+                        commands: "M12 3l7 3v5c0 4.5-3 8.5-7 10c-4-1.5-7-5.5-7-10V6z M9 12l2 2l4-4";
+                        stroke: Theme.accent;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "Everything Excavate reads stays on this PC. Nothing is uploaded, and all models run locally.";
+                        font-size: 14px;
+                        font-weight: 600;
+                        color: Theme.text;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+    }
+    Reveal {
+        order: 2;
+        PrivacyDemo { k: root.k; height: 250px * root.k; }
+    }
+    Reveal {
+        order: 3;
+        Rectangle {
+            height: 56px;
+            border-radius: Theme.radius;
+            background: Theme.raised;
+            border-width: 1px;
+            border-color: Theme.divider;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 12px;
+                Text { text: "If something looks sensitive, we blur it."; font-size: 13.5px; color: Theme.text; vertical-alignment: center; }
+                Link { text: "Learn more"; vertical-alignment: center; clicked => { root.learn-more(); } }
+                Rectangle { horizontal-stretch: 1; }
+                VerticalLayout {
+                    alignment: center;
+                    Switch { on: root.blur-secrets; toggled(on) => { root.blur-secrets-toggled(on); } }
+                }
+            }
+        }
+    }
+    Reveal {
+        order: 4;
+        SettingRow {
+            title: "Hide previews while presenting";
+            detail: "During slide shows and in Windows' presentation mode, previews show no images or text.";
+            Switch { on: root.blur-sharing; toggled(on) => { root.blur-sharing-toggled(on); } }
+        }
+    }
+}
+
+/// A theme's tile: its color and its name.
+component ThemeTileView inherits Rectangle {
+    in property <string> name;
+    in property <color> dot;
+    // The Workshop's: every color, drawn in wedges (this renderer doesn't round a gradient's corners).
+    in property <bool> wheel;
+    in property <bool> chosen;
+    // Made in the Workshop: it can be removed.
+    in property <bool> own;
+    callback clicked();
+    callback removed();
+    height: 38px;
+    border-radius: 9px;
+    background: root.chosen ? Theme.selected : tile-touch.has-hover ? Theme.hover : Theme.raised;
+    border-width: root.chosen ? 1.5px : 1px;
+    border-color: root.chosen ? Theme.accent : Theme.divider;
+    animate background { duration: Theme.quick; }
+    accessible-role: button;
+    accessible-label: root.name;
+    accessible-action-default => { root.clicked(); }
+    tile-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: root.own ? 4px : 8px;
+        spacing: 8px;
+        Rectangle {
+            width: 16px;
+            height: 16px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 8px;
+            background: root.wheel ? transparent : root.dot;
+            if root.wheel: Rectangle {
+                for wedge in [
+                    { color: #f26b5b, commands: "M12 12L12 0A12 12 0 0 1 22.39 6Z" },
+                    { color: #f5c02e, commands: "M12 12L22.39 6A12 12 0 0 1 22.39 18Z" },
+                    { color: #5ccf78, commands: "M12 12L22.39 18A12 12 0 0 1 12 24Z" },
+                    { color: #36c9bf, commands: "M12 12L12 24A12 12 0 0 1 1.61 18Z" },
+                    { color: #5ea4f2, commands: "M12 12L1.61 18A12 12 0 0 1 1.61 6Z" },
+                    { color: #a98bfa, commands: "M12 12L1.61 6A12 12 0 0 1 12 0Z" },
+                ]: Path {
+                    viewbox-width: 24;
+                    viewbox-height: 24;
+                    commands: wedge.commands;
+                    fill: wedge.color;
+                }
+            }
+        }
+        Text {
+            text: root.name;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: Theme.text;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        if root.own: Rectangle {
+            width: 22px;
+            Glyph {
+                width: 12px;
+                height: 12px;
+                commands: "M6 6l12 12 M18 6l-12 12";
+                stroke: remove-touch.has-hover ? Theme.text : Theme.text-3;
+            }
+            remove-touch := TouchArea { mouse-cursor: pointer; clicked => { root.removed(); } }
+        }
+    }
+}
+
+/// The color wheel, unrolled: drag along it for a theme's hue.
+component HueSlider inherits Rectangle {
+    in-out property <float> hue;
+    callback moved();
+    height: 22px;
+    accessible-role: slider;
+    accessible-label: "Color";
+    accessible-value-minimum: 0;
+    accessible-value-maximum: 359;
+    accessible-value: round(root.hue);
+    function follow(at: length) {
+        root.hue = round(clamp((at - 9px) / (root.width - 18px), 0, 1) * 359);
+        root.moved();
+    }
+    Rectangle {
+        y: 7px;
+        height: 8px;
+        border-radius: 4px;
+        background: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.7%, #00ff00 33.3%, #00ffff 50%, #0000ff 66.7%, #ff00ff 83.3%, #ff0000 100%);
+    }
+    Rectangle {
+        x: (root.width - self.width) * root.hue / 359;
+        y: 2px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: Theme.popover;
+        border-width: 2px;
+        border-color: Theme.text;
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) { root.follow(self.mouse-x); }
+        }
+        moved => {
+            if (self.pressed) { root.follow(self.mouse-x); }
+        }
+    }
+}
+
+/// Making a theme: a name, a hue and a family of surfaces. The window wears it while it's being made.
+component WorkshopPanel inherits Rectangle {
+    in-out property <string> name;
+    in-out property <float> hue;
+    in-out property <int> surfaces;
+    in property <string> hex;
+    in property <[string]> checks;
+    in property <bool> checks-ok;
+    in property <string> error;
+    callback edited();
+    callback save();
+    callback cancel();
+    changed name => { root.edited(); }
+    border-radius: Theme.radius;
+    background: Theme.raised;
+    border-width: 1px;
+    border-color: Theme.accent;
+    min-height: panel.min-height;
+    panel := VerticalLayout {
+        padding: 14px;
+        spacing: 10px;
+        Text { text: "Workshop"; font-family: Theme.display-font; font-size: 15px; font-weight: 600; color: Theme.text; }
+        HorizontalLayout {
+            spacing: 12px;
+            Text { width: 72px; text: "Name"; font-size: 12.5px; color: Theme.text; vertical-alignment: center; }
+            Field { text <=> root.name; placeholder: "My theme"; horizontal-stretch: 1; }
+        }
+        HorizontalLayout {
+            spacing: 12px;
+            Text { width: 72px; text: "Color"; font-size: 12.5px; color: Theme.text; vertical-alignment: center; }
+            HueSlider {
+                horizontal-stretch: 1;
+                hue <=> root.hue;
+                moved => { root.edited(); }
+            }
+            Rectangle {
+                width: 20px;
+                height: 20px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 10px;
+                background: Theme.accent;
+            }
+            Text { width: 62px; text: root.hex; font-family: Theme.mono-font; font-size: 11.5px; color: Theme.text-2; vertical-alignment: center; }
+        }
+        HorizontalLayout {
+            spacing: 12px;
+            Text { width: 72px; text: "Surfaces"; font-size: 12.5px; color: Theme.text; vertical-alignment: center; }
+            HorizontalLayout {
+                alignment: start;
+                horizontal-stretch: 1;
+                Segmented {
+                    options: ["Warm", "Plain", "Cool"];
+                    selected: root.surfaces;
+                    chosen(index) => {
+                        root.surfaces = index;
+                        root.edited();
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            spacing: 2px;
+            Text { text: "Excavate works out the rest for light and dark, and keeps text readable:"; font-size: 12px; color: Theme.text-2; wrap: word-wrap; }
+            for line in root.checks: Text { text: line; font-size: 12px; color: root.checks-ok ? Theme.ok : Theme.bad; wrap: word-wrap; }
+        }
+        if root.error != "": Text { text: root.error; font-size: 12px; color: Theme.bad; wrap: word-wrap; }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: end;
+            Button { label: "Cancel"; clicked => { root.cancel(); } }
+            Button {
+                primary: true;
+                label: root.name != "" && root.name.character-count <= 20 ? "Save " + root.name : "Save";
+                clicked => { root.save(); }
+            }
+        }
+    }
+}
+
+/// The search window in small, in whichever theme is on: fixed words, drawn with the same tokens.
+component ThemePreview inherits Rectangle {
+    property <[{ found: string, after: string, place: string, about: string }]> rows: [
+        { found: "budget", after: ".xlsx", place: "Documents\\Finance", about: "2.1 MB · Today" },
+        { found: "budget", after: "-2025.pdf", place: "Documents\\Finance\\Archive", about: "340 KB · Mar 3" },
+        { found: "Budget", after: " review.pptx", place: "Desktop\\Work", about: "5.6 MB · Feb 11" },
+    ];
+    border-radius: Theme.radius;
+    background: Theme.base;
+    border-width: 1px;
+    border-color: Theme.stroke-strong;
+    clip: true;
+    min-height: whole.min-height;
+    whole := VerticalLayout {
+        VerticalLayout {
+            padding: 10px;
+            spacing: 8px;
+            Rectangle {
+                height: 32px;
+                border-radius: 8px;
+                background: Theme.field;
+                border-width: 1px;
+                border-color: Theme.accent;
+                HorizontalLayout {
+                    padding-left: 10px;
+                    spacing: 8px;
+                    Glyph {
+                        width: 15px;
+                        height: 15px;
+                        y: (parent.height - self.height) / 2;
+                        commands: "M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14z M20 20l-3.5-3.5";
+                        stroke: Theme.text-2;
+                    }
+                    Text { text: "budget"; font-size: 13px; color: Theme.text; vertical-alignment: center; horizontal-stretch: 1; }
+                }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                for chip[index] in ["All", "Documents", "Images"]: Rectangle {
+                    height: 22px;
+                    width: chip-text.preferred-width + 20px;
+                    border-radius: 11px;
+                    background: index == 0 ? Theme.chip-on : transparent;
+                    border-width: index == 0 ? 0px : 1px;
+                    border-color: Theme.stroke;
+                    chip-text := Text {
+                        text: chip;
+                        font-size: 11.5px;
+                        font-weight: index == 0 ? 600 : 400;
+                        color: index == 0 ? Theme.chip-on-text : Theme.text-2;
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            padding-left: 6px;
+            padding-right: 6px;
+            padding-bottom: 6px;
+            for row[index] in root.rows: Rectangle {
+                height: 38px;
+                border-radius: 7px;
+                background: index == 0 ? Theme.selected : transparent;
+                if index == 0: Rectangle {
+                    x: 2px;
+                    y: (parent.height - self.height) / 2;
+                    width: 3px;
+                    height: 16px;
+                    border-radius: 1.5px;
+                    background: Theme.accent;
+                }
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 10px;
+                    spacing: 9px;
+                    Rectangle {
+                        width: 20px;
+                        height: 20px;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 5px;
+                        background: Theme.raised;
+                        border-width: 1px;
+                        border-color: Theme.stroke;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        HorizontalLayout {
+                            alignment: start;
+                            Text { text: row.found; font-size: 12.5px; font-weight: 600; color: Theme.accent; }
+                            Text { text: row.after; font-size: 12.5px; color: Theme.text; }
+                        }
+                        Text { text: row.place; font-size: 11px; color: Theme.text-3; }
+                    }
+                    Text { text: row.about; font-size: 11px; color: Theme.text-3; vertical-alignment: center; }
+                }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.divider; }
+        HorizontalLayout {
+            height: 28px;
+            padding-left: 12px;
+            padding-right: 10px;
+            spacing: 10px;
+            Rectangle {
+                width: 7px;
+                height: 7px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 3.5px;
+                background: Theme.accent;
+            }
+            Text { text: "Reading 64%"; font-size: 11px; color: Theme.text-3; vertical-alignment: center; }
+            Text { text: "3 results · 2.1 ms"; font-size: 11px; color: Theme.text-3; vertical-alignment: center; horizontal-stretch: 1; }
+            Glyph {
+                width: 14px;
+                height: 14px;
+                y: (parent.height - self.height) / 2;
+                stroke-width: 1.5px;
+                commands: "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z M15 12a3 3 0 1 1-6 0a3 3 0 1 1 6 0z";
+                stroke: Theme.text-3;
+            }
+        }
+    }
+}
+
+component GeneralSection inherits VerticalLayout {
+    in property <bool> start-with-windows;
+    in property <bool> new-search;
+    in property <int> preview-size;
+    in property <bool> typed-toggles;
+    in property <bool> own-index;
+    in property <int> theme;
+    in property <string> theme-name;
+    in property <[ThemeTile]> theme-tiles;
+    in-out property <bool> theme-open;
+    in property <bool> workshop-open;
+    in-out property <string> workshop-name;
+    in-out property <float> workshop-hue;
+    in-out property <int> workshop-surfaces;
+    in property <string> workshop-hex;
+    in property <[string]> workshop-checks;
+    in property <bool> workshop-checks-ok;
+    in property <string> workshop-error;
+    in property <string> monitor-label;
+    in property <string> monitor-note;
+    in property <[MenuRow]> monitor-rows;
+    // The graphics card every model runs on: "Automatic", a card, or the processor alone.
+    in property <string> gpu-label;
+    in property <string> gpu-note;
+    in property <[MenuRow]> gpu-rows;
+    callback gpu-chosen(int);
+    in property <string> popup-size-label;
+    in property <[MenuRow]> popup-size-rows;
+    in property <int> time-format;
+    callback start-with-windows-toggled(bool);
+    callback new-search-toggled(bool);
+    callback preview-size-chosen(int);
+    callback typed-toggles-toggled(bool);
+    callback own-index-toggled(bool);
+    callback theme-chosen(int);
+    callback theme-picked(int);
+    callback theme-removed(int);
+    callback workshop-opened();
+    callback workshop-edited();
+    callback workshop-saved();
+    callback workshop-cancelled();
+    callback monitors-opening();
+    callback monitor-chosen(int);
+    callback popup-size-chosen(int);
+    callback time-format-chosen(int);
+    spacing: 10px;
+    GroupTitle { text: "Starting"; first: true; }
+    SettingRow {
+        title: "Start with Windows";
+        detail: "Excavate waits in the tray, so the shortcut works from the moment you sign in.";
+        Switch { on: root.start-with-windows; toggled(on) => { root.start-with-windows-toggled(on); } }
+    }
+    SettingRow {
+        title: "Start a new search each time";
+        detail: "Excavate opens empty. Turn this off to pick up where you left off.";
+        Switch { on: root.new-search; toggled(on) => { root.new-search-toggled(on); } }
+    }
+    GroupTitle { text: "Searching"; }
+    // Which index finds names. The one not chosen is closed, so it holds no memory.
+    SettingRow {
+        title: "Indexer";
+        detail: root.own-index
+            ? "Bedrock, Excavate's own index, finds files by name, and Everything is closed while it's on."
+            : "Everything finds files by name. Choose Bedrock to use Excavate's own index instead.";
+        Segmented {
+            options: ["Everything", "Bedrock"];
+            selected: root.own-index ? 1 : 0;
+            chosen(index) => { if ((index == 1) != root.own-index) { root.own-index-toggled(index == 1); } }
+        }
+    }
+    SettingRow {
+        title: "Graphics card";
+        detail: root.gpu-note;
+        Button {
+            label: root.gpu-label;
+            chevron: true;
+            clicked => { gpu-menu.open(); }
+            gpu-menu := Menu {
+                rows: root.gpu-rows;
+                checks: true;
+                from-right: true;
+                menu-width: 360px;
+                chosen(index) => { root.gpu-chosen(index); }
+            }
+        }
+    }
+    SettingRow {
+        title: "Search inside with > and <";
+        badge: "EXPERIMENTAL";
+        detail: "Start with > for the words inside files, or < for what they show or mean. A type right after narrows it: >v videos, >a recordings, >pdf PDFs.";
+        Switch { on: root.typed-toggles; toggled(on) => { root.typed-toggles-toggled(on); } }
+    }
+    GroupTitle { text: "Looks"; }
+    // The tiles open under the theme's name, with the Workshop and how the search window looks.
+    Rectangle {
+        border-radius: Theme.radius;
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: Theme.divider;
+        min-height: theme-block.min-height;
+        theme-block := VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 10px;
+            padding-bottom: root.theme-open ? 14px : 10px;
+            HorizontalLayout {
+                spacing: 16px;
+                min-height: 40px;
+                Text { text: "Theme"; font-size: 13.5px; color: Theme.text; vertical-alignment: center; horizontal-stretch: 1; }
+                VerticalLayout {
+                    alignment: center;
+                    Button {
+                        label: root.theme-name;
+                        chevron: true;
+                        clicked => { root.theme-open = !root.theme-open; }
+                    }
+                }
+            }
+            if root.theme-open: Reveal {
+                VerticalLayout {
+                    padding-top: 12px;
+                    spacing: 12px;
+                    VerticalLayout {
+                        spacing: 8px;
+                        // Five to a row, the Workshop last.
+                        for row in ceil((root.theme-tiles.length + 1) / 5): HorizontalLayout {
+                            spacing: 8px;
+                            for column in 5: tile-cell := Rectangle {
+                                property <int> at: row * 5 + column;
+                                height: 38px;
+                                preferred-width: 0px;
+                                min-width: 0px;
+                                horizontal-stretch: 1;
+                                if tile-cell.at < root.theme-tiles.length: ThemeTileView {
+                                    name: root.theme-tiles[tile-cell.at].name;
+                                    dot: root.theme-tiles[tile-cell.at].color;
+                                    own: root.theme-tiles[tile-cell.at].own;
+                                    chosen: !root.workshop-open && root.theme-tiles[tile-cell.at].name == root.theme-name;
+                                    clicked => { root.theme-picked(tile-cell.at); }
+                                    removed => { root.theme-removed(tile-cell.at); }
+                                }
+                                if tile-cell.at == root.theme-tiles.length: ThemeTileView {
+                                    name: "Workshop";
+                                    wheel: true;
+                                    chosen: root.workshop-open;
+                                    clicked => { root.workshop-opened(); }
+                                }
+                            }
+                        }
+                    }
+                    if root.workshop-open: WorkshopPanel {
+                        name <=> root.workshop-name;
+                        hue <=> root.workshop-hue;
+                        surfaces <=> root.workshop-surfaces;
+                        hex: root.workshop-hex;
+                        checks: root.workshop-checks;
+                        checks-ok: root.workshop-checks-ok;
+                        error: root.workshop-error;
+                        edited => { root.workshop-edited(); }
+                        save => { root.workshop-saved(); }
+                        cancel => { root.workshop-cancelled(); }
+                    }
+                    ThemePreview { }
+                }
+            }
+        }
+    }
+    SettingRow {
+        title: "Light or dark";
+        Segmented {
+            options: ["Like Windows", "Light", "Dark"];
+            selected: root.theme;
+            chosen(index) => { root.theme-chosen(index); }
+        }
+    }
+    SettingRow {
+        title: "Time format";
+        Segmented {
+            options: ["Like Windows", "12-hour", "24-hour"];
+            selected: root.time-format;
+            chosen(index) => { root.time-format-chosen(index); }
+        }
+    }
+    GroupTitle { text: "The search window"; }
+    SettingRow {
+        title: "Open Excavate on";
+        detail: root.monitor-note;
+        Button {
+            label: root.monitor-label;
+            chevron: true;
+            clicked => {
+                root.monitors-opening();
+                monitor-menu.open();
+            }
+            monitor-menu := Menu {
+                rows: root.monitor-rows;
+                checks: true;
+                from-right: true;
+                menu-width: 340px;
+                chosen(index) => { root.monitor-chosen(index); }
+            }
+        }
+    }
+    SettingRow {
+        title: "Search window size";
+        detail: "Or drag its edges, and it stays that size.";
+        Button {
+            label: root.popup-size-label;
+            chevron: true;
+            clicked => { popup-size-menu.open(); }
+            popup-size-menu := Menu {
+                rows: root.popup-size-rows;
+                checks: true;
+                from-right: true;
+                menu-width: 240px;
+                chosen(index) => { root.popup-size-chosen(index); }
+            }
+        }
+    }
+    SettingRow {
+        title: "Preview beside the results";
+        detail: "Off gives the results the whole width.";
+        Segmented {
+            options: ["Off", "Small", "Medium", "Large"];
+            selected: root.preview-size;
+            chosen(index) => { root.preview-size-chosen(index); }
+        }
+    }
+}
+
+component AboutSection inherits VerticalLayout {
+    in property <image> mark;
+    in property <string> version;
+    in property <string> index-summary;
+    in property <bool> auto-update;
+    // How updates are going ("You have the latest version.", "Version 0.2.0 is ready…"), and the button beside it
+    // ("Check now", "Restart now"; none: no button).
+    in property <string> update-line;
+    in property <string> update-action;
+    callback open-log();
+    callback open-settings-file();
+    callback open-index-folder();
+    callback auto-update-toggled(bool);
+    callback update-action-clicked();
+    spacing: 14px;
+    HorizontalLayout {
+        spacing: 16px;
+        Image { width: 56px; height: 56px; source: root.mark; }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text { text: "Excavate"; font-family: Theme.display-font; font-size: 18px; font-weight: 600; color: Theme.text; }
+            Text { text: root.version; font-size: 12.5px; color: Theme.text-2; }
+        }
+    }
+    // The beta, said plainly.
+    beta := Rectangle {
+        border-radius: Theme.radius;
+        background: Theme.accent-soft;
+        min-height: beta-lay.min-height;
+        beta-lay := HorizontalLayout {
+            padding: 16px;
+            spacing: 14px;
+            VerticalLayout {
+                alignment: start;
+                Glyph {
+                    width: 24px;
+                    height: 24px;
+                    stroke-width: 1.6px;
+                    commands: "M9 3h6 M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3 M7.5 15h9";
+                    stroke: Theme.accent;
+                }
+            }
+            VerticalLayout {
+                spacing: 4px;
+                Text { text: "This is Excavate's beta"; font-size: 14px; font-weight: 600; color: Theme.text; wrap: word-wrap; }
+                Text {
+                    text: "We did our best, but some features may still fall short. No worries: we're already working on the next release, and Excavate can update itself when it's out.";
+                    font-size: 12.5px;
+                    color: Theme.text-2;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+    SettingRow {
+        title: "Update automatically";
+        detail: "Once a day, Excavate asks its GitHub page for a newer version. A new one is checked against Excavate's signature, then used the next time Excavate starts.";
+        VerticalLayout {
+            alignment: center;
+            Switch { on: root.auto-update; toggled(on) => { root.auto-update-toggled(on); } }
+        }
+    }
+    if root.update-line != "": HorizontalLayout {
+        spacing: 12px;
+        padding-left: 4px;
+        Text { text: root.update-line; font-size: 12.5px; color: Theme.text-2; vertical-alignment: center; wrap: word-wrap; horizontal-stretch: 1; }
+        if root.update-action != "": Button { label: root.update-action; clicked => { root.update-action-clicked(); } }
+    }
+    SettingRow {
+        title: "Content index";
+        detail: root.index-summary;
+        Button { label: "Open folder"; clicked => { root.open-index-folder(); } }
+    }
+    HorizontalLayout {
+        spacing: 16px;
+        alignment: start;
+        Link { text: "Open the log"; clicked => { root.open-log(); } }
+        Link { text: "Open settings.json"; clicked => { root.open-settings-file(); } }
+    }
+}
+
+/// A stage's state, at a glance.
+component StageMark inherits Rectangle {
+    in property <int> state;
+    width: 16px;
+    height: 16px;
+    if root.state == 0: Rectangle { x: 3px; y: 3px; width: 10px; height: 10px; border-radius: 5px; border-width: 1.5px; border-color: Theme.text-3; }
+    if root.state == 1: Rectangle { x: 3px; y: 3px; width: 10px; height: 10px; border-radius: 5px; background: Theme.accent; }
+    if root.state == 2: Rectangle {
+        Rectangle { x: 4.5px; y: 3px; width: 2.5px; height: 10px; border-radius: 1px; background: Theme.text-2; }
+        Rectangle { x: 9px; y: 3px; width: 2.5px; height: 10px; border-radius: 1px; background: Theme.text-2; }
+    }
+    if root.state == 3: Glyph { commands: "M5 12l5 5l9-10"; stroke-width: 2.4px; stroke: Theme.ok; }
+}
+
+/// One half of a split stage: its name and note, its count and bar.
+component StagePartRow inherits HorizontalLayout {
+    in property <string> name;
+    in property <int> state;
+    in property <string> count;
+    in property <string> note;
+    in property <float> progress;
+    spacing: 12px;
+    VerticalLayout {
+        alignment: center;
+        horizontal-stretch: 0;
+        StageMark { state: root.state; }
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        horizontal-stretch: 1;
+        Text { text: root.name; font-size: 13px; color: root.state == 0 ? Theme.text-3 : Theme.text; }
+        if root.note != "": Text { text: root.note; font-size: 12px; color: Theme.text-2; wrap: word-wrap; }
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 4px;
+        horizontal-stretch: 0;
+        Text { text: root.count; font-size: 12px; color: Theme.text-2; horizontal-alignment: right; }
+        if root.progress >= 0: Bar { width: 140px; height: 3px; progress: root.progress; }
+    }
+}
+
+component StageCard inherits Rectangle {
+    in property <StageRow> stage;
+    // A split stage's own state: going if any part is, waiting if any waits, done when all are.
+    property <int> third-state: root.stage.third ? root.stage.extra.state : root.stage.shown.state;
+    property <int> overall: root.stage.state == 1 || root.stage.shown.state == 1 || root.third-state == 1 ? 1
+        : root.stage.state == 2 || root.stage.shown.state == 2 || root.third-state == 2 ? 2
+        : root.stage.state == 3 && root.stage.shown.state == 3 && root.third-state == 3 ? 3 : 0;
+    // (Its halves are conditional: their height is passed up by hand.)
+    min-height: max(54px, lay.min-height);
+    border-radius: Theme.radius;
+    background: Theme.raised;
+    border-width: 1px;
+    border-color: Theme.divider;
+    lay := VerticalLayout {
+        if root.stage.split: VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 10px;
+            padding-bottom: 10px;
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 12px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 0;
+                    StageMark { state: root.overall; }
+                }
+                Text { text: root.stage.name; font-size: 13.5px; font-weight: root.overall == 1 ? 600 : 400; color: root.overall == 0 ? Theme.text-3 : Theme.text; vertical-alignment: center; }
+            }
+            Rectangle { height: 1px; background: Theme.divider; }
+            StagePartRow {
+                padding-left: 28px;
+                name: root.stage.part;
+                state: root.stage.state;
+                count: root.stage.count;
+                note: root.stage.note;
+                progress: root.stage.progress;
+            }
+            StagePartRow {
+                padding-left: 28px;
+                name: root.stage.shown-part != "" ? root.stage.shown-part : "What they show";
+                state: root.stage.shown.state;
+                count: root.stage.shown.count;
+                note: root.stage.shown.note;
+                progress: root.stage.shown.progress;
+            }
+            if root.stage.third: StagePartRow {
+                padding-left: 28px;
+                name: root.stage.third-part;
+                state: root.stage.extra.state;
+                count: root.stage.extra.count;
+                note: root.stage.extra.note;
+                progress: root.stage.extra.progress;
+            }
+        }
+        if !root.stage.split: HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 9px;
+            padding-bottom: 9px;
+            spacing: 12px;
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                StageMark { state: root.stage.state; }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                horizontal-stretch: 1;
+                Text { text: root.stage.name; font-size: 13.5px; font-weight: root.stage.state == 1 ? 600 : 400; color: root.stage.state == 0 ? Theme.text-3 : Theme.text; }
+                if root.stage.note != "": Text { text: root.stage.note; font-size: 12px; color: Theme.text-2; wrap: word-wrap; }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 4px;
+                horizontal-stretch: 0;
+                Text { text: root.stage.count; font-size: 12px; color: Theme.text-2; horizontal-alignment: right; }
+                if root.stage.progress >= 0: Bar { width: 140px; height: 3px; progress: root.stage.progress; }
+            }
+        }
+    }
+}
+
+/// The last step of onboarding: reading has started, and it shows how far along it is.
+component ProgressPage inherits VerticalLayout {
+    in property <[FolderItem]> folders;
+    in property <string> summary;
+    in property <string> left;
+    in property <float> progress;
+    in property <string> current;
+    in property <string> model;
+    in property <float> model-progress;
+    in property <string> hotkey;
+    // Images, split into their text and what they show, when both are read; and videos, when there are any.
+    in property <StageRow> images;
+    in property <StageRow> videos;
+    spacing: 16px;
+    Heading { title: "Reading your files"; }
+    Reveal {
+        order: 1;
+        Rectangle {
+            border-radius: Theme.radius;
+            background: Theme.raised;
+            border-width: 1px;
+            border-color: Theme.divider;
+            VerticalLayout {
+                padding: 18px;
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 12px;
+                    Text { text: root.summary; font-size: 15px; font-weight: 600; color: Theme.text; horizontal-stretch: 1; overflow: elide; }
+                    Text { text: root.left; font-size: 13px; color: Theme.text-2; horizontal-stretch: 0; vertical-alignment: center; }
+                }
+                Bar { progress: root.progress; }
+                if root.model != "": Text { text: root.model; font-size: 12.5px; color: Theme.text-2; overflow: elide; }
+                if root.model != "": Bar { progress: root.model-progress; }
+                if root.current != "": Text { text: root.current; font-size: 12px; color: Theme.text-3; overflow: elide; }
+            }
+        }
+    }
+    if root.images.split: Reveal {
+        order: 2;
+        StageCard { stage: root.images; }
+    }
+    if root.videos.name != "": Reveal {
+        order: 2;
+        StageCard { stage: root.videos; }
+    }
+    Reveal {
+        order: 2;
+        VerticalLayout {
+            spacing: 10px;
+            for folder in root.folders: FolderRow { folder: folder; progress-only: true; }
+        }
+    }
+    Reveal {
+        order: 3;
+        Text {
+            text: "You can close this window. Reading goes on in the background, and " + root.hotkey + " works right away.";
+            font-size: 13px;
+            color: Theme.text-2;
+            wrap: word-wrap;
+        }
+    }
+}
+
+/// How reading is going, in detail: a page of its own, filled only while it's open.
+component ActivityPage inherits VerticalLayout {
+    in property <string> summary;
+    in property <string> left;
+    in property <float> progress;
+    in property <string> pause-label;
+    in property <bool> paused;
+    in property <[MenuRow]> pause-rows;
+    // "Full speed": without waiting for quiet moments, until everything's read (or back to normal).
+    in property <bool> full-speed;
+    in property <bool> full-speed-shown;
+    callback full-speed-clicked();
+    in property <[StageRow]> stages;
+    in property <[NowRow]> now;
+    in property <[FolderItem]> folders;
+    in property <string> problems-title;
+    in property <[ProblemRow]> problems;
+    // Bedrock's card: a drive listed whole again, now or last; "Fix this" offers a larger
+    // record of changes on it.
+    in property <bool> bedrock-shown;
+    in property <string> bedrock-title;
+    in property <string> bedrock-line;
+    in property <float> bedrock-progress: -1;
+    in property <string> bedrock-count;
+    in property <bool> bedrock-fix;
+    callback bedrock-fix-clicked();
+    // Whether there's a choice to make: paused, it resumes at once.
+    callback pause-clicked() -> bool;
+    callback pause-chosen(int);
+    callback show-in-folder(string);
+    callback skip-clicked(string);
+    spacing: 18px;
+    Heading { title: "Activity"; }
+    if root.bedrock-shown: Rectangle {
+        border-radius: Theme.radius;
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: Theme.divider;
+        VerticalLayout {
+            padding: 18px;
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 14px;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 4px;
+                    horizontal-stretch: 1;
+                    Text { text: root.bedrock-title; font-size: 15px; font-weight: 600; color: Theme.text; wrap: word-wrap; }
+                    Text { text: root.bedrock-line; font-size: 12.5px; color: Theme.text-2; wrap: word-wrap; }
+                }
+                if root.bedrock-fix: VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 0;
+                    Button { label: "Fix this"; clicked => { root.bedrock-fix-clicked(); } }
+                }
+            }
+            if root.bedrock-progress >= 0: HorizontalLayout {
+                spacing: 12px;
+                Bar { progress: root.bedrock-progress; y: (parent.height - self.height) / 2; horizontal-stretch: 1; }
+                Text {
+                    text: Math.floor(root.bedrock-progress * 100) + "%";
+                    font-size: 12.5px;
+                    color: Theme.text-2;
+                    vertical-alignment: center;
+                    horizontal-stretch: 0;
+                }
+            }
+            if root.bedrock-count != "": Text { text: root.bedrock-count; font-size: 12px; color: Theme.text-3; }
+        }
+    }
+    Reveal {
+        order: 1;
+        Rectangle {
+            border-radius: Theme.radius;
+            background: Theme.raised;
+            border-width: 1px;
+            border-color: Theme.divider;
+            VerticalLayout {
+                padding: 18px;
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 14px;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        horizontal-stretch: 1;
+                        Text { text: root.summary; font-size: 15px; font-weight: 600; color: Theme.text; wrap: word-wrap; }
+                        if root.left != "": Text { text: root.left; font-size: 12.5px; color: Theme.text-2; }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 0;
+                        Button {
+                            label: root.pause-label;
+                            chevron: !root.paused;
+                            clicked => {
+                                if (root.pause-clicked()) { pause-menu.open(); }
+                            }
+                            pause-menu := Menu {
+                                rows: root.pause-rows;
+                                from-right: true;
+                                menu-width: 270px;
+                                chosen(index) => { root.pause-chosen(index); }
+                            }
+                        }
+                    }
+                }
+                // With how far it's come in numbers.
+                HorizontalLayout {
+                    spacing: 12px;
+                    Bar { progress: root.progress; y: (parent.height - self.height) / 2; horizontal-stretch: 1; }
+                    if root.progress >= 0: Text {
+                        text: Math.floor(root.progress * 100) + "%";
+                        font-size: 12.5px;
+                        color: Theme.text-2;
+                        vertical-alignment: center;
+                        horizontal-stretch: 0;
+                    }
+                }
+                // Full speed: a switch, so its state shows at a glance, and what it does under its name.
+                if root.full-speed-shown: Rectangle { height: 1px; background: Theme.divider; }
+                if root.full-speed-shown: HorizontalLayout {
+                    spacing: 14px;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        horizontal-stretch: 1;
+                        Text { text: "Full speed"; font-size: 13px; font-weight: 600; color: Theme.text; }
+                        Text {
+                            text: root.full-speed
+                                ? "Reading flat out, even while you use the PC. It goes back to normal once everything's read."
+                                : "Use the processor and graphics card fully, without waiting for quiet moments, until everything's read.";
+                            font-size: 12px;
+                            color: Theme.text-2;
+                            wrap: word-wrap;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 0;
+                        Switch { on: root.full-speed; toggled(on) => { root.full-speed-clicked(); } }
+                    }
+                }
+            }
+        }
+    }
+    Reveal {
+        order: 2;
+        VerticalLayout {
+            spacing: 8px;
+            Subheader { text: "Stages"; }
+            for stage in root.stages: StageCard { stage: stage; }
+        }
+    }
+    if root.now.length > 0: Reveal {
+        order: 3;
+        VerticalLayout {
+            spacing: 8px;
+            Subheader { text: "Right now"; }
+            for row in root.now: Rectangle {
+                min-height: 54px;
+                border-radius: Theme.radius;
+                background: Theme.raised;
+                border-width: 1px;
+                border-color: Theme.divider;
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 12px;
+                    spacing: 12px;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        horizontal-stretch: 1;
+                        Text { text: row.what; font-size: 13px; color: Theme.text; overflow: elide; }
+                        if row.file != "": Text { text: row.file; font-size: 12px; color: Theme.text-2; overflow: elide; }
+                    }
+                    // Lets this file go: it's listed under "Couldn't be read", and not read again until it changes.
+                    if row.skip: VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 0;
+                        Button { label: "Skip"; clicked => { root.skip-clicked(row.path); } }
+                    }
+                }
+            }
+        }
+    }
+    if root.folders.length > 0: Reveal {
+        order: 4;
+        VerticalLayout {
+            spacing: 8px;
+            Subheader { text: "By folder"; }
+            for folder in root.folders: FolderRow { folder: folder; progress-only: true; }
+        }
+    }
+    if root.problems.length > 0: Reveal {
+        order: 5;
+        VerticalLayout {
+            spacing: 8px;
+            Subheader { text: root.problems-title; }
+            for problem in root.problems: Rectangle {
+                min-height: 50px;
+                border-radius: Theme.radius;
+                background: Theme.raised;
+                border-width: 1px;
+                border-color: Theme.divider;
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    spacing: 14px;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        horizontal-stretch: 1;
+                        Text { text: problem.name; font-size: 13px; color: Theme.text; overflow: elide; }
+                        Text { text: problem.why; font-size: 12px; color: Theme.text-2; overflow: elide; }
+                    }
+                    Link { text: "Show in folder"; horizontal-stretch: 0; vertical-alignment: center; clicked => { root.show-in-folder(problem.path); } }
+                }
+            }
+        }
+    }
+}
+
+// The Indexers step: Bedrock, Excavate's own index, or Everything.
+component IndexerChoice inherits Rectangle {
+    in property <string> title;
+    in property <string> line;
+    in property <bool> chosen;
+    in property <bool> recommended;
+    callback clicked();
+    border-radius: 12px;
+    background: root.chosen ? Theme.accent-soft : touch.has-hover ? Theme.hover : Theme.raised;
+    border-width: root.chosen ? 1.5px : 1px;
+    border-color: root.chosen ? Theme.accent : Theme.divider;
+    animate background, border-color { duration: Theme.quick; }
+    min-height: lay.min-height;
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    lay := VerticalLayout {
+        padding: 15px;
+        padding-top: 13px;
+        spacing: 6px;
+        HorizontalLayout {
+            spacing: 8px;
+            Rectangle {
+                width: 16px;
+                height: 16px;
+                y: 3px;
+                border-radius: 8px;
+                border-width: root.chosen ? 5px : 1.5px;
+                border-color: root.chosen ? Theme.accent : Theme.text-3;
+                animate border-width { duration: Theme.quick; }
+            }
+            Text { text: root.title; font-family: Theme.display-font; font-size: 16px; font-weight: 600; color: Theme.text; wrap: word-wrap; horizontal-stretch: 1; }
+        }
+        if root.recommended: HorizontalLayout {
+            alignment: start;
+            Rectangle {
+                height: 18px;
+                width: recommended-text.preferred-width + 14px;
+                border-radius: 9px;
+                background: Theme.accent-soft;
+                recommended-text := Text { text: "Recommended"; font-size: 10.5px; font-weight: 600; color: Theme.accent; }
+            }
+        }
+        Text { text: root.line; font-size: 12.5px; color: Theme.text-2; wrap: word-wrap; }
+    }
+}
+
+// Bedrock and Everything side by side, measure by measure: two thin bars a row, grown once as the page opens; each
+// row's longer bar is the full width, shorter is better.
+component IndexerBars inherits VerticalLayout {
+    in property <[{ label: string, ours: float, theirs: float, ours-text: string, theirs-text: string }]> rows;
+    property <float> grown: 0;
+    init => { self.grown = 1; }
+    animate grown { duration: Theme.animate ? 900ms : 0ms; easing: ease-out; }
+    spacing: 12px;
+    HorizontalLayout {
+        spacing: 16px;
+        alignment: start;
+        HorizontalLayout {
+            spacing: 6px;
+            Rectangle { width: 10px; height: 10px; y: (parent.height - self.height) / 2; border-radius: 2px; background: Theme.accent; }
+            Text { text: "Bedrock"; font-size: 12px; color: Theme.text-2; vertical-alignment: center; }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            Rectangle { width: 10px; height: 10px; y: (parent.height - self.height) / 2; border-radius: 2px; background: Theme.text-3; }
+            Text { text: "Everything"; font-size: 12px; color: Theme.text-2; vertical-alignment: center; }
+        }
+        Text { text: "Shorter is better"; font-size: 12px; color: Theme.text-3; vertical-alignment: center; }
+    }
+    for row in root.rows: HorizontalLayout {
+        spacing: 14px;
+        Text { width: 130px; text: row.label; font-size: 12.5px; color: Theme.text-2; vertical-alignment: center; }
+        VerticalLayout {
+            spacing: 2px;
+            horizontal-stretch: 1;
+            // (Room is left at the end of the longer bar for its figure: 64 px.)
+            Rectangle {
+                height: 15px;
+                ours-bar := Rectangle {
+                    x: 0;
+                    y: (parent.height - self.height) / 2;
+                    height: 8px;
+                    width: max(3px, parent.width - 64px) * row.ours / max(0.0001, max(row.ours, row.theirs)) * root.grown + 3px;
+                    border-radius: 2px;
+                    background: Theme.accent;
+                }
+                Text {
+                    x: ours-bar.width + 6px;
+                    text: row.ours-text;
+                    font-size: 11px;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                    opacity: root.grown;
+                }
+            }
+            Rectangle {
+                height: 15px;
+                theirs-bar := Rectangle {
+                    x: 0;
+                    y: (parent.height - self.height) / 2;
+                    height: 8px;
+                    width: max(3px, parent.width - 64px) * row.theirs / max(0.0001, max(row.ours, row.theirs)) * root.grown + 3px;
+                    border-radius: 2px;
+                    background: Theme.text-3;
+                }
+                Text {
+                    x: theirs-bar.width + 6px;
+                    text: row.theirs-text;
+                    font-size: 11px;
+                    color: Theme.text-2;
+                    vertical-alignment: center;
+                    opacity: root.grown;
+                }
+            }
+        }
+    }
+}
+
+// Before Windows' own prompt: what giving Excavate administrator rights does, once.
+component AdminAsk inherits Rectangle {
+    in property <string> title: "Let Excavate read your drives directly?";
+    in property <string> line: "Windows will ask for administrator permission. With it, Excavate reads each drive's own list of files: ready in about 15 seconds, with every folder included.";
+    in property <string> other: "Without it, Excavate lists folders one by one: about a minute and a half, and about 500 protected system folders are left out.";
+    in property <string> note: "Only names, sizes, dates and attributes are read. Nothing is changed, and nothing keeps running with these rights. Windows asks again only if the index ever has to be built from nothing.";
+    in property <string> yes: "Allow";
+    callback answered(bool);
+    background: #00000088;
+    // Nothing beneath hears the pointer.
+    TouchArea {}
+    FocusScope {
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if (event.text == Key.Escape) { root.answered(false); return accept; }
+            accept
+        }
+    }
+    Rectangle {
+        width: min(500px, root.width - 48px);
+        height: ask.preferred-height;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        border-radius: 14px;
+        background: Theme.popover;
+        border-width: 1px;
+        border-color: Theme.stroke-strong;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: #00000055;
+        ask := VerticalLayout {
+            padding: 24px;
+            padding-bottom: 20px;
+            spacing: 12px;
+            Text {
+                text: root.title;
+                font-family: Theme.display-font;
+                font-size: 19px;
+                font-weight: 600;
+                color: Theme.text;
+                wrap: word-wrap;
+            }
+            Text {
+                text: root.line;
+                font-size: 13.5px;
+                color: Theme.text;
+                wrap: word-wrap;
+            }
+            Text {
+                text: root.other;
+                font-size: 13.5px;
+                color: Theme.text-2;
+                wrap: word-wrap;
+            }
+            Text {
+                text: root.note;
+                font-size: 12px;
+                color: Theme.text-3;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                padding-top: 8px;
+                spacing: 10px;
+                alignment: end;
+                Button { label: "Not now"; clicked => { root.answered(false); } }
+                Button { primary: true; label: root.yes; clicked => { root.answered(true); } }
+            }
+        }
+    }
+}
+
+export component SettingsWindow inherits Window {
+    title: root.onboarding ? "Welcome to Excavate" : "Excavate settings";
+    // The rail's mark in the theme's colors, for the title bar and the taskbar.
+    icon: root.mark-tinted-on ? root.mark-tinted : @image-url("../../brand/mark-64.png");
+    background: Theme.base;
+    default-font-family: Theme.font;
+    preferred-width: 940px;
+    preferred-height: 700px;
+    min-width: 800px;
+    min-height: 580px;
+
+    in property <bool> onboarding: true;
+    in-out property <int> step: 0;
+    in-out property <int> page: 0;
+
+    // The mark in the rail: drawn in Rust while it's alive, its plain image otherwise. Hidden while the launch animation
+    // flies in to take its place.
+    in property <image> mark-frame;
+    in property <bool> mark-alive;
+    in property <bool> mark-landed: true;
+    property <image> mark-still: Theme.dark ? @image-url("../../brand/mark-dark-256.png") : @image-url("../../brand/mark-256.png");
+    // In a theme's colors, made from the artwork in Rust: Lantern is the artwork as drawn.
+    in property <image> mark-tinted;
+    in property <bool> mark-tinted-on;
+    property <image> mark-shown: root.mark-tinted-on ? root.mark-tinted : root.mark-still;
+    // Pages wait for the launch animation.
+    in property <bool> pages-ready: true;
+    // Flipped to have the whole window drawn again: the renderer only draws what changed, and what it drew while the window
+    // was off screen never reached it. (Both colors are fully transparent: nothing to see or to draw.)
+    in property <bool> draw-all;
+
+    in property <[string]> hotkey-keys: ["Alt", "S"];
+    in property <string> hotkey;
+    in property <bool> recording;
+    in property <string> hotkey-note;
+    in property <string> hotkey-error;
+    in property <string> everything-state: "checking";
+    // The Indexers step: 0 Bedrock (as recommended), 1 Everything; told to Excavate at "Continue".
+    in-out property <int> indexer-choice: 0;
+    // Asking before Windows' administrator prompt (AdminAsk), over the whole window.
+    in-out property <bool> admin-ask;
+    callback indexers-continue(bool);
+    callback admin-answered(bool);
+    // Activity's Bedrock card, and its "Fix this": a larger record of changes on a drive, asked first (journal-ask).
+    in property <bool> bedrock-shown;
+    in property <string> bedrock-title;
+    in property <string> bedrock-line;
+    in property <float> bedrock-progress: -1;
+    in property <string> bedrock-count;
+    in property <bool> bedrock-fix;
+    in-out property <bool> journal-ask;
+    in property <string> journal-ask-line;
+    callback journal-answered(bool);
+    in property <string> everything-detail;
+    in property <float> everything-progress: -1;
+    in property <string> everything-fix;
+    in property <[FolderItem]> folders;
+    in property <[TagRow]> exclusions;
+    in property <int> names-scope;
+    in property <bool> leave-out-apps;
+    in property <[TagRow]> name-folders;
+    in property <bool> name-folders-missing;
+    in property <[styled-text]> leave-out-info;
+    in-out property <string> exclusion-error;
+    in property <[ReadingCard]> cards;
+    in property <string> reading: "balanced";
+    in property <bool> pictures-on: true;
+    in property <string> measured;
+    in property <bool> read-on-battery;
+    in property <int> schedule;
+    in property <int> schedule-every;
+    in property <string> schedule-at;
+    in property <string> schedule-note;
+    in property <string> sweep-note;
+    in property <bool> reading-all;
+    in property <string> read-all-note;
+    // The Images page's tabs, in settings.
+    in-out property <int> images-tab;
+    in property <[ReadingCard]> seeing-cards;
+    in property <string> seeing: "balanced";
+    in property <bool> seeing-on: true;
+    in property <[PickerRow]> deep-rows;
+    in property <int> deep-choice;
+    in property <[styled-text]> deep-info;
+    in property <string> relook-note;
+    in property <string> seeing-progress;
+    // "Pause reading", or "Resume reading" when it's paused: in the rail, once reading has begun.
+    in property <string> pause-label: "Pause reading";
+    in property <bool> reading-paused;
+    // What the pause offers, saying when each ends: filled as the menu opens.
+    in property <[MenuRow]> pause-rows;
+    in property <string> monitor-label;
+    in property <string> monitor-note;
+    in property <[MenuRow]> monitor-rows;
+    // The graphics card every model runs on: "Automatic", a card, or the processor alone.
+    in property <string> gpu-label;
+    in property <string> gpu-note;
+    in property <[MenuRow]> gpu-rows;
+    callback gpu-chosen(int);
+    in property <string> popup-size-label;
+    in property <[MenuRow]> popup-size-rows;
+    in property <int> time-format;
+    in property <bool> blur-secrets: true;
+    in property <bool> blur-sharing: true;
+    in property <bool> start-with-windows: true;
+    in property <bool> new-search: true;
+    in property <bool> typed-toggles;
+    in property <bool> own-index;
+    // The search window's preview: 0 off, 1 small, 2 medium, 3 large.
+    in property <int> preview-size: 2;
+    // When new images are looked at for what they show, apart from reading their text.
+    in property <int> seeing-schedule;
+    in property <int> seeing-schedule-every;
+    in property <string> seeing-schedule-at;
+    in property <string> seeing-schedule-note;
+    in property <bool> look-on-battery;
+    in property <bool> looking-all;
+    in property <string> look-all-note;
+    // Audio: recordings by what's said in them.
+    in property <[ReadingCard]> listen-cards;
+    // The Videos page.
+    in property <[ReadingCard]> video-cards;
+    // Text in videos: its own pace cards, and which is chosen.
+    in property <[ReadingCard]> video-text-cards;
+    in property <string> video-text-choice;
+    // "Listener: Whisper turbo · GPU, Vulkan", for what's said in videos.
+    in property <string> video-listener;
+    // The Videos page's tabs, in settings (in onboarding, its sub-steps).
+    in-out property <int> videos-tab;
+    in property <string> video;
+    in property <bool> videos-on: true;
+    in property <bool> video-text-on: true;
+    in property <bool> video-speech-on: true;
+    in property <string> video-progress;
+    in property <string> relook-videos-note;
+    callback video-chosen(string);
+    callback video-text-chosen(string);
+    callback videos-toggled(bool);
+    callback video-text-toggled(bool);
+    callback video-speech-toggled(bool);
+    callback video-way-chosen(string, int);
+    callback relook-videos();
+    in property <string> listening: "balanced";
+    in property <bool> listening-on: true;
+    in property <string> languages-note;
+    in property <string> listen-progress;
+    in property <string> relisten-note;
+    in property <bool> listening-all;
+    in property <string> listen-all-note;
+    in property <int> listen-schedule;
+    in property <int> listen-schedule-every;
+    in property <string> listen-schedule-at;
+    in property <string> listen-schedule-note;
+    in property <bool> listen-on-battery;
+    in property <int> theme-choice;
+    in property <string> theme-name;
+    in property <[ThemeTile]> theme-tiles;
+    property <bool> theme-open;
+    in-out property <bool> workshop-open;
+    in-out property <string> workshop-name;
+    in-out property <float> workshop-hue;
+    in-out property <int> workshop-surfaces;
+    in property <string> workshop-hex;
+    in property <[string]> workshop-checks;
+    in property <bool> workshop-checks-ok;
+    in property <string> workshop-error;
+    in property <string> status;
+    in property <string> version;
+    in property <string> index-summary;
+    in property <bool> auto-update;
+    in property <string> update-line;
+    in property <string> update-action;
+    callback auto-update-toggled(bool);
+    callback update-action-clicked();
+    in property <[StageRow]> stages;
+    in property <[NowRow]> now;
+    in property <string> problems-title;
+    in property <[ProblemRow]> problems;
+    in property <string> reading-summary;
+    in property <string> reading-left;
+    in property <float> reading-progress;
+    in property <string> reading-current;
+    in property <string> reading-model;
+    in property <float> reading-model-progress;
+    in property <StageRow> reading-images;
+    in property <StageRow> reading-videos;
+    in property <[FolderItem]> reading-folders;
+    in property <[DemoRow]> search-rows;
+    in property <string> search-typed;
+    in property <string> search-time;
+
+    callback finish();
+    callback done();
+    callback step-shown(int);
+    callback search-paused(bool);
+    callback show-in-folder(string);
+    callback record-hotkey();
+    callback hotkey-pressed(bool, bool, bool, bool, string);
+    callback cancel-recording();
+    callback everything-action();
+    callback everything-custom();
+    callback learn-more(string);
+    callback folder-toggled(int, bool);
+    callback folder-kind-toggled(int, int);
+    callback add-folder();
+    callback remove-folder(int);
+    callback exclusion-removed(int);
+    callback exclusion-added(string) -> bool;
+    callback exclude-folder();
+    callback leave-out-apps-toggled(bool);
+    callback names-scope-chosen(int);
+    callback name-folder-added();
+    callback name-folder-removed(int);
+    callback add-read-folders();
+    callback pause-clicked() -> bool;
+    callback pause-chosen(int);
+    callback monitors-opening();
+    callback monitor-chosen(int);
+    callback new-search-toggled(bool);
+    callback typed-toggles-toggled(bool);
+    callback own-index-toggled(bool);
+    callback preview-size-chosen(int);
+    callback seeing-schedule-chosen(int);
+    callback seeing-every-chosen(int);
+    callback seeing-at-stepped(int);
+    callback look-now();
+    callback look-all(bool);
+    callback look-battery-toggled(bool);
+    callback listening-chosen(string);
+    callback listening-toggled(bool);
+    callback listen-way-chosen(string, int);
+    callback reading-way-chosen(string, int);
+    callback seeing-way-chosen(string, int);
+    callback open-languages();
+    callback relisten();
+    callback listen-all(bool);
+    callback listen-schedule-chosen(int);
+    callback listen-every-chosen(int);
+    callback listen-at-stepped(int);
+    callback listen-now();
+    callback listen-battery-toggled(bool);
+    callback popup-size-chosen(int);
+    callback time-format-chosen(int);
+    callback read-all(bool);
+    // Activity's "Full speed": every kind's "Read everything now" at once.
+    in property <bool> full-speed;
+    in property <bool> full-speed-shown;
+    callback full-speed-chosen(bool);
+    // "Skip" on a file being read now.
+    callback skip-file(string);
+    callback reading-chosen(string);
+    callback reread();
+    callback battery-toggled(bool);
+    callback pictures-toggled(bool);
+    callback schedule-chosen(int);
+    callback every-chosen(int);
+    callback at-stepped(int);
+    callback read-now();
+    callback blur-secrets-toggled(bool);
+    callback blur-sharing-toggled(bool);
+    callback start-with-windows-toggled(bool);
+    callback theme-chosen(int);
+    callback theme-picked(int);
+    callback theme-removed(int);
+    callback workshop-opened();
+    callback workshop-edited();
+    callback workshop-saved();
+    callback workshop-cancelled();
+    callback seeing-chosen(string);
+    callback seeing-deep-chosen(int);
+    callback seeing-toggled(bool);
+    callback relook();
+    callback open-log();
+    callback open-settings-file();
+    callback open-index-folder();
+
+    // Onboarding's rail. Images is two steps and Videos three, listed under their names.
+    property <[{ label: string, first: int, last: int, sub: bool }]> steps: [
+        { label: "Welcome", first: 0, last: 0, sub: false },
+        { label: "Shortcut", first: 1, last: 1, sub: false },
+        { label: "Indexers", first: 2, last: 2, sub: false },
+        { label: "Folders", first: 3, last: 3, sub: false },
+        { label: "Images", first: 4, last: 5, sub: false },
+        { label: "Text in them", first: 4, last: 4, sub: true },
+        { label: "What they show", first: 5, last: 5, sub: true },
+        { label: "Audio", first: 6, last: 6, sub: false },
+        { label: "Videos", first: 7, last: 9, sub: false },
+        { label: "Text in them", first: 7, last: 7, sub: true },
+        { label: "What they show", first: 8, last: 8, sub: true },
+        { label: "What's said", first: 9, last: 9, sub: true },
+        { label: "Privacy", first: 10, last: 10, sub: false },
+    ];
+    property <int> step-count: 11;
+    property <[string]> pages: ["General", "Folders", "Images", "Audio", "Videos", "Activity", "Privacy", "About"];
+    // What the content area shows: onboarding steps map onto the same sections as settings pages.
+    property <string> showing: !root.pages-ready ? ""
+        : root.onboarding
+            ? ["welcome", "shortcut", "indexers", "folders", "reading", "seeing", "audio", "videos", "videos", "videos", "privacy", "progress"][root.step]
+            : ["general", "folders", root.images-tab == 1 ? "seeing" : "reading", "audio", "videos", "activity", "privacy", "about"][root.page];
+    property <bool> reading-started: root.onboarding && root.step >= root.step-count;
+    // Been past the welcome page: back there, it shows all its cards at once.
+    property <bool> welcome-seen;
+
+    Rectangle { background: root.draw-all ? #ffffff00 : #00000000; }
+
+    HorizontalLayout {
+        // The rail.
+        Rectangle {
+            width: 236px;
+            background: Theme.rail;
+            VerticalLayout {
+                padding: 20px;
+                padding-top: 28px;
+                spacing: 4px;
+                HorizontalLayout {
+                    alignment: center;
+                    padding-bottom: 24px;
+                    mark-image := Image {
+                        width: 88px;
+                        height: 88px;
+                        source: root.mark-alive ? root.mark-frame : root.mark-shown;
+                        opacity: root.mark-landed ? 1 : 0;
+                    }
+                }
+                if root.onboarding: VerticalLayout {
+                    spacing: 2px;
+                    for item in root.steps: RailItem {
+                        label: item.label;
+                        sub: item.sub;
+                        dots: true;
+                        state: root.step >= item.first && root.step <= item.last ? 1 : root.step > item.last ? 2 : 0;
+                        clickable: item.first < root.step && !root.reading-started;
+                        clicked => { root.step = item.first; root.step-shown(item.first); }
+                    }
+                }
+                if !root.onboarding: VerticalLayout {
+                    spacing: 2px;
+                    for label[index] in root.pages: RailItem {
+                        label: label;
+                        dots: false;
+                        state: index == root.page ? 1 : 0;
+                        clickable: true;
+                        clicked => { root.page = index; root.step-shown(index); }
+                    }
+                }
+                Rectangle { vertical-stretch: 1; }
+                if root.status != "": Text {
+                    text: root.status;
+                    font-size: 11.5px;
+                    color: status-touch.has-hover ? Theme.text : Theme.text-3;
+                    wrap: word-wrap;
+                    // It says how far along reading is: the Activity page says the rest.
+                    status-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.page = 5; root.step-shown(5); }
+                    }
+                }
+                if !root.onboarding || root.reading-started: HorizontalLayout {
+                    alignment: start;
+                    padding-top: 4px;
+                    Rectangle {
+                        width: pause-link.preferred-width;
+                        height: pause-link.preferred-height;
+                        pause-link := Link {
+                            text: root.pause-label;
+                            font-size: 11.5px;
+                            clicked => {
+                                if (root.pause-clicked()) { rail-menu.open(); }
+                            }
+                        }
+                        // It's at the window's bottom.
+                        rail-menu := Menu {
+                            rows: root.pause-rows;
+                            upward: true;
+                            menu-width: 270px;
+                            chosen(index) => { root.pause-chosen(index); }
+                        }
+                    }
+                }
+            }
+        }
+        Rectangle { width: 1px; background: Theme.divider; }
+
+        VerticalLayout {
+            scroll := ScrollView {
+                vertical-stretch: 1;
+                // As wide as what's visible: text wraps instead of widening the page.
+                VerticalLayout {
+                    width: scroll.visible-width;
+                    padding: 36px;
+                    padding-top: 32px;
+                    spacing: 20px;
+                    alignment: start;
+
+                    if root.showing == "welcome": WelcomePage {
+                        available-width: scroll.visible-width - 72px;
+                        available-height: scroll.visible-height - 68px;
+                        seen: root.welcome-seen;
+                        search-rows: root.search-rows;
+                        search-typed: root.search-typed;
+                        search-time: root.search-time;
+                        search-paused(on) => { root.search-paused(on); }
+                    }
+                    if root.showing == "shortcut": VerticalLayout {
+                        spacing: 20px;
+                        Heading {
+                            title: "Open Excavate from anywhere";
+                            subtitle: "One shortcut opens the search over whatever you're doing, from the taskbar's edge.";
+                        }
+                        Reveal {
+                            order: 2;
+                            ShortcutSection {
+                                keys: root.hotkey-keys;
+                                recording: root.recording;
+                                note: root.hotkey-note;
+                                error: root.hotkey-error;
+                                record => { root.record-hotkey(); }
+                                pressed(control, alt, shift, meta, key) => { root.hotkey-pressed(control, alt, shift, meta, key); }
+                                cancel => { root.cancel-recording(); }
+                            }
+                        }
+                    }
+                    if root.showing == "indexers": indexers-page := VerticalLayout {
+                        // Everything on this PC, running or not.
+                        property <bool> found: root.everything-state != "missing" && root.everything-state != "checking"
+                            && root.everything-state != "installing" && root.everything-state != "failed";
+                        spacing: 20px;
+                        Heading {
+                            title: "How Excavate finds files by name";
+                            subtitle: root.everything-state == "running"
+                                ? "Everything is installed and running on this PC. You can keep it, but Excavate's own index is faster, lighter, and always up to date."
+                                : indexers-page.found
+                                ? "Everything is installed on this PC. You can use it, but Excavate's own index is faster, lighter, and always up to date."
+                                : "Excavate keeps its own index of every file on your drives: names come back in milliseconds, and it's always up to date.";
+                        }
+                        Reveal {
+                            order: 1;
+                            HorizontalLayout {
+                                spacing: 12px;
+                                IndexerChoice {
+                                    // Equal halves, whatever their texts' lengths.
+                                    horizontal-stretch: 1;
+                                    preferred-width: 0px;
+                                    title: "Bedrock, Excavate's own index";
+                                    line: "Built into Excavate. Everything is closed while it's on, so it holds no memory; switch back any time in Settings.";
+                                    recommended: true;
+                                    chosen: root.indexer-choice == 0;
+                                    clicked => { root.indexer-choice = 0; }
+                                }
+                                IndexerChoice {
+                                    // Equal halves, whatever their texts' lengths.
+                                    horizontal-stretch: 1;
+                                    preferred-width: 0px;
+                                    title: indexers-page.found ? "Keep using Everything" : "Use Everything";
+                                    line: indexers-page.found ? "Excavate asks Everything for names, as it does today."
+                                        : "Excavate asks Everything, the free file-name engine by voidtools, for names. Excavate can install it for you.";
+                                    chosen: root.indexer-choice == 1;
+                                    clicked => { root.indexer-choice = 1; }
+                                }
+                            }
+                        }
+                        if indexers-page.found: Reveal {
+                            order: 2;
+                            VerticalLayout {
+                                spacing: 12px;
+                                // Rounded, with where they were measured.
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    SectionTitle { text: "On a PC with ~10 million files"; vertical-alignment: center; }
+                                    Link { text: "Learn more"; font-size: 12px; vertical-alignment: center; clicked => { root.learn-more("measured"); } }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+                                // Rounded from benchmarks/results/laptop (9.45 million files): what's measured there.
+                                IndexerBars {
+                                    rows: [
+                                        { label: "Memory", ours: 90, theirs: 800, ours-text: "~90 MB", theirs-text: "~800 MB" },
+                                        { label: "After a keystroke", ours: 7, theirs: 27, ours-text: "~7 ms", theirs-text: "~27 ms" },
+                                        { label: "A new file found", ours: 6, theirs: 1000, ours-text: "~6 ms", theirs-text: "~1 s" },
+                                        { label: "CPU per change", ours: 100, theirs: 430, ours-text: "~100 µs", theirs-text: "~430 µs" },
+                                        { label: "Ready at start", ours: 0.1, theirs: 2, ours-text: "~0.1 s", theirs-text: "~2 s" },
+                                        // (340 and 338 MB measured: the same, to a rounding.)
+                                        { label: "On disk", ours: 340, theirs: 340, ours-text: "~340 MB", theirs-text: "~340 MB" },
+                                    ];
+                                }
+                            }
+                        }
+                        // Everything chosen where it isn't installed, or isn't running: what the old step offered.
+                        if root.indexer-choice == 1 && root.everything-state != "running": Reveal {
+                            order: 2;
+                            EverythingSection {
+                                state: root.everything-state;
+                                fix: root.everything-fix;
+                                detail: root.everything-detail;
+                                progress: root.everything-progress;
+                                action => { root.everything-action(); }
+                                custom => { root.everything-custom(); }
+                            }
+                        }
+                    }
+                    if root.showing == "general": VerticalLayout {
+                        spacing: 20px;
+                        Heading { title: "General"; }
+                        Reveal {
+                            order: 1;
+                            VerticalLayout {
+                                spacing: 12px;
+                                SectionTitle { text: "Shortcut"; }
+                                ShortcutSection {
+                                    keys: root.hotkey-keys;
+                                    recording: root.recording;
+                                    note: root.hotkey-note;
+                                    error: root.hotkey-error;
+                                    record => { root.record-hotkey(); }
+                                    pressed(control, alt, shift, meta, key) => { root.hotkey-pressed(control, alt, shift, meta, key); }
+                                    cancel => { root.cancel-recording(); }
+                                }
+                            }
+                        }
+                        Reveal {
+                            order: 2;
+                            GeneralSection {
+                                start-with-windows: root.start-with-windows;
+                                new-search: root.new-search;
+                                typed-toggles: root.typed-toggles;
+                                own-index: root.own-index;
+                                preview-size: root.preview-size;
+                                theme: root.theme-choice;
+                                theme-name: root.theme-name;
+                                theme-tiles: root.theme-tiles;
+                                theme-open <=> root.theme-open;
+                                workshop-open: root.workshop-open;
+                                workshop-name <=> root.workshop-name;
+                                workshop-hue <=> root.workshop-hue;
+                                workshop-surfaces <=> root.workshop-surfaces;
+                                workshop-hex: root.workshop-hex;
+                                workshop-checks: root.workshop-checks;
+                                workshop-checks-ok: root.workshop-checks-ok;
+                                workshop-error: root.workshop-error;
+                                theme-picked(index) => { root.theme-picked(index); }
+                                theme-removed(index) => { root.theme-removed(index); }
+                                workshop-opened => { root.workshop-opened(); }
+                                workshop-edited => { root.workshop-edited(); }
+                                workshop-saved => { root.workshop-saved(); }
+                                workshop-cancelled => { root.workshop-cancelled(); }
+                                monitor-label: root.monitor-label;
+                                monitor-note: root.monitor-note;
+                                monitor-rows: root.monitor-rows;
+                                gpu-label: root.gpu-label;
+                                gpu-note: root.gpu-note;
+                                gpu-rows: root.gpu-rows;
+                                gpu-chosen(index) => { root.gpu-chosen(index); }
+                                popup-size-label: root.popup-size-label;
+                                popup-size-rows: root.popup-size-rows;
+                                time-format: root.time-format;
+                                start-with-windows-toggled(on) => { root.start-with-windows-toggled(on); }
+                                new-search-toggled(on) => { root.new-search-toggled(on); }
+                                typed-toggles-toggled(on) => { root.typed-toggles-toggled(on); }
+                                own-index-toggled(on) => { root.own-index-toggled(on); }
+                                preview-size-chosen(index) => { root.preview-size-chosen(index); }
+                                theme-chosen(index) => { root.theme-chosen(index); }
+                                monitors-opening => { root.monitors-opening(); }
+                                monitor-chosen(index) => { root.monitor-chosen(index); }
+                                popup-size-chosen(index) => { root.popup-size-chosen(index); }
+                                time-format-chosen(index) => { root.time-format-chosen(index); }
+                            }
+                        }
+                        Reveal {
+                            order: 3;
+                            EverythingSection {
+                                state: root.everything-state;
+                                fix: root.everything-fix;
+                                detail: root.everything-detail;
+                                progress: root.everything-progress;
+                                action => { root.everything-action(); }
+                                custom => { root.everything-custom(); }
+                            }
+                        }
+                    }
+                    if root.showing == "folders": VerticalLayout {
+                        spacing: 20px;
+                        Heading { title: root.onboarding ? "What should Excavate search?" : "Folders"; }
+                        FoldersSection {
+                            folders: root.folders;
+                            exclusions: root.exclusions;
+                            folder-toggled(index, on) => { root.folder-toggled(index, on); }
+                            folder-kind-toggled(index, kind) => { root.folder-kind-toggled(index, kind); }
+                            add-folder => { root.add-folder(); }
+                            remove-folder(index) => { root.remove-folder(index); }
+                            exclusion-removed(index) => { root.exclusion-removed(index); }
+                            exclusion-added(text) => { return root.exclusion-added(text); }
+                            exclusion-error <=> root.exclusion-error;
+                            exclude-folder => { root.exclude-folder(); }
+                            names-scope: root.names-scope;
+                            own-index: root.own-index;
+                            leave-out-apps: root.leave-out-apps;
+                            leave-out-apps-toggled(on) => { root.leave-out-apps-toggled(on); }
+                            name-folders: root.name-folders;
+                            names-scope-chosen(index) => { root.names-scope-chosen(index); }
+                            name-folder-added => { root.name-folder-added(); }
+                            name-folder-removed(index) => { root.name-folder-removed(index); }
+                            name-folders-missing: root.name-folders-missing;
+                            add-read-folders => { root.add-read-folders(); }
+                            leave-out-info: root.leave-out-info;
+                            link(link) => { root.learn-more(link); }
+                        }
+                    }
+                    if root.showing == "activity": ActivityPage {
+                        summary: root.reading-summary;
+                        left: root.reading-left;
+                        progress: root.reading-progress;
+                        pause-label: root.pause-label;
+                        paused: root.reading-paused;
+                        pause-rows: root.pause-rows;
+                        full-speed: root.full-speed;
+                        full-speed-shown: root.full-speed-shown;
+                        full-speed-clicked => { root.full-speed-chosen(!root.full-speed); }
+                        stages: root.stages;
+                        now: root.now;
+                        folders: root.reading-folders;
+                        problems-title: root.problems-title;
+                        problems: root.problems;
+                        bedrock-shown: root.bedrock-shown;
+                        bedrock-title: root.bedrock-title;
+                        bedrock-line: root.bedrock-line;
+                        bedrock-progress: root.bedrock-progress;
+                        bedrock-count: root.bedrock-count;
+                        bedrock-fix: root.bedrock-fix;
+                        bedrock-fix-clicked => { root.journal-ask = true; }
+                        pause-clicked => { return root.pause-clicked(); }
+                        pause-chosen(index) => { root.pause-chosen(index); }
+                        show-in-folder(path) => { root.show-in-folder(path); }
+                        skip-clicked(path) => { root.skip-file(path); }
+                    }
+                    if root.showing == "reading" || root.showing == "seeing": VerticalLayout {
+                        spacing: 16px;
+                        if root.onboarding && root.showing == "reading": Heading {
+                            title: "How should Excavate read text in your images?";
+                            subtitle: "Excavate reads the text in your images with small models that run on this PC.";
+                        }
+                        if root.onboarding && root.showing == "seeing": Heading {
+                            title: "How should Excavate understand your images?";
+                            subtitle: "So you can find them by what they show, like \"a dog on a beach\", with models that run on this PC.";
+                        }
+                        if !root.onboarding: Heading { title: "Images"; }
+                        if !root.onboarding: Reveal {
+                            order: 1;
+                            HorizontalLayout {
+                                alignment: start;
+                                Segmented {
+                                    options: ["Text in images", "What they show"];
+                                    selected: root.images-tab;
+                                    chosen(index) => { root.images-tab = index; }
+                                }
+                            }
+                        }
+                        if !root.onboarding: Text {
+                            text: root.showing == "seeing"
+                                ? "Excavate finds images by what they show with models that run on this PC."
+                                : "Excavate reads the text in your images with small models that run on this PC.";
+                            font-size: 14px;
+                            color: Theme.text-2;
+                            wrap: word-wrap;
+                        }
+                        if root.showing == "seeing": SeeingSection {
+                            cards: root.seeing-cards;
+                            seeing: root.seeing;
+                            seeing-on: root.seeing-on;
+                            settings: !root.onboarding;
+                            deep-rows: root.deep-rows;
+                            deep-choice: root.deep-choice;
+                            deep-info: root.deep-info;
+                            relook-note: root.relook-note;
+                            progress: root.seeing-progress;
+                            looking-all: root.looking-all;
+                            look-all-note: root.look-all-note;
+                            look-all(on) => { root.look-all(on); }
+                            chosen(id) => { root.seeing-chosen(id); }
+                            way-chosen(id, index) => { root.seeing-way-chosen(id, index); }
+                            deep-chosen(index) => { root.seeing-deep-chosen(index); }
+                            toggled(on) => { root.seeing-toggled(on); }
+                            relook => { root.relook(); }
+                            link(link) => { root.learn-more(link); }
+                        }
+                        if root.showing == "reading": ReadingSection {
+                            cards: root.cards;
+                            reading: root.reading;
+                            pictures-on: root.pictures-on;
+                            settings: !root.onboarding;
+                            measured: root.measured;
+                            read-on-battery: root.read-on-battery;
+                            schedule: root.schedule;
+                            schedule-every: root.schedule-every;
+                            schedule-at: root.schedule-at;
+                            schedule-note: root.schedule-note;
+                            sweep-note: root.sweep-note;
+                            reading-all: root.reading-all;
+                            read-all-note: root.read-all-note;
+                            read-all(on) => { root.read-all(on); }
+                            chosen(id) => { root.reading-chosen(id); }
+                            way-chosen(id, index) => { root.reading-way-chosen(id, index); }
+                            reread => { root.reread(); }
+                            battery-toggled(on) => { root.battery-toggled(on); }
+                            pictures-toggled(on) => { root.pictures-toggled(on); }
+                            schedule-chosen(index) => { root.schedule-chosen(index); }
+                            every-chosen(index) => { root.every-chosen(index); }
+                            at-stepped(by) => { root.at-stepped(by); }
+                            read-now => { root.read-now(); }
+                            link(link) => { root.learn-more(link); }
+                        }
+                        if !root.onboarding: Reveal {
+                            order: 5;
+                            VerticalLayout {
+                                spacing: 10px;
+                                padding-top: 6px;
+                                Rectangle { height: 1px; background: Theme.divider; }
+                                // Each tab its own: text as images arrive, say, and what they show at night.
+                                if root.showing == "reading": ScheduleBlock {
+                                    schedule: root.schedule;
+                                    schedule-every: root.schedule-every;
+                                    schedule-at: root.schedule-at;
+                                    schedule-note: root.schedule-note;
+                                    schedule-chosen(index) => { root.schedule-chosen(index); }
+                                    every-chosen(index) => { root.every-chosen(index); }
+                                    at-stepped(by) => { root.at-stepped(by); }
+                                    read-now => { root.read-now(); }
+                                }
+                                if root.showing == "reading": SettingRow {
+                                    compact: true;
+                                    title: "Keep reading on battery power";
+                                    Switch { on: root.read-on-battery; toggled(on) => { root.battery-toggled(on); } }
+                                }
+                                if root.showing == "seeing": ScheduleBlock {
+                                    title: "How often should Excavate look at new images?";
+                                    now-label: "Look at new images now";
+                                    schedule: root.seeing-schedule;
+                                    schedule-every: root.seeing-schedule-every;
+                                    schedule-at: root.seeing-schedule-at;
+                                    schedule-note: root.seeing-schedule-note;
+                                    schedule-chosen(index) => { root.seeing-schedule-chosen(index); }
+                                    every-chosen(index) => { root.seeing-every-chosen(index); }
+                                    at-stepped(by) => { root.seeing-at-stepped(by); }
+                                    read-now => { root.look-now(); }
+                                }
+                                if root.showing == "seeing": SettingRow {
+                                    compact: true;
+                                    title: "Keep looking on battery power";
+                                    Switch { on: root.look-on-battery; toggled(on) => { root.look-battery-toggled(on); } }
+                                }
+                            }
+                        }
+                    }
+                    if root.showing == "audio": VerticalLayout {
+                        spacing: 16px;
+                        if root.onboarding: Heading {
+                            title: "How should Excavate listen to your recordings?";
+                            subtitle: "So you can find them by what's said in them, with models that run on this PC.";
+                        }
+                        if !root.onboarding: Heading { title: "Audio"; }
+                        if !root.onboarding: Text {
+                            text: "Excavate finds recordings by what's said in them, with models that run on this PC. For videos, it's chosen under Videos, and they're heard by the listener you choose here.";
+                            font-size: 14px;
+                            color: Theme.text-2;
+                            wrap: word-wrap;
+                        }
+                        AudioSection {
+                            cards: root.listen-cards;
+                            listening: root.listening;
+                            listening-on: root.listening-on;
+                            settings: !root.onboarding;
+                            languages-note: root.languages-note;
+                            progress: root.listen-progress;
+                            relisten-note: root.relisten-note;
+                            listening-all: root.listening-all;
+                            listen-all-note: root.listen-all-note;
+                            schedule: root.listen-schedule;
+                            schedule-every: root.listen-schedule-every;
+                            schedule-at: root.listen-schedule-at;
+                            schedule-note: root.listen-schedule-note;
+                            on-battery: root.listen-on-battery;
+                            chosen(id) => { root.listening-chosen(id); }
+                            toggled(on) => { root.listening-toggled(on); }
+                            way-chosen(id, index) => { root.listen-way-chosen(id, index); }
+                            open-languages => { root.open-languages(); }
+                            relisten => { root.relisten(); }
+                            listen-all(on) => { root.listen-all(on); }
+                            schedule-chosen(index) => { root.listen-schedule-chosen(index); }
+                            every-chosen(index) => { root.listen-every-chosen(index); }
+                            at-stepped(by) => { root.listen-at-stepped(by); }
+                            listen-now => { root.listen-now(); }
+                            battery-toggled(on) => { root.listen-battery-toggled(on); }
+                            link(link) => { root.learn-more(link); }
+                        }
+                        if !root.onboarding: Reveal {
+                            order: 5;
+                            VerticalLayout {
+                                spacing: 10px;
+                                padding-top: 6px;
+                                Rectangle { height: 1px; background: Theme.divider; }
+                                ScheduleBlock {
+                                    title: "How often should Excavate listen to new recordings?";
+                                    now-label: "Listen to new recordings now";
+                                    schedule: root.listen-schedule;
+                                    schedule-every: root.listen-schedule-every;
+                                    schedule-at: root.listen-schedule-at;
+                                    schedule-note: root.listen-schedule-note;
+                                    schedule-chosen(index) => { root.listen-schedule-chosen(index); }
+                                    every-chosen(index) => { root.listen-every-chosen(index); }
+                                    at-stepped(by) => { root.listen-at-stepped(by); }
+                                    read-now => { root.listen-now(); }
+                                }
+                                SettingRow {
+                                    compact: true;
+                                    title: "Keep listening on battery power";
+                                    Switch { on: root.listen-on-battery; toggled(on) => { root.listen-battery-toggled(on); } }
+                                }
+                            }
+                        }
+                    }
+                    if root.showing == "videos": VerticalLayout {
+                        // In onboarding, each sub-step is a tab.
+                        property <int> tab: root.onboarding ? root.step - 7 : root.videos-tab;
+                        spacing: 16px;
+                        if root.onboarding && tab == 0: Heading {
+                            title: "Should Excavate read the text in your videos?";
+                            subtitle: "Slides, screen recordings and captions, found at the moment they show.";
+                        }
+                        if root.onboarding && tab == 1: Heading {
+                            title: "How closely should Excavate look at your videos?";
+                            subtitle: "So you can find them by what they show, and open them at that moment.";
+                        }
+                        if root.onboarding && tab == 2: Heading {
+                            title: "Should Excavate listen to your videos?";
+                            subtitle: "So you can find them by what's said in them, and open them at that moment.";
+                        }
+                        if !root.onboarding: Heading { title: "Videos"; }
+                        if !root.onboarding: Reveal {
+                            order: 1;
+                            HorizontalLayout {
+                                alignment: start;
+                                Segmented {
+                                    options: ["Text in videos", "What they show", "What's said"];
+                                    selected: root.videos-tab;
+                                    chosen(index) => { root.videos-tab = index; }
+                                }
+                            }
+                        }
+                        if !root.onboarding: Text {
+                            text: tab == 0 ? "Excavate reads the text your videos show with small models that run on this PC."
+                                : tab == 1 ? "Excavate finds videos by what they show, with the models that look at your images."
+                                : "Excavate finds videos by what's said in them, with the listener that hears your recordings.";
+                            font-size: 14px;
+                            color: Theme.text-2;
+                            wrap: word-wrap;
+                        }
+                        VideoSection {
+                            tab: tab;
+                            text-cards: root.video-text-cards;
+                            text-chosen-id: root.video-text-choice;
+                            listener: root.video-listener;
+                            text-chosen(id) => { root.video-text-chosen(id); }
+                            open-audio => {
+                                if (root.onboarding) { root.step = 6; root.step-shown(6); }
+                                else { root.page = 3; root.step-shown(3); }
+                            }
+                            cards: root.video-cards;
+                            chosen-id: root.video;
+                            videos-on: root.videos-on;
+                            text-on: root.video-text-on;
+                            speech-on: root.video-speech-on;
+                            settings: !root.onboarding;
+                            progress: root.video-progress;
+                            relook-note: root.relook-videos-note;
+                            chosen(id) => { root.video-chosen(id); }
+                            toggled(on) => { root.videos-toggled(on); }
+                            text-toggled(on) => { root.video-text-toggled(on); }
+                            speech-toggled(on) => { root.video-speech-toggled(on); }
+                            way-chosen(id, index) => { root.video-way-chosen(id, index); }
+                            relook => { root.relook-videos(); }
+                            link(link) => { root.learn-more(link); }
+                        }
+                    }
+                    if root.showing == "privacy": VerticalLayout {
+                        spacing: 20px;
+                        Heading { title: root.onboarding ? "Privacy still matters" : "Privacy"; }
+                        PrivacySection {
+                            available-width: scroll.visible-width - 72px;
+                            available-height: scroll.visible-height - 68px - 56px - 20px;
+                            blur-secrets: root.blur-secrets;
+                            blur-sharing: root.blur-sharing;
+                            blur-secrets-toggled(on) => { root.blur-secrets-toggled(on); }
+                            blur-sharing-toggled(on) => { root.blur-sharing-toggled(on); }
+                            learn-more => { root.learn-more("privacy"); }
+                        }
+                    }
+                    if root.showing == "about": VerticalLayout {
+                        spacing: 20px;
+                        Heading { title: "About"; }
+                        Reveal {
+                            order: 1;
+                            AboutSection {
+                                mark: root.mark-shown;
+                                version: root.version;
+                                index-summary: root.index-summary;
+                                auto-update: root.auto-update;
+                                update-line: root.update-line;
+                                update-action: root.update-action;
+                                auto-update-toggled(on) => { root.auto-update-toggled(on); }
+                                update-action-clicked => { root.update-action-clicked(); }
+                                open-log => { root.open-log(); }
+                                open-settings-file => { root.open-settings-file(); }
+                                open-index-folder => { root.open-index-folder(); }
+                            }
+                        }
+                    }
+                    if root.showing == "progress": ProgressPage {
+                        folders: root.reading-folders;
+                        summary: root.reading-summary;
+                        left: root.reading-left;
+                        progress: root.reading-progress;
+                        current: root.reading-current;
+                        model: root.reading-model;
+                        model-progress: root.reading-model-progress;
+                        hotkey: root.hotkey;
+                        images: root.reading-images;
+                        videos: root.reading-videos;
+                    }
+                }
+            }
+
+            if root.onboarding: Rectangle { height: 1px; background: Theme.divider; }
+            if root.onboarding: HorizontalLayout {
+                height: 64px;
+                padding-left: 36px;
+                padding-right: 28px;
+                spacing: 10px;
+                alignment: end;
+                Text {
+                    text: root.reading-started ? "" : (root.step + 1) + " of " + root.step-count;
+                    font-size: 12px;
+                    color: Theme.text-3;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                if root.step > 0 && !root.reading-started: VerticalLayout {
+                    alignment: center;
+                    Button { label: "Back"; clicked => { root.step -= 1; root.step-shown(root.step); } }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Button {
+                        primary: true;
+                        label: root.reading-started ? "Done" : root.step == 0 ? "Get started" : root.step == root.step-count - 1 ? "Start reading" : "Continue";
+                        clicked => {
+                            if (root.reading-started) { root.done(); }
+                            else if (root.step == root.step-count - 1) { root.step += 1; root.finish(); }
+                            else if (root.showing == "indexers") { root.indexers-continue(root.indexer-choice == 0); }
+                            else { root.welcome-seen = true; root.step += 1; root.step-shown(root.step); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if root.journal-ask: AdminAsk {
+        title: "Keep a longer record of changes?";
+        line: root.journal-ask-line;
+        other: "Making it about 1 GB fixes this. It uses up to 1 GB of the drive, and Windows will ask for administrator permission once.";
+        note: "Only the size of that record changes. Nothing is read, and nothing keeps running with these rights.";
+        yes: "Make it 1 GB";
+        answered(yes) => { root.journal-ask = false; root.journal-answered(yes); }
+    }
+    if root.admin-ask: AdminAsk {
+        answered(allow) => { root.admin-ask = false; root.admin-answered(allow); }
+    }
+}

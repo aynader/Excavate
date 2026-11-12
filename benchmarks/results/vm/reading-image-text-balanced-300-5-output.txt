@@ -1,0 +1,18 @@
+image-text: 300 of 3166 files (a seeded sample), the balanced choice, 5 runs
+warm-up (downloads the models the first time)
+  1 min: 109 of 300 done, reading
+  2 min: 230 of 300 done, reading
+run 1/5: 152.6 s, 300 of 300 done (0 failed), 252.6 s of CPU, peak 291 MB
+  1 min: 114 of 300 done, reading
+  2 min: 231 of 300 done, reading
+run 2/5: 149.5 s, 300 of 300 done (0 failed), 256.0 s of CPU, peak 291 MB
+  1 min: 109 of 300 done, reading
+  2 min: 227 of 300 done, reading
+run 3/5: 151.6 s, 300 of 300 done (0 failed), 255.4 s of CPU, peak 292 MB
+  1 min: 109 of 300 done, reading
+  2 min: 230 of 300 done, reading
+run 4/5: 153.5 s, 300 of 300 done (0 failed), 256.7 s of CPU, peak 291 MB
+  1 min: 110 of 300 done, reading
+  2 min: 224 of 300 done, reading
+run 5/5: 152.6 s, 300 of 300 done (0 failed), 261.2 s of CPU, peak 291 MB
+written: C:\measure\bench\reading-image-text-balanced-300-5.json

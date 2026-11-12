@@ -1,0 +1,8 @@
+image-text: 600 queries over 600 files
+  100: first 45, top ten 48
+  200: first 93, top ten 99
+  300: first 140, top ten 150
+  400: first 190, top ten 203
+  500: first 242, top ten 257
+first 255 of 532, top ten 271
+written: C:\measure\bench\finding-image-text-balanced-600.json
