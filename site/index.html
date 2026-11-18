@@ -164,6 +164,10 @@ h2 { font: 700 clamp(28px, 3.6vw, 38px)/1.15 var(--display); letter-spacing: -0.
 .icon.img { background: linear-gradient(160deg, #f0b35c, #c96a3a 55%, #5b3a2b); }
 .icon.img.sea { background: linear-gradient(180deg, #8fc0e0 0 45%, #e3c690 45% 100%); }
 .icon.img.board { background: linear-gradient(180deg, #f4f1ea, #d9d4c9); }
+.icon { position: relative; overflow: hidden; }
+.icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.icon.vid.thumb::after { content: ""; position: absolute; left: 12px; top: 10px; border: 6px solid transparent;
+  border-left: 9px solid #fff; border-right: 0; filter: drop-shadow(0 0 2px rgba(0,0,0,.6)); }
 .body { min-width: 0; flex: 1; }
 .name { display: flex; align-items: center; gap: 8px; font-size: 14.5px; color: var(--ink); white-space: nowrap; }
 .name mark { background: none; color: var(--accent); font-weight: 650; }
@@ -300,7 +304,6 @@ footer a { color: var(--ink-2); }
 
   <section id="features">
     <div class="wrap">
-      <p class="eyebrow">One popup</p>
       <h2>Everything on your PC, in one list</h2>
       <p class="sub">Each keystroke is answered from the places you use, then filled in with names from every drive and
         with what's inside your files, images, videos and recordings, all ranked together.</p>
@@ -318,7 +321,6 @@ footer a { color: var(--ink-2); }
 
   <section id="benchmarks">
     <div class="wrap">
-      <p class="eyebrow">Measured, not promised</p>
       <h2>Bedrock and Everything, side by side</h2>
       <p class="sub">On an everyday laptop (Intel Core i9-13900HX, 32 GB, RTX 4080 Laptop) with 9,453,012 files and
         folders on two drives, Bedrock, Excavate's own index, against <a href="https://www.voidtools.com">Everything</a>
@@ -360,7 +362,6 @@ footer a { color: var(--ink-2); }
 
   <section id="privacy">
     <div class="wrap">
-      <p class="eyebrow">Private by design</p>
       <h2>Nothing leaves your PC</h2>
       <p class="sub">Every model runs on your own processor or graphics card, with no account and nothing uploaded.
         Excavate goes online only to download the models you choose and, if you let it, to check for updates.</p>
@@ -454,7 +455,9 @@ footer a { color: var(--ink-2); }
   const reel = document.querySelector(".reel");
   const measure = text => { const probe = document.createElement("span"); probe.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap";
     probe.textContent = text; reel.appendChild(probe); const width = probe.offsetWidth + 4; probe.remove(); return width; };
-  reel.style.width = measure(ways[0]) + "px";
+  const widest = () => reel.style.width = Math.max(...ways.map(measure)) + "px";
+  widest();
+  document.fonts.ready.then(widest);
   let way = 0;
   if (!still) setInterval(() => {
     way = (way + 1) % ways.length;
@@ -462,7 +465,6 @@ footer a { color: var(--ink-2); }
     const next = document.createElement("span");
     next.textContent = ways[way]; next.className = "in";
     reel.appendChild(next);
-    reel.style.width = measure(ways[way]) + "px";
     old.classList.add("out");
     next.offsetWidth;
     setTimeout(() => next.className = "", 20);
@@ -520,24 +522,24 @@ footer a { color: var(--ink-2); }
              ["txt", "calls.txt", "Notes  ·  …builder came by about the <mark>renovation</mark>…", "In text", "Feb 3"]] },
     { title: "Text in images", line: "Screenshots, scans and whiteboards, with the words outlined.", query: "sprint goals", chip: "Images",
       said: "Read 6,613 images",
-      rows: [["img board", "IMG_2041.jpg", "Phone  ·  <mark>Sprint goals</mark>  ·  ship onboarding, fix search lag", "In image", "Tue"],
-             ["img board", "Screenshot 2026-11-03.png", "Screenshots  ·  …<mark>sprint goals</mark> for the week…", "In image", "Nov 3"],
+      rows: [["img board", "IMG_2041.jpg", "Phone  ·  <mark>Sprint goals</mark>  ·  ship onboarding, fix search lag", "In image", "Tue", "whiteboard.jpg"],
+             ["img board", "Screenshot 2026-11-03.png", "Screenshots  ·  …<mark>sprint goals</mark> for the week…", "In image", "Nov 3", "screenshot.png"],
              ["pdf", "Retro board.pdf", "Team  ·  …last <mark>sprint</mark>'s <mark>goals</mark> were…", "In scan", "Oct 28"]] },
     { title: "What photos show", line: "Describe it the way you'd say it.", query: "the dog on the beach", chip: "Images",
       said: "Looked at 34,367 images",
-      rows: [["img sea", "IMG_0412.jpg", "Pictures\\Holiday 2025", "Shown", "Aug 14"],
-             ["img sea", "IMG_0398.jpg", "Pictures\\Holiday 2025", "Shown", "Aug 14"],
-             ["img", "PXL_20250610.jpg", "Pictures\\Phone", "Shown", "Jun 10"],
-             ["vid", "walk with Bruno.mp4", "At 0:42", "Shown", "Jun 10"]] },
+      rows: [["img sea", "IMG_0412.jpg", "Pictures\\Holiday 2025", "Shown", "Aug 14", "dog-beach-1.jpg"],
+             ["img sea", "IMG_0398.jpg", "Pictures\\Holiday 2025", "Shown", "Aug 14", "dog-beach-2.jpg"],
+             ["img", "PXL_20250610.jpg", "Pictures\\Phone", "Shown", "Jun 10", "dog-beach-3.jpg"],
+             ["vid", "walk with Bruno.mp4", "At 0:42", "Shown", "Jun 10", "dog-walk.jpg"]] },
     { title: "Videos and recordings", line: "What's said, what's shown and the text on screen, opened at that moment.", query: "when we talked about the budget", chip: "Audio",
       said: "Listened to 214 recordings",
       rows: [["aud", "Team call 12 Nov.m4a", "At 12:41  ·  …so when we <mark>talked about the budget</mark> last week…", "Said", "Nov 12"],
-             ["vid", "Planning meeting.mp4", "At 3:05  ·  …the <mark>budget</mark> for next year…", "Said", "Oct 30"],
-             ["vid", "Lecture 21.mp4", "At 18:20  ·  Clique is NP-complete", "In video", "Oct 2"]] },
+             ["vid", "Planning meeting.mp4", "At 3:05  ·  …the <mark>budget</mark> for next year…", "Said", "Oct 30", "meeting.jpg"],
+             ["vid", "Lecture 21.mp4", "At 18:20  ·  Clique is NP-complete", "In video", "Oct 2", "lecture.jpg"]] },
     { title: "The same file, once", line: "Copies in other folders fold into one result.", query: "a.gif", chip: "All",
       said: "Ready",
-      rows: [["img", "a.gif <span class=\"pill\">+11 copies</span>", "C:\\…\\page 1 files\\sync_data", "", "Today"],
-             ["img", "beach.jpg <span class=\"pill\">+2 copies</span>", "Pictures\\Holiday 2025", "", "Aug 14"],
+      rows: [["img", "a.gif <span class=\"pill\">+11 copies</span>", "C:\\…\\page 1 files\\sync_data", "", "Today", "rose.jpg"],
+             ["img", "beach.jpg <span class=\"pill\">+2 copies</span>", "Pictures\\Holiday 2025", "", "Aug 14", "beach.jpg"],
              ["doc", "Report final.docx", "Documents\\Work", "", "Jul 2"]] },
   ];
   const kindsEl = document.getElementById("kinds");
@@ -563,8 +565,8 @@ footer a { color: var(--ink-2); }
     saidEl.textContent = kind.said;
     rowsEl.innerHTML = "";
     clearInterval(typing);
-    const draw = () => rowsEl.innerHTML = kind.rows.map(([type, name, detail, badge, when], at) =>
-      `<div class="row${at === 0 ? " sel" : ""}"><div class="icon ${type}">${type.startsWith("img") ? "" : type.toUpperCase()}</div>
+    const draw = () => rowsEl.innerHTML = kind.rows.map(([type, name, detail, badge, when, thumb], at) =>
+      `<div class="row${at === 0 ? " sel" : ""}"><div class="icon ${type}${thumb ? " thumb" : ""}">${thumb ? `<img src="assets/thumbs/${thumb}" alt="" width="32" height="32">` : type.startsWith("img") ? "" : type.toUpperCase()}</div>
        <div class="body"><div class="name"><span class="n">${name}</span>${badge ? ` <span class="badge">${badge}</span>` : ""}</div><div class="detail">${detail}</div></div>
        <div class="meta">${when}</div></div>`).join("");
     if (still) { typed.textContent = kind.query; draw(); return; }
