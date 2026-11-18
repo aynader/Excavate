@@ -6,7 +6,10 @@
 Press <kbd>Alt</kbd>+<kbd>S</kbd> and search for apps and files on every drive by name, the words inside your documents,
 the text in your images, what your photos and videos show, and what's said in your recordings. Within milliseconds.</p>
 
-https://github.com/user-attachments/assets/4be85b45-9b3c-4896-8222-ebeabf878860
+
+
+https://github.com/user-attachments/assets/34c22548-a4b0-4329-85a5-d82ae0b8d637
+
 
 ---
 
