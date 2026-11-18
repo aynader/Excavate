@@ -1,0 +1,182 @@
+// Excavate putting itself in place (install.rs): one screen to install or update, and one to uninstall.
+
+import { Theme } from "theme.slint";
+import { Bar, Button, Link } from "widgets.slint";
+
+component Choice inherits Rectangle {
+    in property <string> title;
+    in property <string> detail;
+    in property <bool> on;
+    callback clicked();
+    height: 58px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: root.on ? Theme.accent : Theme.stroke;
+    background: root.on ? Theme.accent-soft : touch.has-hover ? Theme.hover : transparent;
+    accessible-role: radio-button;
+    accessible-checked: root.on;
+    accessible-label: root.title;
+    accessible-action-default => { root.clicked(); }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 14px;
+                height: 14px;
+                border-radius: 7px;
+                border-width: root.on ? 4px : 1.5px;
+                border-color: root.on ? Theme.accent : Theme.text-2;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text { text: root.title; font-size: 13px; font-weight: 600; color: Theme.text; }
+            Text { text: root.detail; font-size: 12px; color: Theme.text-2; wrap: word-wrap; }
+        }
+    }
+}
+
+export component InstallWindow inherits Window {
+    title: root.uninstalling ? "Uninstall Excavate" : root.heading;
+    icon: @image-url("../../brand/mark-64.png");
+    background: Theme.base;
+    default-font-family: Theme.font;
+    // A fixed size (min and max the same): it isn't resized.
+    min-width: 460px;
+    max-width: 460px;
+    min-height: root.uninstalling ? 330px : 340px;
+    max-height: root.uninstalling ? 330px : 340px;
+
+    // Uninstalling (`--uninstall`), or installing.
+    in property <bool> uninstalling;
+    // "Install Excavate", or "Update Excavate" over an older copy.
+    in property <string> heading: "Install Excavate";
+    in property <string> line: "Search your PC by name, by what's inside, and by what it shows.";
+    in property <string> place;
+    in property <string> button: "Install";
+    // 0 ready, 1 working, 2 failed.
+    in property <int> stage;
+    in property <float> progress;
+    in property <string> note;
+    in property <string> error;
+    // Uninstall: what's kept ("2.1 GB" of index and models), and the choice.
+    in property <string> kept-size;
+    in-out property <bool> delete-all;
+    callback install();
+    callback change-place();
+    callback uninstall();
+    callback cancel();
+
+    property <image> mark: Theme.dark ? @image-url("../../brand/mark-dark-256.png") : @image-url("../../brand/mark-256.png");
+
+    if !root.uninstalling: VerticalLayout {
+        padding: 30px;
+        padding-top: 34px;
+        spacing: 0px;
+        alignment: start;
+        HorizontalLayout {
+            alignment: center;
+            Image { source: root.mark; width: 64px; height: 64px; }
+        }
+        Rectangle { height: 14px; }
+        Text {
+            text: root.stage == 1 ? (root.heading == "Install Excavate" ? "Installing" : "Updating") : root.stage == 2 ? "Couldn't install" : root.heading;
+            font-family: Theme.display-font;
+            font-size: 21px;
+            font-weight: 600;
+            color: Theme.text;
+            horizontal-alignment: center;
+        }
+        Rectangle { height: 6px; }
+        Text {
+            text: root.stage == 1 ? "Checking the files, then putting Excavate in place" : root.stage == 2 ? root.error : root.line;
+            font-size: 13px;
+            color: root.stage == 2 ? Theme.bad : Theme.text-2;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        Rectangle { height: 20px; }
+        if root.stage != 1: HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                height: 30px;
+                width: min(400px, place-text.preferred-width + 24px);
+                border-radius: 7px;
+                background: Theme.field;
+                border-width: 1px;
+                border-color: Theme.stroke;
+                place-text := Text {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    text: "Goes in " + root.place;
+                    font-size: 12px;
+                    color: Theme.text-3;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+        }
+        if root.stage == 1: VerticalLayout {
+            spacing: 10px;
+            Bar { progress: root.progress; }
+            Text { text: root.note; font-size: 12px; color: Theme.text-3; horizontal-alignment: center; }
+        }
+        Rectangle { height: 22px; }
+        if root.stage != 1: HorizontalLayout {
+            alignment: center;
+            Button {
+                label: root.stage == 2 ? "Try again" : root.button;
+                primary: true;
+                width: 140px;
+                clicked => { root.install(); }
+            }
+        }
+        Rectangle { height: 14px; }
+        if root.stage == 0: HorizontalLayout {
+            alignment: center;
+            spacing: 6px;
+            Text { text: "No administrator needed  ·"; font-size: 12px; color: Theme.text-3; }
+            Link { text: "Change where"; font-size: 12px; clicked => { root.change-place(); } }
+        }
+    }
+
+    if root.uninstalling: VerticalLayout {
+        padding: 28px;
+        spacing: 10px;
+        alignment: start;
+        Text {
+            text: root.stage == 1 ? "Uninstalling" : root.stage == 2 ? "Couldn't uninstall" : "Uninstall Excavate";
+            font-family: Theme.display-font;
+            font-size: 21px;
+            font-weight: 600;
+            color: Theme.text;
+            horizontal-alignment: center;
+        }
+        if root.stage == 2: Text { text: root.error; font-size: 13px; color: Theme.bad; horizontal-alignment: center; wrap: word-wrap; }
+        Rectangle { height: 6px; }
+        Choice {
+            title: "Keep what's been read";
+            detail: root.kept-size == "" ? "Your index and models stay, for if you install it again" : "Your index and models stay, for if you install it again (" + root.kept-size + ")";
+            on: !root.delete-all;
+            clicked => { root.delete-all = false; }
+        }
+        Choice {
+            title: "Delete everything";
+            detail: "The index, the models and your settings";
+            on: root.delete-all;
+            clicked => { root.delete-all = true; }
+        }
+        Rectangle { height: 8px; }
+        HorizontalLayout {
+            alignment: center;
+            spacing: 8px;
+            Button { label: "Cancel"; enabled: root.stage != 1; clicked => { root.cancel(); } }
+            Button { label: root.stage == 1 ? "Uninstalling" : "Uninstall"; primary: true; enabled: root.stage != 1; clicked => { root.uninstall(); } }
+        }
+    }
+}

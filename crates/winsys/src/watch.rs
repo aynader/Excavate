@@ -28,6 +28,7 @@ pub enum Change {
 
 struct Root {
     handle: isize,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 /// Watches folder trees until dropped.
@@ -45,9 +46,14 @@ impl Watcher {
         let mut roots = Vec::new();
         for folder in folders {
             let Some(handle) = open(folder) else { continue };
-            roots.push(Root { handle });
             let (sink, stop, folder) = (sink.clone(), stop.clone(), folder.clone());
-            let _ = std::thread::Builder::new().name("watch".into()).spawn(move || listen(handle, &folder, &*sink, &stop));
+            match std::thread::Builder::new().name("watch".into()).spawn(move || listen(handle, &folder, &*sink, &stop)) {
+                Ok(thread) => roots.push(Root { handle, thread: Some(thread) }),
+                // SAFETY: our own handle, never used.
+                Err(_) => unsafe {
+                    let _ = CloseHandle(HANDLE(handle as *mut _));
+                },
+            }
         }
         Watcher { roots, stop }
     }
@@ -61,13 +67,39 @@ impl Watcher {
     }
 }
 
+/// Dropped: each folder's thread is told to stop, and its read cancelled until it has. Once was not enough: a thread
+/// between two reads (handing a batch on) missed the cancel, went back to waiting for the next change in its folder, and
+/// kept the sink alive, so whoever waited for the sink to go (the indexer's session, starting over with new settings)
+/// waited until something changed there, which for a quiet folder could be hours.
 impl Drop for Watcher {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
-        for root in &self.roots {
-            // SAFETY: cancels the blocked read on our handle; its thread then closes the handle and ends.
-            unsafe {
-                let _ = CancelIoEx(HANDLE(root.handle as *mut _), None);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let mut waiting = false;
+            for root in &self.roots {
+                if root.thread.as_ref().is_some_and(|thread| !thread.is_finished()) {
+                    waiting = true;
+                    // SAFETY: cancels a read on our own handle, still open (only closed below, once its thread ended).
+                    unsafe {
+                        let _ = CancelIoEx(HANDLE(root.handle as *mut _), None);
+                    }
+                }
+            }
+            if !waiting || std::time::Instant::now() >= deadline {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        for root in &mut self.roots {
+            let Some(thread) = root.thread.take() else { continue };
+            // (One still in the kernel after all that keeps its handle: closing it under a read isn't safe.)
+            if thread.is_finished() {
+                let _ = thread.join();
+                // SAFETY: our own handle, its thread gone.
+                unsafe {
+                    let _ = CloseHandle(HANDLE(root.handle as *mut _));
+                }
             }
         }
     }
@@ -112,10 +144,7 @@ fn listen(handle: isize, folder: &Path, sink: &(dyn Fn(Vec<Change>) + Send + Syn
         }
         sink(parse(&buffer, returned as usize, folder));
     }
-    // SAFETY: our own handle, no longer used.
-    unsafe {
-        let _ = CloseHandle(handle);
-    }
+    // (Its handle is closed by the watcher, once this thread has ended.)
 }
 
 fn parse(buffer: &[u32], length: usize, folder: &Path) -> Vec<Change> {
@@ -146,4 +175,50 @@ fn parse(buffer: &[u32], length: usize, folder: &Path) -> Vec<Change> {
         offset += next;
     }
     changes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// Once dropped, every folder's thread has ended and let go of the sink, even while changes keep coming (a thread
+    /// handing a batch on when the watcher is dropped used to go back to waiting in the kernel).
+    #[test]
+    fn dropping_it_lets_go_of_the_sink() {
+        let folder = std::env::temp_dir().join(format!("excavate-watch-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let writing = Arc::new(AtomicBool::new(true));
+        let writer = {
+            let (folder, writing) = (folder.clone(), writing.clone());
+            std::thread::spawn(move || {
+                let mut n = 0u32;
+                while writing.load(Ordering::SeqCst) {
+                    let _ = std::fs::write(folder.join(format!("{}.txt", n % 8)), n.to_string());
+                    n += 1;
+                }
+            })
+        };
+        for _ in 0..40 {
+            let (sender, receiver) = std::sync::mpsc::channel::<Vec<Change>>();
+            let watcher = Watcher::start(std::slice::from_ref(&folder), move |changes| {
+                let _ = sender.send(changes);
+            });
+            assert_eq!(watcher.len(), 1);
+            // Let some changes through first, so a thread may well be between two reads when it's dropped.
+            let _ = receiver.recv_timeout(Duration::from_millis(50));
+            drop(watcher);
+            let dropped = Instant::now();
+            loop {
+                match receiver.recv_timeout(Duration::from_secs(2)) {
+                    Ok(_) => assert!(dropped.elapsed() < Duration::from_secs(2), "still sending after it was dropped"),
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => panic!("the sink was kept after the watcher was dropped"),
+                }
+            }
+        }
+        writing.store(false, Ordering::SeqCst);
+        writer.join().unwrap();
+        let _ = std::fs::remove_dir_all(&folder);
+    }
 }

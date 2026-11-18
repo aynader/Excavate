@@ -56,15 +56,13 @@ pub fn to_text(html: &str) -> String {
             index += 1;
             continue;
         }
-        if bytes[index] == b'&' {
-            if let Some(end) = html[index..].find(';').filter(|&end| end <= 10) {
-                if let Some(c) = entity(&html[index + 1..index + end]) {
+        if bytes[index] == b'&'
+            && let Some(end) = html[index..].find(';').filter(|&end| end <= 10)
+                && let Some(c) = entity(&html[index + 1..index + end]) {
                     out.push(c);
                     index += end + 1;
                     continue;
                 }
-            }
-        }
         let c = html[index..].chars().next().unwrap_or(' ');
         // Runs of whitespace as one space, as a browser shows them.
         if c.is_whitespace() {

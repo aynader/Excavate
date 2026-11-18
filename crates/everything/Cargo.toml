@@ -10,3 +10,6 @@ publish = false
 
 [build-dependencies]
 cc = "1"
+
+[lints]
+workspace = true

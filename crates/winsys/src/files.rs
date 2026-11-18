@@ -67,6 +67,22 @@ pub fn free_space(folder: &std::path::Path) -> Option<u64> {
     Some(free)
 }
 
+/// Makes a shortcut (`.lnk`) at `path` to `target`, started in its folder, with a description for its tooltip. COM
+/// must be ready.
+pub fn make_shortcut(path: &std::path::Path, target: &std::path::Path, description: &str) -> windows::core::Result<()> {
+    let (file, to, description) = (wide(&path.display().to_string()), wide(&target.display().to_string()), wide(description));
+    let folder = wide(&target.parent().map(|folder| folder.display().to_string()).unwrap_or_default());
+    // SAFETY: COM objects used and released here; the strings outlive the calls.
+    unsafe {
+        let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
+        link.SetPath(PCWSTR(to.as_ptr()))?;
+        link.SetWorkingDirectory(PCWSTR(folder.as_ptr()))?;
+        link.SetDescription(PCWSTR(description.as_ptr()))?;
+        let persist: IPersistFile = link.cast()?;
+        persist.Save(PCWSTR(file.as_ptr()), true)
+    }
+}
+
 /// What a .lnk points at (empty for shortcuts to things that aren't files, like Control Panel items). COM must be ready.
 pub fn shortcut_target(path: &str) -> Option<String> {
     let file = wide(path);
@@ -94,11 +110,11 @@ pub fn text_head(path: &str, max_bytes: usize) -> Option<String> {
 
 pub fn decode_text(bytes: &[u8]) -> Option<String> {
     if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
-        let units: Vec<u16> = rest.chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+        let units: Vec<u16> = rest.as_chunks::<2>().0.iter().map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
         return Some(String::from_utf16_lossy(&units));
     }
     if let Some(rest) = bytes.strip_prefix(&[0xFE, 0xFF]) {
-        let units: Vec<u16> = rest.chunks_exact(2).map(|pair| u16::from_be_bytes([pair[0], pair[1]])).collect();
+        let units: Vec<u16> = rest.as_chunks::<2>().0.iter().map(|pair| u16::from_be_bytes([pair[0], pair[1]])).collect();
         return Some(String::from_utf16_lossy(&units));
     }
     let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);

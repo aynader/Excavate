@@ -1,7 +1,9 @@
 //! The graphics cards, to recommend the GPU reading options only where they'll be fast, and the one card everything
 //! of Excavate's runs on (`capable`): DirectML's device, llama.cpp's and the listener's Vulkan device (by name), video
-//! decoding's Direct3D device, and the card the load check watches. Chosen in Settings (`choose`), else the one with
-//! the most memory of its own: on a laptop, the NVIDIA or AMD card rather than the processor's own graphics.
+//! decoding's Direct3D device (except the frames looked at, decoded on the processor's own graphics when there are
+//! some beside the card: `video::Decoder`), and the card the load check watches. Chosen in Settings (`choose`), else
+//! the one with the most memory of its own: on a laptop, the NVIDIA or AMD card rather than the processor's own
+//! graphics.
 
 use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE, IDXGIDevice, IDXGIFactory1};
 use windows::core::Interface;
@@ -27,8 +29,24 @@ impl Gpu {
     }
 }
 
-/// The hardware adapters, biggest memory first.
+/// The hardware adapters, biggest memory first. Listed again at most once a minute: asking DXGI loads each card's
+/// driver, which on a busy card takes a while, and Settings asks a dozen times as it opens.
 pub fn adapters() -> Vec<Gpu> {
+    static LISTED: std::sync::Mutex<Option<(std::time::Instant, Vec<Gpu>)>> = std::sync::Mutex::new(None);
+    let mut listed = LISTED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let gpus = match listed.as_ref() {
+        Some((at, gpus)) if at.elapsed() < std::time::Duration::from_secs(60) => gpus.clone(),
+        _ => {
+            let gpus = enumerate();
+            *listed = Some((std::time::Instant::now(), gpus.clone()));
+            gpus
+        }
+    };
+    drop(listed);
+    chosen_for_tests(gpus)
+}
+
+fn enumerate() -> Vec<Gpu> {
     let mut gpus = Vec::new();
     // SAFETY: a DXGI factory, enumerated and released here.
     unsafe {
@@ -47,17 +65,25 @@ pub fn adapters() -> Vec<Gpu> {
                 let version = version as u64;
                 format!("{}.{}.{}.{}", version >> 48, (version >> 32) & 0xFFFF, (version >> 16) & 0xFFFF, version & 0xFFFF)
             }).unwrap_or_default();
-            let luid = description.AdapterLuid;
             gpus.push(Gpu {
                 name: String::from_utf16_lossy(&description.Description[..length]),
                 dedicated_mb: description.DedicatedVideoMemory as u64 / (1 << 20),
                 index: place,
                 driver,
-                luid: format!("luid_0x{:08X}_0x{:08X}", luid.HighPart as u32, luid.LowPart),
+                luid: luid_name(description.AdapterLuid),
             });
         }
     }
-    gpus.sort_by(|a, b| b.dedicated_mb.cmp(&a.dedicated_mb));
+    gpus.sort_by_key(|gpu| std::cmp::Reverse(gpu.dedicated_mb));
+    gpus
+}
+
+/// An adapter's LUID as Windows' performance counters name it (`Gpu::luid`).
+pub(crate) fn luid_name(luid: windows::Win32::Foundation::LUID) -> String {
+    format!("luid_0x{:08X}_0x{:08X}", luid.HighPart as u32, luid.LowPart)
+}
+
+fn chosen_for_tests(mut gpus: Vec<Gpu>) -> Vec<Gpu> {
     // For tests: only the card asked for, by part of its name ("Intel") or its place in DXGI's list ("1"), as if
     // it were the only one. With `EXCAVATE_GPU_MB` too, it's taken for one with that much memory of its own.
     if let Ok(wanted) = std::env::var("EXCAVATE_GPU_ADAPTER") {
@@ -83,11 +109,10 @@ pub fn capable() -> Option<Gpu> {
     if chosen.eq_ignore_ascii_case("none") {
         return None;
     }
-    if !chosen.is_empty() {
-        if let Some(gpu) = adapters().into_iter().find(|gpu| gpu.name == chosen) {
+    if !chosen.is_empty()
+        && let Some(gpu) = adapters().into_iter().find(|gpu| gpu.name == chosen) {
             return Some(gpu);
         }
-    }
     automatic()
 }
 

@@ -3,7 +3,9 @@
 //! their own icon (programs, shortcuts) and pictures and videos (thumbnails) are cached per file.
 
 use std::collections::{HashSet, VecDeque};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 use winsys::icons::{Bitmap, Kind};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -23,10 +25,124 @@ pub enum KindKey {
 struct Queue {
     pending: Mutex<(VecDeque<Request>, HashSet<String>)>,
     ready: Condvar,
+    /// What each thread is asking Windows for, and since when. A call that doesn't come back (Windows' thumbnail
+    /// server stuck, which stops Explorer's thumbnails too) is seen here: the thread is replaced, and until the call
+    /// returns only thumbnails Windows has cached are asked for, which answer at once.
+    busy: Mutex<Vec<Slot>>,
+    stuck: AtomicUsize,
 }
+
+#[derive(Default)]
+enum Slot {
+    #[default]
+    Idle,
+    Asking(Instant, Request),
+    Stuck,
+    Gone,
+}
+
+/// A call to the shell taking longer than this is taken to hang.
+const HANGS_AFTER: Duration = Duration::from_secs(4);
+/// Hung threads replaced, at most at once (each stays until Windows lets it go).
+const SPARE_THREADS: usize = 8;
 
 pub struct Loader {
     queue: Arc<Queue>,
+}
+
+type Done = dyn Fn(Request, Option<Bitmap>) + Send + Sync;
+
+/// One more icon thread.
+fn spawn(queue: &Arc<Queue>, done: &Arc<Done>) {
+    let slot = {
+        let mut busy = queue.busy.lock().unwrap();
+        busy.push(Slot::Idle);
+        busy.len() - 1
+    };
+    let (queue, done) = (queue.clone(), done.clone());
+    std::thread::Builder::new()
+        .name(format!("icons-{slot}"))
+        .spawn(move || work(&queue, &*done, slot))
+        .expect("can't start an icon thread");
+}
+
+fn work(queue: &Queue, done: &Done, slot: usize) {
+    winsys::com_sta();
+    loop {
+        let request = {
+            let mut pending = queue.pending.lock().unwrap();
+            loop {
+                if let Some(request) = pending.0.pop_front() {
+                    pending.1.remove(&request.key);
+                    break request;
+                }
+                pending = queue.ready.wait(pending).unwrap();
+            }
+        };
+        queue.busy.lock().unwrap()[slot] = Slot::Asking(Instant::now(), request.clone());
+        let image = if queue.stuck.load(Ordering::SeqCst) > 0 {
+            // Windows' thumbnail server isn't answering: only what it has cached, which doesn't wait on it.
+            match request.kind {
+                KindKey::Preview => winsys::icons::image(&request.path, request.size, Kind::CachedThumbnail),
+                KindKey::Icon if request.key.ends_with("|<folder>") => winsys::icons::image(&plain_folder(), request.size, Kind::Icon),
+                KindKey::Icon => None,
+            }
+        } else {
+            let kind = match request.kind {
+                KindKey::Icon => Kind::Icon,
+                KindKey::Preview => Kind::Preview,
+            };
+            let path = if request.key.ends_with("|<folder>") { plain_folder() } else { request.path.clone() };
+            winsys::icons::image(&path, request.size, kind)
+        };
+        let was_stuck = {
+            let mut busy = queue.busy.lock().unwrap();
+            let was_stuck = matches!(busy[slot], Slot::Stuck);
+            busy[slot] = if was_stuck { Slot::Gone } else { Slot::Idle };
+            was_stuck
+        };
+        done(request, image);
+        if was_stuck {
+            // Its place was taken while it waited: it ends.
+            if queue.stuck.fetch_sub(1, Ordering::SeqCst) == 1 {
+                crate::settings::log("thumbnails: Windows' thumbnail server answers again");
+            }
+            return;
+        }
+    }
+}
+
+/// Looks for calls that hang: each one's thread is replaced and its request asked again (from what's cached).
+fn watch(queue: &Arc<Queue>, done: &Arc<Done>) {
+    loop {
+        std::thread::sleep(Duration::from_millis(500));
+        let hung: Vec<Request> = {
+            let mut busy = queue.busy.lock().unwrap();
+            let mut hung = Vec::new();
+            for slot in busy.iter_mut() {
+                if let Slot::Asking(since, request) = slot
+                    && since.elapsed() >= HANGS_AFTER {
+                        hung.push(request.clone());
+                        *slot = Slot::Stuck;
+                    }
+            }
+            hung
+        };
+        for request in hung {
+            if queue.stuck.fetch_add(1, Ordering::SeqCst) == 0 {
+                crate::settings::log(&format!("thumbnails: Windows' thumbnail server isn't answering ({}); cached ones only until it does", request.path));
+            }
+            // Hung threads stay until Windows lets them go: replaced while there are only a few.
+            if queue.stuck.load(Ordering::SeqCst) <= SPARE_THREADS {
+                spawn(queue, done);
+            }
+            let mut pending = queue.pending.lock().unwrap();
+            if pending.1.insert(request.key.clone()) {
+                pending.0.push_front(request);
+                queue.ready.notify_one();
+            }
+        }
+    }
 }
 
 /// File types whose icon is each file's own (a program's, a shortcut's target's), not one for the whole type.
@@ -87,37 +203,21 @@ pub fn key(path: &str, name: &str, is_folder: bool, size: u32) -> (String, KindK
 impl Loader {
     /// `threads` COM threads; `done` runs on them with each finished image (None when there's none to show).
     pub fn start(threads: usize, done: impl Fn(Request, Option<Bitmap>) + Send + Sync + 'static) -> Loader {
-        let queue = Arc::new(Queue { pending: Mutex::new((VecDeque::new(), HashSet::new())), ready: Condvar::new() });
-        let done = Arc::new(done);
-        for index in 0..threads {
-            let queue = queue.clone();
-            let done = done.clone();
-            std::thread::Builder::new()
-                .name(format!("icons-{index}"))
-                .spawn(move || {
-                    winsys::com_sta();
-                    loop {
-                        let request = {
-                            let mut pending = queue.pending.lock().unwrap();
-                            loop {
-                                if let Some(request) = pending.0.pop_front() {
-                                    pending.1.remove(&request.key);
-                                    break request;
-                                }
-                                pending = queue.ready.wait(pending).unwrap();
-                            }
-                        };
-                        let kind = match request.kind {
-                            KindKey::Icon => Kind::Icon,
-                            KindKey::Preview => Kind::Preview,
-                        };
-                        let path = if request.key.ends_with("|<folder>") { plain_folder() } else { request.path.clone() };
-                        let image = winsys::icons::image(&path, request.size, kind);
-                        done(request, image);
-                    }
-                })
-                .expect("can't start an icon thread");
+        let queue = Arc::new(Queue {
+            pending: Mutex::new((VecDeque::new(), HashSet::new())),
+            ready: Condvar::new(),
+            busy: Mutex::new(Vec::new()),
+            stuck: AtomicUsize::new(0),
+        });
+        let done: Arc<Done> = Arc::new(done);
+        for _ in 0..threads {
+            spawn(&queue, &done);
         }
+        let (watched, done) = (queue.clone(), done.clone());
+        std::thread::Builder::new()
+            .name("icons-watch".into())
+            .spawn(move || watch(&watched, &done))
+            .expect("can't start the icon watch");
         Loader { queue }
     }
 

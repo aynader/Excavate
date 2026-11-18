@@ -68,7 +68,8 @@ pub struct Applied {
 
 /// Applies one change under `root_path` (whose entry is `root`).
 pub fn apply(index: &mut Index, root: u32, root_path: &str, change: Change, applied: &mut Applied) {
-    if std::env::var_os("ENGINE_DEBUG").is_some() {
+    static DEBUG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *DEBUG.get_or_init(|| std::env::var_os("ENGINE_DEBUG").is_some()) {
         let missed = applied.missed;
         let shown = match &change {
             Change::Added(p, _) => format!("added {p:?}"),

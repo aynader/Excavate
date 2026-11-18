@@ -111,19 +111,27 @@ fn rank(hits: &[String], file: &str) -> Option<usize> {
     hits.iter().position(|hit| normal(hit).ends_with(&file)).map(|at| at + 1)
 }
 
-struct Helper {
+pub struct Helper {
     port: u64,
-    _job: Job,
+    // (Its own job, unless it was started in one given: a process joins one job only.)
+    _job: Option<Job>,
 }
 
 /// The search helper, started on the home, as the popup starts it.
 fn helper(options: &Options) -> Helper {
-    let said = options.home.join("local").join("seeker.json");
+    start_helper(&options.home, &options.excavate, None)
+}
+
+/// The search helper on `home`, from the programs in `excavate`, in `job` (and its model servers with it) or a job of
+/// its own.
+pub fn start_helper(home: &Path, excavate: &Path, job: Option<&Job>) -> Helper {
+    let said = home.join("local").join("seeker.json");
     let _ = std::fs::remove_file(&said);
-    let job = Job::new();
-    let child = std::process::Command::new(options.excavate.join("excavate-helper.exe")).arg("--seek").env("EXCAVATE_HOME", &options.home)
+    let own = job.is_none().then(Job::new);
+    let child = std::process::Command::new(excavate.join("excavate-helper.exe")).arg("--seek").env("EXCAVATE_HOME", home)
         .stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().expect("can't start excavate-helper.exe");
-    job.add(&child);
+    job.or(own.as_ref()).unwrap().add(&child);
+    let job = own;
     let started = Instant::now();
     loop {
         let port = std::fs::read(&said).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).and_then(|v| v["port"].as_u64());
@@ -133,6 +141,11 @@ fn helper(options: &Options) -> Helper {
         assert!(started.elapsed() < Duration::from_secs(60), "the search helper didn't start");
         std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+/// The helper's answer to `text` (its paths) and how long the last asking took, in ms.
+pub fn ask(helper: &Helper, text: &str) -> (Vec<String>, f64) {
+    seek(helper, text)
 }
 
 /// The helper's answer once every model it holds is ready, as the popup's last answer.
@@ -220,13 +233,10 @@ pub fn run(options: &Options) -> Value {
         };
         asked += 1;
         times.push(ms);
-        match rank(&hits, file) {
-            Some(at) => {
-                ranks.push(at as f64);
-                first += usize::from(at == 1);
-                ten += usize::from(at <= 10);
-            }
-            None => {}
+        if let Some(at) = rank(&hits, file) {
+            ranks.push(at as f64);
+            first += usize::from(at == 1);
+            ten += usize::from(at <= 10);
         }
         if asked % 100 == 0 {
             println!("  {asked}: first {first}, top ten {ten}");

@@ -113,6 +113,8 @@ fn run(port: usize, requests: Arc<Mutex<Vec<Request>>>, events: crossbeam_channe
     let port = port as HANDLE;
     let mut watches: HashMap<u32, Watch> = HashMap::new();
     let send = |id: u32, event: Event| events.send((id, event)).is_ok();
+    // (Read once: looking up the environment for every change Windows reports isn't free.)
+    let stall: Option<u64> = std::env::var("ENGINE_HUB_STALL_MS").ok().and_then(|v| v.parse().ok());
     loop {
         let (mut bytes, mut key, mut overlapped) = (0u32, 0usize, std::ptr::null_mut::<OVERLAPPED>());
         let ok = unsafe { GetQueuedCompletionStatus(port, &mut bytes, &mut key, &mut overlapped, u32::MAX) } != 0;
@@ -195,7 +197,7 @@ fn run(port: usize, requests: Arc<Mutex<Vec<Request>>>, events: crossbeam_channe
             }
         }
         // For tests: a hub that falls behind, so Windows' buffers overflow.
-        if let Some(ms) = std::env::var("ENGINE_HUB_STALL_MS").ok().and_then(|v| v.parse().ok()) {
+        if let Some(ms) = stall {
             std::thread::sleep(std::time::Duration::from_millis(ms));
         }
         if !issue(watch) {

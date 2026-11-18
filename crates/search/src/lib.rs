@@ -10,6 +10,7 @@
 //! - [`plan`]: the queries a keystroke sends to Everything for the long tail.
 //! - [`history`]: what was opened through Excavate, for frecency.
 
+pub mod chips;
 pub mod asked;
 pub mod describe;
 pub mod filter;

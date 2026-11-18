@@ -72,10 +72,8 @@ impl History {
             std::fs::create_dir_all(folder)?;
         }
         let mut items: Vec<&Opened> = self.items.values().collect();
-        items.sort_by(|a, b| b.last.cmp(&a.last));
-        let temporary = file.with_extension("json.tmp");
-        std::fs::write(&temporary, serde_json::to_vec(&items).map_err(std::io::Error::other)?)?;
-        std::fs::rename(&temporary, file)
+        items.sort_by_key(|item| std::cmp::Reverse(item.last));
+        common::write_atomic(file, &serde_json::to_vec(&items).map_err(std::io::Error::other)?)
     }
 }
 

@@ -242,6 +242,17 @@ pub fn moment_of(marks: &[u8], at: usize) -> Option<f64> {
     moment
 }
 
+/// The kinds of secret a file's marks list (`{"kinds": ["password", …], …}`); none for marks without them (a
+/// recording's times alone).
+fn kinds_in(marks: &[u8]) -> Vec<String> {
+    // (Marks that can't have any, a recording's times, aren't parsed: a recording's can be long.)
+    if !marks.windows(7).any(|window| window == b"\"kinds\"") {
+        return Vec::new();
+    }
+    let Ok(marks) = serde_json::from_slice::<serde_json::Value>(marks) else { return Vec::new() };
+    marks["kinds"].as_array().into_iter().flatten().filter_map(|kind| kind.as_str().map(String::from)).collect()
+}
+
 /// At most `limit` bytes of `text`, cut at a character boundary.
 fn cut(text: &str, limit: usize) -> &str {
     if text.len() <= limit {
@@ -323,6 +334,13 @@ impl Reader {
         }
     }
 
+    /// Picks up what the indexer committed since, now: for a file the catalog says is read (the catalog hears of it
+    /// only once its words are committed), so its copy here is the one just read.
+    pub fn refresh_now(&mut self) {
+        let _ = self.reader.reload();
+        self.refreshed = Instant::now();
+    }
+
     pub fn documents(&self) -> u64 {
         self.reader.searcher().num_docs()
     }
@@ -376,6 +394,61 @@ impl Reader {
     /// What the index keeps of one file (a video: what it shows, or else what's said in it).
     pub fn stored(&self, path: &str) -> Option<Stored> {
         self.stored_entry(&entry_id(path, false)).or_else(|| self.stored_entry(&entry_id(path, true)))
+    }
+
+    /// Every copy the index keeps of a file: a video's text it shows, then what's said in it.
+    pub fn stored_all(&self, path: &str) -> Vec<Stored> {
+        [false, true].into_iter().filter_map(|second| self.stored_entry(&entry_id(path, second))).collect()
+    }
+
+    /// How many files have a secret of each kind (by the names their marks keep: "password", "card", "code"…), for
+    /// Settings → Privacy. Only the kinds are read, never the secrets (the index doesn't keep them). A file counts once
+    /// for each kind, a video too though what it shows and what's said in it are kept apart. Every file kept is looked
+    /// at, a stored block at a time: off the interface's thread on a large index.
+    pub fn secret_counts(&self) -> std::collections::BTreeMap<String, u64> {
+        let searcher = self.reader.searcher();
+        let mut kinds_of: std::collections::HashMap<String, std::collections::BTreeSet<String>> = std::collections::HashMap::new();
+        for segment in searcher.segment_readers() {
+            let Ok(store) = segment.get_store_reader(1) else { continue };
+            for document in store.iter::<TantivyDocument>(segment.alive_bitset()).flatten() {
+                let Some(marks) = document.get_first(self.fields.marks).and_then(|value| value.as_bytes()) else { continue };
+                let kinds = kinds_in(marks);
+                if kinds.is_empty() {
+                    continue;
+                }
+                let path = document.get_first(self.fields.path).and_then(|value| value.as_str()).unwrap_or("").to_lowercase();
+                kinds_of.entry(path).or_default().extend(kinds);
+            }
+        }
+        let mut counts = std::collections::BTreeMap::new();
+        for kind in kinds_of.into_values().flatten() {
+            *counts.entry(kind).or_insert(0) += 1;
+        }
+        counts
+    }
+
+    /// Settings → Privacy's viewer: each file with a secret of `kind`, once (its path as kept), with its kinds and marks.
+    pub fn secret_files(&self, kind: &str) -> Vec<(String, Vec<String>, Vec<u8>)> {
+        let searcher = self.reader.searcher();
+        let mut found: std::collections::BTreeMap<String, (String, Vec<String>, Vec<u8>)> = std::collections::BTreeMap::new();
+        for segment in searcher.segment_readers() {
+            let Ok(store) = segment.get_store_reader(1) else { continue };
+            for document in store.iter::<TantivyDocument>(segment.alive_bitset()).flatten() {
+                let Some(marks) = document.get_first(self.fields.marks).and_then(|value| value.as_bytes()) else { continue };
+                let kinds = kinds_in(marks);
+                if !kinds.iter().any(|each| each == kind) {
+                    continue;
+                }
+                let path = document.get_first(self.fields.path).and_then(|value| value.as_str()).unwrap_or("").to_string();
+                let entry = found.entry(path.to_lowercase()).or_insert_with(|| (path, Vec::new(), marks.to_vec()));
+                for each in kinds {
+                    if !entry.1.contains(&each) {
+                        entry.1.push(each);
+                    }
+                }
+            }
+        }
+        found.into_values().collect()
     }
 
     fn stored_entry(&self, id: &str) -> Option<Stored> {
@@ -499,6 +572,32 @@ mod tests {
         assert_eq!(moment_of(marks, 20), Some(2.4));
         assert_eq!(moment_of(marks, 900), Some(65.0));
         assert_eq!(moment_of(b"{}", 5), None);
+    }
+
+    #[test]
+    fn secrets_counted_by_kind() {
+        let dir = tempdir::Dir::new();
+        let (mut writer, _) = Writer::open(&dir.0, 20_000_000).unwrap();
+        let doc = |path: &str, kind, source, marks: &str| Doc {
+            path: path.into(), name: path.rsplit('\\').next().unwrap().into(), kind, modified: 1, size: 1, source,
+            body: "‹password› and more".into(), marks: marks.as_bytes().to_vec(),
+        };
+        writer.put(&doc(r"C:\a\wifi.png", kind::PICTURE, Source::Picture, r#"{"kinds": ["password"], "picture": {"w": 9, "h": 9, "boxes": []}}"#)).unwrap();
+        writer.put(&doc(r"C:\a\bank.pdf", kind::PDF, Source::Text, r#"{"kinds": ["card", "iban"]}"#)).unwrap();
+        writer.put(&doc(r"C:\a\notes.txt", kind::TEXT, Source::Text, "")).unwrap();
+        writer.put(&doc(r"C:\a\call.mp3", kind::AUDIO, Source::Speech, r#"{"times": [[0, 0]]}"#)).unwrap();
+        // A video with a code in what it shows and in what's said: one video with a code.
+        writer.put(&doc(r"C:\a\Talk.mp4", kind::VIDEO, Source::Video, r#"{"times": [[0, 0]], "kinds": ["code"]}"#)).unwrap();
+        writer.put(&doc(r"C:\a\Talk.mp4", kind::VIDEO, Source::Speech, r#"{"times": [[0, 0]], "kinds": ["code", "password"]}"#)).unwrap();
+        // Read again, with its secret gone: counted as it is now.
+        writer.put(&doc(r"C:\a\old.png", kind::PICTURE, Source::Picture, r#"{"kinds": ["key"]}"#)).unwrap();
+        writer.commit().unwrap();
+        writer.put(&doc(r"C:\a\old.png", kind::PICTURE, Source::Picture, "")).unwrap();
+        writer.commit().unwrap();
+        let counts = Reader::open(&dir.0).unwrap().secret_counts();
+        let expected: std::collections::BTreeMap<String, u64> =
+            [("card", 1), ("code", 1), ("iban", 1), ("password", 2)].into_iter().map(|(kind, count)| (kind.to_string(), count)).collect();
+        assert_eq!(counts, expected);
     }
 
     #[test]

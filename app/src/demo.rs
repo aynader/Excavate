@@ -72,7 +72,7 @@ fn names() -> Vec<Candidate> {
         let stem = match index % 3 {
             0 => format!("{subject} {qualifier}"),
             1 => format!("{qualifier} {subject}"),
-            _ => format!("{subject}"),
+            _ => subject.to_string(),
         };
         let name = if extension.is_empty() { stem } else { format!("{stem}.{extension}") };
         names.push(Candidate {
@@ -239,7 +239,7 @@ fn real(window: slint::Weak<SettingsWindow>, saved: PathBuf) -> mpsc::Sender<Str
                 None => opened.get_or_insert_with(|| engine::store::Index::open(&saved).ok().filter(|index| index.live() > 0)).as_ref().map(measure),
             };
             let Some((took, names)) = answer else { continue };
-            let label = format!("{:.1} ms · {} names on this PC", took.as_secs_f64() * 1000.0, grouped(names));
+            let label = format!("{:.1} ms · {} names on this PC", took.as_secs_f64() * 1000.0, common::grouped(names as u64));
             let window = window.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(window) = window.upgrade() {
@@ -252,29 +252,10 @@ fn real(window: slint::Weak<SettingsWindow>, saved: PathBuf) -> mpsc::Sender<Str
     sender
 }
 
-/// 9218442 as "9,218,442".
-fn grouped(n: usize) -> String {
-    let digits = n.to_string();
-    let mut out = String::new();
-    for (i, digit) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
-            out.push(',');
-        }
-        out.push(digit);
-    }
-    out
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn grouped_digits() {
-        assert_eq!(grouped(9_218_442), "9,218,442");
-        assert_eq!(grouped(999), "999");
-        assert_eq!(grouped(1_000), "1,000");
-    }
 
     #[test]
     fn every_query_finds_something() {

@@ -1,7 +1,7 @@
 # Bedrock and Everything
 
-Excavate finds files by name on every drive in one of two ways. You choose in the first-run steps, and can change it
-in Settings → General.
+Excavate finds files by name on every drive in one of two ways. You choose in the first-run steps, which show how the
+two compare, and can change it in Settings → General.
 
 ## Bedrock (the default)
 
@@ -9,13 +9,17 @@ Excavate's own index of file names, for every fixed and removable drive (NTFS, R
 drive once, watches it for changes as they happen (no polling), and at each start catches up with what changed while
 Excavate was closed from Windows' record of changes (the NTFS change journal).
 
-- **Listing**: with your permission once (Windows' administrator prompt), Bedrock reads each drive's own table of files
-  directly: about 15 seconds for millions of files, every folder included. Without it, it lists folders one by one:
-  about a minute and a half, and about 500 protected system folders are left out. Only names, sizes, dates and
-  attributes are read; nothing keeps running with those rights.
+- **Listing**: with your permission once (Windows' administrator prompt), Excavate sets up Excavate Bedrock, a small
+  Windows service that reads each drive's own table of files: about 10 seconds for millions of files, every folder
+  included. It starts when a drive needs listing or catching up, and stops after a minute with nothing to do. It
+  passes on only names, sizes, dates and attributes, never what's inside a file, and other accounts' files on the PC
+  stay out. Settings → General removes it again. Without it, Bedrock lists folders one by one, which takes a few
+  minutes for millions of files, and the few hundred folders Windows protects are left out.
 - **Searching**: Everything's syntax (`ext:`, `dm:`, `size:`, `path:`, `regex:`…), plus `dc:` (date created), `da:`
   (date accessed) and `attrib:` from the index itself.
 - **Footprint**: the index is mapped from its file, so it costs Excavate almost no memory of its own.
+- **On its own**: Bedrock is also a Rust library, [bedrock-index](https://crates.io/crates/bedrock-index)
+  ([repository](https://github.com/aynader/Bedrock)).
 
 ## Everything
 

@@ -68,7 +68,7 @@ pub fn type_name(extension: &str) -> String {
     let mut len = buffer.len() as u32;
     // SAFETY: a buffer of `len` characters, filled by Windows.
     let found = unsafe {
-        AssocQueryStringW(ASSOCF_INIT_DEFAULTTOSTAR as u32, ASSOCSTR_FRIENDLYDOCNAME, wide.as_ptr(), std::ptr::null(), buffer.as_mut_ptr(), &mut len)
+        AssocQueryStringW(ASSOCF_INIT_DEFAULTTOSTAR, ASSOCSTR_FRIENDLYDOCNAME, wide.as_ptr(), std::ptr::null(), buffer.as_mut_ptr(), &mut len)
     } == 0;
     let name = if found {
         String::from_utf16_lossy(&buffer[..(len as usize).saturating_sub(1)])

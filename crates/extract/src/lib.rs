@@ -78,7 +78,7 @@ pub const CODE_EXTENSIONS: &[&str] = &[
     "nix", "glsl", "hlsl", "wgsl", "cu", "asm", "vb", "sln", "csproj", "vcxproj", "props", "dockerfile", "makefile",
 ];
 /// Pictures OCR reads (decoded by the `image` crate, or by Windows for HEIC).
-pub const PICTURE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff", "gif", "heic", "heif"];
+pub const PICTURE_EXTENSIONS: &[&str] = common::kinds::PICTURES;
 
 /// Every extension some reader handles, for asking Everything what to read.
 pub fn extensions() -> Vec<&'static str> {

@@ -32,7 +32,63 @@ pub fn pixelate(bitmap: &mut Bitmap, regions: &[[i32; 4]], original: (u32, u32))
     }
 }
 
+/// Pixelates all of a bitmap: a picture shown while presenting, or one not read yet (its secrets aren't known).
+pub fn cover(bitmap: &mut Bitmap) {
+    let (width, height) = (bitmap.width, bitmap.height);
+    pixelate(bitmap, &[[0, 0, width as i32, height as i32]], (width, height));
+}
+
 pub use winsys::imaging::turned;
+
+/// Outlines `regions` (in the original's pixels, `original` in size) of a premultiplied RGBA bitmap drawn from it, as
+/// the README's film marks the words searched for (`draw_outline`).
+pub fn outline(bitmap: &mut Bitmap, regions: &[[i32; 4]], original: (u32, u32), color: [u8; 3]) {
+    if bitmap.width == 0 || bitmap.height == 0 || original.0 == 0 || original.1 == 0 {
+        return;
+    }
+    let (sx, sy) = (bitmap.width as f32 / original.0 as f32, bitmap.height as f32 / original.1 as f32);
+    let places: Vec<[f32; 4]> = regions.iter().map(|r| [r[0] as f32 * sx, r[1] as f32 * sy, r[2] as f32 * sx, r[3] as f32 * sy]).collect();
+    let (width, height) = (bitmap.width, bitmap.height);
+    draw_outline(&mut bitmap.rgba, width, height, 4, &places, color);
+}
+
+/// Outlines `places` (in pixels) of an image `channels` bytes a pixel (RGB or RGBA): a border in `color` about two
+/// pixels wide, rounded at the corners, over a light wash of it.
+pub fn draw_outline(pixels: &mut [u8], width: u32, height: u32, channels: usize, places: &[[f32; 4]], color: [u8; 3]) {
+    let border = ((width.max(height) as f32) / 400.0).clamp(1.5, 3.0);
+    for place in places {
+        let left = (place[0] - border).max(0.0);
+        let top = (place[1] - border).max(0.0);
+        let right = (place[2] + border).min(width as f32);
+        let bottom = (place[3] + border).min(height as f32);
+        if right - left < 2.0 || bottom - top < 2.0 {
+            continue;
+        }
+        let radius = border * 1.5;
+        for y in top as u32..(bottom.ceil() as u32).min(height) {
+            for x in left as u32..(right.ceil() as u32).min(width) {
+                let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
+                // Past a corner's circle: outside.
+                let dx = (left + radius - px).max(px - (right - radius)).max(0.0);
+                let dy = (top + radius - py).max(py - (bottom - radius)).max(0.0);
+                let corner = (dx * dx + dy * dy).sqrt();
+                if corner > radius {
+                    continue;
+                }
+                let edge = if corner > 0.0 { radius - corner } else { (px - left).min(right - px).min(py - top).min(bottom - py) };
+                let alpha = if edge <= border { 0.95 } else { 0.18 };
+                let at = (y as usize * width as usize + x as usize) * channels;
+                let Some(pixel) = pixels.get_mut(at..at + channels) else { continue };
+                for channel in 0..3 {
+                    pixel[channel] = (f32::from(color[channel]) * alpha + f32::from(pixel[channel]) * (1.0 - alpha)).round() as u8;
+                }
+                if channels == 4 {
+                    pixel[3] = (255.0 * alpha + f32::from(pixel[3]) * (1.0 - alpha)).round() as u8;
+                }
+            }
+        }
+    }
+}
 
 fn average(bitmap: &mut Bitmap, left: u32, top: u32, right: u32, bottom: u32) {
     let stride = bitmap.width as usize * 4;

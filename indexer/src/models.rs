@@ -5,12 +5,17 @@
 //! - Images by what they show: SigLIP 2, EmbeddingGemma 2 or Qwen3-VL-Embedding (with llama.cpp's server).
 //! - Recordings by what's said in them: the listener and its speech models.
 //!
-//! A download that stops continues where it was the next time.
+//! A download that stops continues where it was the next time. A download goes on through a restart of reading (the
+//! settings changed, "Full speed", a pause): it runs on a thread of its own, and the next session's lane takes it up
+//! (`in_background`).
 
 use crate::control::Control;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::{Duration, Instant};
 
 const BASE: &str = "https://github.com/GreatV/oar-ocr/releases/download/v0.7.0/";
 
@@ -78,8 +83,9 @@ fn all_there(folder: &Path, files: &[File]) -> bool {
 }
 
 /// Downloads what's missing. `progress(received, total)` over all files.
-pub fn ensure(models: &Path, size: Size, control: &Control, progress: &mut dyn FnMut(u64, u64)) -> Result<(), String> {
-    fetch(&folder(models), &size.files(), control, progress)
+pub fn ensure(models: &Path, size: Size, control: &'static Control, progress: &mut dyn FnMut(u64, u64)) -> Result<(), String> {
+    let folder = folder(models);
+    in_background(&format!("text in images {}", size.label()), control, progress, move |cancelled, progress| fetch(&folder, &size.files(), cancelled, progress))
 }
 
 // ---- Deep ----------------------------------------------------------------------------------------------------------
@@ -129,19 +135,32 @@ pub fn deep_download_size() -> u64 {
 }
 
 /// Downloads and unpacks what Deep needs. `progress(received, total)` over all of it.
-pub fn deep_ensure(models: &Path, control: &Control, progress: &mut dyn FnMut(u64, u64)) -> Result<(), String> {
-    let total = deep_download_size();
+pub fn deep_ensure(models: &Path, control: &'static Control, progress: &mut dyn FnMut(u64, u64)) -> Result<(), String> {
+    let models = models.to_path_buf();
+    in_background("Thorough", control, progress, move |cancelled, progress| {
+        let total = deep_download_size();
+        ensure_llama(&models, cancelled, &mut |received| progress(received, total))?;
+        let before = LLAMA.size;
+        fetch(&deep_folder(&models), &DEEP_FILES, cancelled, &mut |received, _| progress(before + received, total))
+    })
+}
+
+/// llama.cpp's server, downloaded and unpacked once: Deep and the models that look at images both need it, and ask
+/// for it each from its own lane, at the same time on a first run. One at a time (two downloads into one file made a
+/// file of neither, its checksum wrong); the second finds it there.
+fn ensure_llama(models: &Path, cancelled: &dyn Fn() -> bool, progress: &mut dyn FnMut(u64)) -> Result<(), String> {
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+    let _turn = lock(&ONE_AT_A_TIME);
     let unpacked = llama_folder(models);
-    let mut before = 0;
-    if !unpacked.join("llama-server.exe").is_file() {
-        let downloads = models.join("llama");
-        fetch(&downloads, &[LLAMA], control, &mut |received, _| progress(received, total))?;
-        let zip = downloads.join(LLAMA.name);
-        unpack_server(&zip, &unpacked)?;
-        let _ = std::fs::remove_file(zip);
+    if unpacked.join("llama-server.exe").is_file() {
+        return Ok(());
     }
-    before += LLAMA.size;
-    fetch(&deep_folder(models), &DEEP_FILES, control, &mut |received, _| progress(before + received, total))
+    let downloads = models.join("llama");
+    fetch(&downloads, &[LLAMA], cancelled, &mut |received, _| progress(received))?;
+    let zip = downloads.join(LLAMA.name);
+    unpack_server(&zip, &unpacked)?;
+    let _ = std::fs::remove_file(zip);
+    Ok(())
 }
 
 /// Microsoft's C++ runtime, which Excavate's programs and llama.cpp's need and a fresh Windows may not have: it comes
@@ -156,25 +175,11 @@ fn unpack_server(zip: &Path, folder: &Path) -> Result<(), String> {
         name == "llama-server.exe" || name == "llama-server-impl.dll" || name == "llama-common.dll" || name == "llama.dll"
             || name == "mtmd.dll" || name == "libomp.dll" || (name.starts_with("ggml") && name.ends_with(".dll"))
     };
-    let temporary = folder.with_extension("unpacking");
-    let _ = std::fs::remove_dir_all(&temporary);
-    std::fs::create_dir_all(&temporary).map_err(|error| error.to_string())?;
-    let mut archive = zip::ZipArchive::new(std::fs::File::open(zip).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
-    for index in 0..archive.len() {
-        let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
-        let Some(name) = entry.enclosed_name().and_then(|path| path.file_name().map(|name| name.to_string_lossy().to_string())) else { continue };
-        if !needed(&name) {
-            continue;
-        }
-        let mut out = std::fs::File::create(temporary.join(&name)).map_err(|error| error.to_string())?;
-        std::io::copy(&mut entry, &mut out).map_err(|error| error.to_string())?;
-    }
-    if !temporary.join("llama-server.exe").is_file() {
-        return Err("llama.cpp's package doesn't have its server".into());
-    }
-    with_runtime(&temporary);
-    let _ = std::fs::remove_dir_all(folder);
-    std::fs::rename(&temporary, folder).map_err(|error| error.to_string())
+    let finish = |temporary: &Path| {
+        with_runtime(temporary);
+        Ok(())
+    };
+    unpack(&[zip.to_path_buf()], folder, &needed, ("llama-server.exe", "llama.cpp's package doesn't have its server"), &finish)
 }
 
 /// The C++ runtime beside Excavate's programs copied into `folder` where it isn't there (a PC that has it installed,
@@ -291,25 +296,23 @@ pub fn seeing_download_size(models: &Path, engine: seeing::Engine) -> u64 {
 }
 
 /// Downloads what a model needs. `progress(received, total)` over all of it.
-pub fn seeing_ensure(models: &Path, engine: seeing::Engine, control: &Control, progress: &mut dyn FnMut(u64, u64)) -> Result<(), String> {
-    let total = seeing_download_size(models, engine);
-    let mut before = 0;
-    let unpacked = llama_folder(models);
-    if engine.on_gpu() && !unpacked.join("llama-server.exe").is_file() {
-        let downloads = models.join("llama");
-        fetch(&downloads, &[LLAMA], control, &mut |received, _| progress(received, total))?;
-        let zip = downloads.join(LLAMA.name);
-        unpack_server(&zip, &unpacked)?;
-        let _ = std::fs::remove_file(zip);
-        before += LLAMA.size;
-    }
-    // Only what's missing counts toward the total, as `seeing_download_size` has it.
-    let folder = seeing_folder(models, engine);
-    let had: u64 = seeing_files(engine).iter()
-        .filter(|file| std::fs::metadata(folder.join(file.name)).is_ok_and(|metadata| metadata.len() == file.size))
-        .map(|file| file.size)
-        .sum();
-    fetch(&folder, seeing_files(engine), control, &mut |received, _| progress(before + received.saturating_sub(had), total))
+pub fn seeing_ensure(models: &Path, engine: seeing::Engine, control: &'static Control, progress: &mut dyn FnMut(u64, u64)) -> Result<(), String> {
+    let models = models.to_path_buf();
+    in_background(&format!("seeing {}", engine.name()), control, progress, move |cancelled, progress| {
+        let total = seeing_download_size(&models, engine);
+        let mut before = 0;
+        if engine.on_gpu() && !llama_folder(&models).join("llama-server.exe").is_file() {
+            ensure_llama(&models, cancelled, &mut |received| progress(received, total))?;
+            before += LLAMA.size;
+        }
+        // Only what's missing counts toward the total, as `seeing_download_size` has it.
+        let folder = seeing_folder(&models, engine);
+        let had: u64 = seeing_files(engine).iter()
+            .filter(|file| std::fs::metadata(folder.join(file.name)).is_ok_and(|metadata| metadata.len() == file.size))
+            .map(|file| file.size)
+            .sum();
+        fetch(&folder, seeing_files(engine), cancelled, &mut |received, _| progress(before + received.saturating_sub(had), total))
+    })
 }
 
 // ---- Recordings by what's said in them ------------------------------------------------------------------------------
@@ -347,7 +350,7 @@ pub fn listen_upgrade(models: &Path, cuda: bool, control: &Control) -> Result<bo
         return Ok(false);
     }
     let downloads = models.join("listen");
-    fetch(&downloads, &[LISTEN], control, &mut |_, _| {})?;
+    fetch(&downloads, &[LISTEN], &|| control.stopping(), &mut |_, _| {})?;
     let zip = downloads.join(LISTEN.name);
     let result = unpack_all(std::slice::from_ref(&zip), &unpacked);
     let _ = std::fs::remove_file(zip);
@@ -430,37 +433,59 @@ pub fn speech_download_size(models: &Path, model: &File, cuda: bool) -> u64 {
 }
 
 /// Downloads and unpacks what listening needs. `progress(received, total)` over all of it.
-pub fn speech_ensure(models: &Path, model: &File, cuda: bool, control: &Control, progress: &mut dyn FnMut(u64, u64)) -> Result<(), String> {
-    let total = speech_download_size(models, model, cuda);
-    let mut before = 0;
-    let unpacked = listen_folder(models, cuda);
-    if !unpacked.join("excavate-listen.exe").is_file() {
-        let downloads = models.join("listen");
-        let mut packages = vec![LISTEN];
-        if cuda {
-            packages.push(LISTEN_CUDA.ok_or("CUDA's add-on isn't published")?);
+pub fn speech_ensure(models: &Path, model: &'static File, cuda: bool, control: &'static Control, progress: &mut dyn FnMut(u64, u64)) -> Result<(), String> {
+    let models = models.to_path_buf();
+    in_background(&format!("listening {} {cuda}", model.name), control, progress, move |cancelled, progress| {
+        let total = speech_download_size(&models, model, cuda);
+        let mut before = 0;
+        let unpacked = listen_folder(&models, cuda);
+        if !unpacked.join("excavate-listen.exe").is_file() {
+            let downloads = models.join("listen");
+            let mut packages = vec![LISTEN];
+            if cuda {
+                packages.push(LISTEN_CUDA.ok_or("CUDA's add-on isn't published")?);
+            }
+            let size: u64 = packages.iter().map(|file| file.size).sum();
+            fetch(&downloads, &packages, cancelled, &mut |received, _| progress(received, total))?;
+            let zips: Vec<PathBuf> = packages.iter().map(|file| downloads.join(file.name)).collect();
+            unpack_all(&zips, &unpacked)?;
+            for zip in zips {
+                let _ = std::fs::remove_file(zip);
+            }
+            before += size;
         }
-        let size: u64 = packages.iter().map(|file| file.size).sum();
-        fetch(&downloads, &packages, control, &mut |received, _| progress(received, total))?;
-        let zips: Vec<PathBuf> = packages.iter().map(|file| downloads.join(file.name)).collect();
-        unpack_all(&zips, &unpacked)?;
-        for zip in zips {
-            let _ = std::fs::remove_file(zip);
-        }
-        before += size;
-    }
-    let folder = speech_folder(models);
-    let files = speech_files(model);
-    let had: u64 = files.iter()
-        .filter(|file| std::fs::metadata(folder.join(file.name)).is_ok_and(|metadata| metadata.len() == file.size))
-        .map(|file| file.size)
-        .sum();
-    let files: Vec<File> = files.into_iter().map(|file| File { ..*file }).collect();
-    fetch(&folder, &files, control, &mut |received, _| progress(before + received.saturating_sub(had), total))
+        let folder = speech_folder(&models);
+        let files = speech_files(model);
+        let had: u64 = files.iter()
+            .filter(|file| std::fs::metadata(folder.join(file.name)).is_ok_and(|metadata| metadata.len() == file.size))
+            .map(|file| file.size)
+            .sum();
+        let files: Vec<File> = files.into_iter().map(|file| File { ..*file }).collect();
+        fetch(&folder, &files, cancelled, &mut |received, _| progress(before + received.saturating_sub(had), total))
+    })
 }
 
 /// Every file of the packages, side by side in `folder` (a later package's file wins).
 fn unpack_all(zips: &[PathBuf], folder: &Path) -> Result<(), String> {
+    // What the folder had that these packages don't bring stays (an earlier build's CUDA add-on).
+    let keep_earlier = |temporary: &Path| {
+        if let Ok(earlier) = std::fs::read_dir(folder) {
+            for entry in earlier.flatten() {
+                let kept = temporary.join(entry.file_name());
+                if entry.path().is_file() && !kept.exists() {
+                    std::fs::copy(entry.path(), kept).map_err(|error| error.to_string())?;
+                }
+            }
+        }
+        Ok(())
+    };
+    unpack(zips, folder, &|_| true, ("excavate-listen.exe", "the listener's package doesn't have it"), &keep_earlier)
+}
+
+/// The packages' files that `wanted` names, side by side (a later package's file wins, folders inside them ignored),
+/// unpacked beside `folder` first and put in its place only once whole. `program` (the file that must be there, the
+/// error when it isn't); `finish` has the unpacked folder before it takes `folder`'s place.
+fn unpack(zips: &[PathBuf], folder: &Path, wanted: &dyn Fn(&str) -> bool, program: (&str, &str), finish: &dyn Fn(&Path) -> Result<(), String>) -> Result<(), String> {
     let temporary = folder.with_extension("unpacking");
     let _ = std::fs::remove_dir_all(&temporary);
     std::fs::create_dir_all(&temporary).map_err(|error| error.to_string())?;
@@ -469,29 +494,96 @@ fn unpack_all(zips: &[PathBuf], folder: &Path) -> Result<(), String> {
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
             let Some(name) = entry.enclosed_name().and_then(|path| path.file_name().map(|name| name.to_string_lossy().to_string())) else { continue };
+            if !wanted(&name) {
+                continue;
+            }
             let mut out = std::fs::File::create(temporary.join(&name)).map_err(|error| error.to_string())?;
             std::io::copy(&mut entry, &mut out).map_err(|error| error.to_string())?;
         }
     }
-    if !temporary.join("excavate-listen.exe").is_file() {
-        return Err("the listener's package doesn't have it".into());
+    if !temporary.join(program.0).is_file() {
+        return Err(program.1.into());
     }
-    // What the folder had that these packages don't bring stays (an earlier build's CUDA add-on).
-    if let Ok(earlier) = std::fs::read_dir(folder) {
-        for entry in earlier.flatten() {
-            let kept = temporary.join(entry.file_name());
-            if entry.path().is_file() && !kept.exists() {
-                std::fs::copy(entry.path(), kept).map_err(|error| error.to_string())?;
-            }
-        }
-    }
+    finish(&temporary)?;
     let _ = std::fs::remove_dir_all(folder);
     std::fs::rename(&temporary, folder).map_err(|error| error.to_string())
 }
 
 // ---- Downloading ---------------------------------------------------------------------------------------------------
 
-fn fetch(folder: &Path, files: &[File], control: &Control, progress: &mut dyn FnMut(u64, u64)) -> Result<(), String> {
+/// A download on a thread of its own.
+struct Job {
+    /// (received, total), as it goes.
+    progress: Mutex<(u64, u64)>,
+    /// How it went, once it's over.
+    result: Mutex<Option<Result<(), String>>>,
+    /// When a lane last waited for it.
+    wanted: Mutex<Instant>,
+}
+
+/// Downloads under way, by what they're for.
+static JOBS: LazyLock<Mutex<HashMap<String, Arc<Job>>>> = LazyLock::new(Mutex::default);
+
+/// A download nobody has waited for this long stops (its part is kept): the choice changed, and no lane asks for it
+/// any more. Reading starting over takes a few seconds before the new session's lane asks again; longer while a large
+/// folder is walked, and then it stops and later continues from its part, as it always did.
+const UNWANTED: Duration = Duration::from_secs(90);
+
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Runs `work` (a download) on a thread of its own, or takes up the one already running for `key`, and waits for it,
+/// telling `progress`. Reading stopping to start over (the settings changed, "Full speed", a pause) ends the wait, not
+/// the download: the next session's lane takes it up where it is. Before, it was cancelled, its progress went back to
+/// nothing, and the next session hashed its part again before going on. Quitting stops it.
+fn in_background(key: &str, control: &'static Control, progress: &mut dyn FnMut(u64, u64),
+                 work: impl FnOnce(&dyn Fn() -> bool, &mut dyn FnMut(u64, u64)) -> Result<(), String> + Send + 'static) -> Result<(), String> {
+    in_background_with(key, control, UNWANTED, progress, work)
+}
+
+fn in_background_with(key: &str, control: &'static Control, unwanted: Duration, progress: &mut dyn FnMut(u64, u64),
+                      work: impl FnOnce(&dyn Fn() -> bool, &mut dyn FnMut(u64, u64)) -> Result<(), String> + Send + 'static) -> Result<(), String> {
+    let job = {
+        let mut jobs = lock(&JOBS);
+        match jobs.get(key) {
+            Some(job) => job.clone(),
+            None => {
+                let job = Arc::new(Job { progress: Mutex::new((0, 0)), result: Mutex::new(None), wanted: Mutex::new(Instant::now()) });
+                let (running, key_owned) = (job.clone(), key.to_string());
+                let spawned = std::thread::Builder::new().name("download".into()).spawn(move || {
+                    let cancelled = || control.quitting() || lock(&running.wanted).elapsed() > unwanted;
+                    let result = work(&cancelled, &mut |received, total| *lock(&running.progress) = (received, total));
+                    *lock(&running.result) = Some(result);
+                    let mut jobs = lock(&JOBS);
+                    if jobs.get(&key_owned).is_some_and(|job| Arc::ptr_eq(job, &running)) {
+                        jobs.remove(&key_owned);
+                    }
+                });
+                if let Err(error) = spawned {
+                    return Err(error.to_string());
+                }
+                jobs.insert(key.to_string(), job.clone());
+                job
+            }
+        }
+    };
+    loop {
+        *lock(&job.wanted) = Instant::now();
+        let (received, total) = *lock(&job.progress);
+        if total > 0 {
+            progress(received, total);
+        }
+        if let Some(result) = lock(&job.result).clone() {
+            return result;
+        }
+        if !control.sleep(Duration::from_millis(250)) {
+            return Err("stopping".into());
+        }
+    }
+}
+
+fn fetch(folder: &Path, files: &[File], cancelled: &dyn Fn() -> bool, progress: &mut dyn FnMut(u64, u64)) -> Result<(), String> {
     std::fs::create_dir_all(folder).map_err(|error| error.to_string())?;
     let total: u64 = files.iter().map(|file| file.size).sum();
     let mut done = 0u64;
@@ -505,7 +597,7 @@ fn fetch(folder: &Path, files: &[File], control: &Control, progress: &mut dyn Fn
         let url = file.url.map(str::to_string).unwrap_or_else(|| format!("{BASE}{}", file.name));
         config::log(&format!("downloading {url}"));
         let before = done;
-        download(file, &url, &target, control, &mut |received| progress(before + received, total))
+        download(file, &url, &target, cancelled, &mut |received| progress(before + received, total))
             .map_err(|error| format!("{}: {error}", file.name))?;
         done = before + file.size;
         progress(done, total);
@@ -514,15 +606,15 @@ fn fetch(folder: &Path, files: &[File], control: &Control, progress: &mut dyn Fn
 }
 
 /// One file, continuing a part that's already there.
-fn download(file: &File, url: &str, target: &Path, control: &Control, progress: &mut dyn FnMut(u64)) -> Result<(), String> {
+fn download(file: &File, url: &str, target: &Path, cancelled: &dyn Fn() -> bool, progress: &mut dyn FnMut(u64)) -> Result<(), String> {
     let partial = target.with_extension(format!("{}.part", target.extension().and_then(|extension| extension.to_str()).unwrap_or("")));
     let mut hasher = Sha256::new();
     // What's there already goes into the hash; too long (or unreadable), it's not worth keeping. Stopping while it's
     // hashed keeps it: the next start continues it (a 4.7 GB model isn't fetched again).
     let had = std::fs::metadata(&partial).map(|metadata| metadata.len()).unwrap_or(0);
-    let kept = had > 0 && had < file.size && match hash_into(&partial, &mut hasher, control) {
+    let kept = had > 0 && had < file.size && match hash_into(&partial, &mut hasher, cancelled) {
         Ok(()) => true,
-        Err(_) if control.stopping() => return Err("stopping".into()),
+        Err(_) if cancelled() => return Err("stopping".into()),
         Err(_) => false,
     };
     let have = if kept {
@@ -535,12 +627,12 @@ fn download(file: &File, url: &str, target: &Path, control: &Control, progress: 
     let mut out = std::fs::OpenOptions::new().create(true).append(true).open(&partial).map_err(|error| error.to_string())?;
     let mut writer = HashingWriter { file: &mut out, hasher: &mut hasher };
     let mut report = |received: u64, _total: u64| progress(received);
-    let result = winsys::http::download_from(url, have, &mut writer, &mut report, &|| control.stopping());
+    let result = winsys::http::download_from(url, have, &mut writer, &mut report, cancelled);
     match result {
         Err(error) if error == winsys::http::CANT_RESUME => {
             writer.file.set_len(0).map_err(|error| error.to_string())?;
             *writer.hasher = Sha256::new();
-            winsys::http::download_from(url, 0, &mut writer, &mut report, &|| control.stopping())?;
+            winsys::http::download_from(url, 0, &mut writer, &mut report, cancelled)?;
         }
         other => {
             other?;
@@ -555,11 +647,11 @@ fn download(file: &File, url: &str, target: &Path, control: &Control, progress: 
     std::fs::rename(&partial, target).map_err(|error| error.to_string())
 }
 
-fn hash_into(path: &Path, hasher: &mut Sha256, control: &Control) -> Result<(), String> {
+fn hash_into(path: &Path, hasher: &mut Sha256, cancelled: &dyn Fn() -> bool) -> Result<(), String> {
     let mut file = std::fs::File::open(path).map_err(|error| error.to_string())?;
     let mut buffer = vec![0u8; 1 << 20];
     loop {
-        if control.stopping() {
+        if cancelled() {
             return Err("stopping".into());
         }
         let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
@@ -584,5 +676,152 @@ impl Write for HashingWriter<'_> {
 
     fn flush(&mut self) -> std::io::Result<()> {
         self.file.flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    fn control() -> &'static Control {
+        Box::leak(Box::default())
+    }
+
+    /// Reading starting over (a settings change, "Full speed") stops a lane's wait, not its download: the next session's
+    /// lane takes up the same download, which isn't started a second time and doesn't go back to nothing.
+    #[test]
+    fn a_download_goes_on_through_a_restart() {
+        let control = control();
+        let started = Arc::new(AtomicUsize::new(0));
+        let finish = Arc::new(AtomicBool::new(false));
+        let work = |started: Arc<AtomicUsize>, finish: Arc<AtomicBool>| move |cancelled: &dyn Fn() -> bool, progress: &mut dyn FnMut(u64, u64)| {
+            started.fetch_add(1, Ordering::SeqCst);
+            let mut received = 0;
+            while !finish.load(Ordering::SeqCst) {
+                if cancelled() {
+                    return Err("cancelled".to_string());
+                }
+                received += 1;
+                progress(received, 1000);
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Ok(())
+        };
+        // The settings change while the first session waits.
+        let waiter = std::thread::spawn({
+            let (started, finish) = (started.clone(), finish.clone());
+            move || in_background("test restart", control, &mut |_, _| {}, work(started, finish))
+        });
+        std::thread::sleep(Duration::from_millis(100));
+        control.restart();
+        assert_eq!(waiter.join().unwrap(), Err("stopping".to_string()));
+        // The next session: the same download, further along than nothing, and not started again.
+        control.restarted();
+        let seen = Arc::new(Mutex::new(0u64));
+        let finisher = {
+            let finish = finish.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(150));
+                finish.store(true, Ordering::SeqCst);
+            })
+        };
+        let first_seen = seen.clone();
+        let result = in_background("test restart", control, &mut |received, _| {
+            let mut first = lock(&first_seen);
+            if *first == 0 {
+                *first = received;
+            }
+        }, work(started.clone(), finish.clone()));
+        finisher.join().unwrap();
+        assert_eq!(result, Ok(()));
+        assert_eq!(started.load(Ordering::SeqCst), 1, "started once");
+        assert!(*lock(&seen) > 1, "taken up where it was");
+    }
+
+    /// Nobody waiting for it any more (the choice changed): it stops, and the next ask starts it afresh.
+    #[test]
+    fn a_download_nobody_wants_stops() {
+        let control = control();
+        let cancelled_seen = Arc::new(AtomicBool::new(false));
+        let waiter = std::thread::spawn({
+            let cancelled_seen = cancelled_seen.clone();
+            move || in_background_with("test unwanted", control, Duration::from_millis(200), &mut |_, _| {}, move |cancelled, _| {
+                while !cancelled() {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                cancelled_seen.store(true, Ordering::SeqCst);
+                Err("cancelled".to_string())
+            })
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        control.restart();
+        assert_eq!(waiter.join().unwrap(), Err("stopping".to_string()));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !cancelled_seen.load(Ordering::SeqCst) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(cancelled_seen.load(Ordering::SeqCst));
+        std::thread::sleep(Duration::from_millis(50));
+        control.restarted();
+        assert_eq!(in_background_with("test unwanted", control, Duration::from_secs(5), &mut |_, _| {}, |_, _| Ok(())), Ok(()));
+    }
+
+    /// A package with these files (folders inside it ignored by the unpacking), in `folder`.
+    fn package(folder: &Path, name: &str, files: &[(&str, &str)]) -> PathBuf {
+        let path = folder.join(name);
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for (name, text) in files {
+            writer.start_file(*name, options).unwrap();
+            writer.write_all(text.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+        path
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let folder = std::env::temp_dir().join(format!("excavate-unpack-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        folder
+    }
+
+    /// llama.cpp's package: only the server and its libraries, its folders flattened; one without the server isn't
+    /// unpacked, and leaves nothing behind.
+    #[test]
+    fn unpacks_only_the_server() {
+        let home = scratch("server");
+        let zip = package(&home, "llama.zip", &[("bin/llama-server.exe", "server"), ("bin/ggml-vulkan.dll", "ggml"), ("bin/llama-cli.exe", "cli")]);
+        let folder = home.join("llama").join("build");
+        unpack_server(&zip, &folder).unwrap();
+        assert_eq!(std::fs::read_to_string(folder.join("llama-server.exe")).unwrap(), "server");
+        assert!(folder.join("ggml-vulkan.dll").is_file());
+        assert!(!folder.join("llama-cli.exe").exists());
+        assert!(!folder.with_extension("unpacking").exists());
+        let without = package(&home, "without.zip", &[("bin/llama-cli.exe", "cli")]);
+        let other = home.join("other");
+        assert_eq!(unpack_server(&without, &other), Err("llama.cpp's package doesn't have its server".into()));
+        assert!(!other.exists());
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    /// The listener's packages: every file, a later package's winning, and what the folder had before kept.
+    #[test]
+    fn unpacks_every_package_keeping_what_was_there() {
+        let home = scratch("listen");
+        let folder = home.join("listen");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("ggml-cuda.dll"), "earlier").unwrap();
+        std::fs::write(folder.join("excavate-listen.exe"), "earlier").unwrap();
+        let first = package(&home, "first.zip", &[("excavate-listen.exe", "new"), ("whisper.dll", "first")]);
+        let second = package(&home, "second.zip", &[("whisper.dll", "second")]);
+        unpack_all(&[first, second], &folder).unwrap();
+        let read = |name: &str| std::fs::read_to_string(folder.join(name)).unwrap();
+        assert_eq!((read("excavate-listen.exe"), read("whisper.dll"), read("ggml-cuda.dll")), ("new".into(), "second".into(), "earlier".into()));
+        let empty = package(&home, "empty.zip", &[("readme.txt", "")]);
+        assert_eq!(unpack_all(&[empty], &folder), Err("the listener's package doesn't have it".into()));
+        assert_eq!(read("excavate-listen.exe"), "new");
+        let _ = std::fs::remove_dir_all(home);
     }
 }

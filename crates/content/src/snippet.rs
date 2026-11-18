@@ -200,15 +200,36 @@ pub fn make(text: &str, words: &Words, width: usize) -> Snippet {
     Snippet { text: snippet, highlights, at: Some(first) }
 }
 
+/// Every place in `text` that matches (byte ranges, in order, a joined word and its part as one): for showing all of
+/// it with its matches marked. Empty for an exact search missing one of its words, as `make` has it.
+pub fn matches(text: &str, words: &Words) -> Vec<Range<usize>> {
+    if words.words.iter().all(|wholes| wholes.is_empty()) || (words.case && !words.words.iter().flatten().all(|(_, typed)| text.contains(typed.as_str()))) {
+        return Vec::new();
+    }
+    let matched = matched_in(text, words);
+    let incomplete = words.strict() && words.words.iter().enumerate().any(|(index, wholes)| {
+        !wholes.is_empty() && !matched.iter().any(|(word, _)| *word == index)
+    });
+    if incomplete {
+        return Vec::new();
+    }
+    let mut ranges: Vec<Range<usize>> = matched.into_iter().map(|(_, range)| range).collect();
+    ranges.sort_by_key(|range| (range.start, std::cmp::Reverse(range.end)));
+    ranges.dedup_by(|next, kept| next.start < kept.end && {
+        kept.end = kept.end.max(next.end);
+        true
+    });
+    ranges
+}
+
 /// About `width` characters of `text` from byte `from`, ending at a word boundary.
 fn excerpt(text: &str, from: usize, width: usize) -> String {
     let rest = &text[from..];
     let mut end = rest.char_indices().nth(width).map(|(at, _)| at).unwrap_or(rest.len());
-    if end < rest.len() {
-        if let Some(space) = rest[..end].rfind(char::is_whitespace).filter(|&space| space > end / 2) {
+    if end < rest.len()
+        && let Some(space) = rest[..end].rfind(char::is_whitespace).filter(|&space| space > end / 2) {
             end = space;
         }
-    }
     rest[..end].to_string()
 }
 
@@ -337,6 +358,18 @@ mod tests {
         // Nothing there at all.
         assert!(make(&filler, &Words::new(&typed("budget"), false), 80).highlights.is_empty());
         assert!(make(&early, &Words::new(&typed("Budget"), false).exactly(true, false), 80).highlights.is_empty());
+    }
+
+    #[test]
+    fn every_match_in_the_whole_text() {
+        let typed = |text: &str| text.split(' ').map(String::from).collect::<Vec<_>>();
+        let filler = "lorem ipsum dolor ".repeat(4000);
+        let text = format!("the budget first. {filler} the budget for Lisbon, report2024 report");
+        let found = matches(&text, &Words::new(&typed("budget lisbon report"), false));
+        let words: Vec<&str> = found.iter().map(|range| &text[range.clone()]).collect();
+        assert_eq!(words, ["budget", "budget", "Lisbon", "report", "report"]);
+        assert!(matches(&text, &Words::new(&typed("Budget"), false).exactly(true, false)).is_empty());
+        assert!(matches(&text, &Words::new(&[], true)).is_empty());
     }
 
     #[test]

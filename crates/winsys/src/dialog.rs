@@ -15,7 +15,7 @@ pub fn pick_folder(owner: isize, title: &str) -> Option<String> {
         dialog.SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM).ok()?;
         let title = wide(title);
         let _ = dialog.SetTitle(PCWSTR(title.as_ptr()));
-        let owner = (owner != 0).then(|| HWND(owner as *mut _));
+        let owner = (owner != 0).then_some(HWND(owner as *mut _));
         dialog.Show(owner).ok()?;
         let item = dialog.GetResult().ok()?;
         let name = item.GetDisplayName(SIGDN_FILESYSPATH).ok()?;

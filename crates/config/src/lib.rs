@@ -6,7 +6,7 @@ pub mod status;
 
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -100,6 +100,14 @@ pub struct Settings {
     pub blur_secrets: bool,
     /// Every preview is blurred while the screen is shared or presenting.
     pub blur_when_sharing: bool,
+    /// Files the person said hold nothing secret (Settings → Privacy's viewer): lowercase paths, never blurred.
+    pub not_secret: Vec<String>,
+    /// The popup's offer to install Excavate (a copy still running from where it was unzipped) was put away.
+    pub install_offer_closed: bool,
+    /// Searches pinned with Ctrl+D, shown first when the popup opens with nothing typed.
+    pub pinned_searches: Vec<String>,
+    /// The last searches something was opened from, most recent first (a few). Cleared from Privacy.
+    pub recent_searches: Vec<String>,
     /// Excavate asks its GitHub page once a day for a newer version, and gets it ready for the next start (About). Off
     /// until turned on: nothing else is downloaded but the models chosen.
     pub auto_update: bool,
@@ -172,7 +180,19 @@ pub struct Settings {
     pub listen_new_at: i64,
     pub listen_all_at: i64,
     pub listen_on_battery: bool,
+    /// How hard reading works, as Activity's speed control sets it: "gentle", "normal", "fast" or "full" (`Speed`). A
+    /// level that stays until it's moved. Empty in settings from before it: read as Normal, what they read at, and a
+    /// kind's "everything now" going then (the old "Full speed" among them) goes on as it did until everything's read.
+    pub speed: String,
+    /// Kinds of reading paused on their own from Activity (`KINDS`): no new item starts in one, and a model it holds
+    /// is let go, as with Pause all. Taken in as reading goes.
+    pub paused_kinds: Vec<String>,
 }
+
+/// The kinds Activity pauses one by one: the indexer's workers by what they do. Documents and code; text in images
+/// (scanned pages, and the text in videos after them); Thorough's second read; what images and videos show (and
+/// documents by what they mean: the same model); what's said in recordings and videos.
+pub const KINDS: [&str; 5] = ["documents", "images", "deep", "shown", "said"];
 
 /// A theme made in the Workshop: its accent's hue, and its surfaces ("warm", "plain" or "cool").
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -237,6 +257,10 @@ impl Default for Settings {
             intro_version: String::new(),
             blur_secrets: true,
             blur_when_sharing: true,
+            not_secret: Vec::new(),
+            install_offer_closed: false,
+            pinned_searches: Vec::new(),
+            recent_searches: Vec::new(),
             auto_update: false,
             update_checked_at: 0,
             read_on_battery: false,
@@ -274,6 +298,8 @@ impl Default for Settings {
             listen_new_at: 0,
             listen_all_at: 0,
             listen_on_battery: false,
+            speed: String::new(),
+            paused_kinds: Vec::new(),
         }
     }
 }
@@ -284,13 +310,25 @@ pub const POPUP_SIZES: [(&str, u32, u32); 3] = [("Small", 800, 500), ("Medium", 
 /// A system-wide name for one of Excavate's objects (a mutex, an event): `Local\Excavate.<what>`, or with a suffix
 /// of its own under `EXCAVATE_HOME`, so a sandboxed Excavate runs beside the real one without either hearing the other.
 pub fn instance_name(what: &str) -> String {
-    match std::env::var("EXCAVATE_HOME") {
-        Ok(home) => {
-            let hash = home.to_lowercase().bytes().fold(0xcbf29ce484222325u64, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3));
-            format!(r"Local\Excavate.{what}.{hash:x}")
-        }
-        Err(_) => format!(r"Local\Excavate.{what}"),
+    format!(r"Local\{}", window_class(what))
+}
+
+/// A window class of Excavate's own: `Excavate.<what>`, with the same suffix as `instance_name` under `EXCAVATE_HOME`, so
+/// a launch finds its own home's copy and no other. (The real one keeps the plain name an older release looks for.)
+pub fn window_class(what: &str) -> String {
+    own_name(what, std::env::var("EXCAVATE_HOME").ok().as_deref())
+}
+
+fn own_name(what: &str, home: Option<&str>) -> String {
+    match home {
+        Some(home) => format!("Excavate.{what}.{:x}", home_hash(home)),
+        None => format!("Excavate.{what}"),
     }
+}
+
+/// `EXCAVATE_HOME`'s own number (FNV-1a of it in lowercase).
+fn home_hash(home: &str) -> u64 {
+    home.to_lowercase().bytes().fold(0xcbf29ce484222325u64, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3))
 }
 
 /// The named events Excavate signals its indexer with: finish and stop; settings changed (start over with them).
@@ -305,6 +343,97 @@ pub fn indexer_settings_event() -> String {
 /// "Skip": the file named in `Paths::skip` is let go, if it's being read now (Activity's "Right now").
 pub fn indexer_skip_event() -> String {
     instance_name("Indexer.Skip")
+}
+
+/// "Try again", "Read again", "Download and read" under Activity's "Couldn't be read": what's in `Paths::retry` is
+/// read again (`Retry`).
+pub fn indexer_retry_event() -> String {
+    instance_name("Indexer.Retry")
+}
+
+/// Why files couldn't be read, as Activity groups them; each group's action has them read again (`Retry`).
+pub mod why {
+    /// Protected by a password: nothing to do but open it.
+    pub const PASSWORD: &str = "password";
+    /// Kept online only (OneDrive, Dropbox, iCloud): "Download and read" lets reading bring them down.
+    pub const ONLINE: &str = "online";
+    /// Damaged, or not what its name says: "Try again".
+    pub const DAMAGED: &str = "damaged";
+    /// Let go by Skip: "Read again".
+    pub const SKIPPED: &str = "skipped";
+    /// A reader stopped on it: a model's twice, or a document's reader once (a panic, `READER_STOPPED`): "Try again".
+    pub const STOPPED: &str = "stopped";
+    /// What's recorded for a file whose reader stopped on it (the indexer's guards around each file).
+    pub const READER_STOPPED: &str = "the reader stopped on this file";
+    pub const ALL: [&str; 5] = [PASSWORD, ONLINE, DAMAGED, SKIPPED, STOPPED];
+    /// Not a group: Settings → Privacy's "Check everything again" (what's been read, looked through for secrets anew).
+    pub const SECRETS: &str = "secrets";
+
+    /// The group a reader's error falls in.
+    pub fn of_error(error: &str) -> &'static str {
+        let lower = error.to_lowercase();
+        if lower.contains("password") || lower.contains("encrypted") {
+            PASSWORD
+        } else if lower.contains(READER_STOPPED) {
+            STOPPED
+        } else {
+            DAMAGED
+        }
+    }
+
+    /// The group of a file the catalog lists as let go (`skipped`'s kind).
+    pub fn of_skip(kind: &str) -> &'static str {
+        match kind {
+            super::SKIP_ONLINE => ONLINE,
+            super::SKIP_STOPPED => STOPPED,
+            _ => SKIPPED,
+        }
+    }
+}
+
+/// The catalog's `skipped` kinds for what wasn't read without a person's Skip: kept online only, and a model's reader
+/// stopped on it twice.
+pub const SKIP_ONLINE: &str = "online only";
+pub const SKIP_STOPPED: &str = "stopped the reader";
+
+/// A request to read files again: a group of what couldn't be read (`why`), all of it or one path. Excavate adds a
+/// line to `Paths::retry` for each and signals `indexer_retry_event`; the indexer takes the file and acts on it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Retry {
+    pub why: String,
+    pub path: Option<String>,
+}
+
+impl Retry {
+    /// "damaged<tab>" (all of them) or "online<tab>C:\Docs\a.pdf".
+    pub fn line(&self) -> String {
+        format!("{}\t{}", self.why, self.path.as_deref().unwrap_or(""))
+    }
+
+    pub fn parse(text: &str) -> Vec<Retry> {
+        text.lines().filter_map(|line| {
+            let (why, path) = line.split_once('\t').unwrap_or((line, ""));
+            let why = why.trim();
+            (why::ALL.contains(&why) || why == why::SECRETS).then(|| Retry { why: why.into(), path: Some(path.trim()).filter(|path| !path.is_empty()).map(str::to_string) })
+        }).collect()
+    }
+
+    /// Adds these to what the indexer has yet to take (`Paths::retry`); the caller signals it.
+    pub fn ask(paths: &Paths, retries: &[Retry]) -> bool {
+        let text: String = retries.iter().map(|retry| retry.line() + "\n").collect();
+        std::fs::OpenOptions::new().create(true).append(true).open(paths.retry()).and_then(|mut file| file.write_all(text.as_bytes())).is_ok()
+    }
+
+    /// What's been asked, taken: the file goes first, so what's asked meanwhile starts a new one.
+    pub fn take(paths: &Paths) -> Vec<Retry> {
+        let taking = paths.retry().with_extension("taking");
+        if std::fs::rename(paths.retry(), &taking).is_err() {
+            return Vec::new();
+        }
+        let text = std::fs::read_to_string(&taking).unwrap_or_default();
+        let _ = std::fs::remove_file(&taking);
+        Retry::parse(&text)
+    }
 }
 
 /// Whether the listener's CUDA add-on is published (indexer/src/models.rs, `LISTEN_CUDA`): settings offers CUDA then.
@@ -433,10 +562,7 @@ impl Settings {
 
     pub fn save(&self, paths: &Paths) {
         if let Ok(json) = serde_json::to_vec_pretty(self) {
-            let temporary = paths.settings().with_extension("json.tmp");
-            if std::fs::write(&temporary, json).is_ok() {
-                let _ = std::fs::rename(&temporary, paths.settings());
-            }
+            let _ = write_atomic(&paths.settings(), &json);
         }
     }
 
@@ -555,7 +681,7 @@ impl Settings {
     }
 
     pub fn exclusions(&self) -> Exclusions {
-        Exclusions::new(&self.exclude)
+        Exclusions::new(&self.exclude).with_chosen(&self.folders)
     }
 
     /// The folders names are limited to, when they are.
@@ -568,6 +694,25 @@ impl Settings {
         let (width, height) = (self.popup_width, self.popup_height);
         let name = POPUP_SIZES.iter().find(|size| (size.1, size.2) == (width, height)).map_or("Custom", |size| size.0);
         format!("{name} \u{b7} {width} \u{d7} {height}")
+    }
+
+    /// How hard reading works (`speed`): Normal unless the speed control was moved.
+    pub fn speed(&self) -> Speed {
+        Speed::parse(&self.speed)
+    }
+
+    /// Whether one kind of reading is paused on its own (`KINDS`).
+    pub fn kind_paused(&self, kind: &str) -> bool {
+        self.paused_kinds.iter().any(|paused| paused == kind)
+    }
+
+    /// Pauses or resumes one kind (`KINDS`), the list kept in their order.
+    pub fn set_kind_paused(&mut self, kind: &str, paused: bool) {
+        self.paused_kinds.retain(|each| each != kind);
+        if paused {
+            self.paused_kinds.push(kind.to_string());
+        }
+        self.paused_kinds.sort_by_key(|each| KINDS.iter().position(|kind| kind == each).unwrap_or(KINDS.len()));
     }
 
     /// Whether the person has paused reading, `now` (seconds since 1970).
@@ -590,6 +735,144 @@ impl Settings {
             return "Paused".into();
         }
         format!("Paused until {}", clock_at(self.paused_until, offset, twelve))
+    }
+
+    /// Whether `other` differs from these only in what a running reading session takes in as it goes: the pace (a
+    /// pause, a kind's own pause, the speed and each kind's "everything now", how the pause's time is shown) and what only the windows
+    /// use (their sizes, the preview, the theme, the search's toggles). Anything else (folders, kinds, models, where
+    /// they run, schedules) has the indexer start over with it.
+    pub fn same_reading(&self, other: &Settings) -> bool {
+        self.reading_part() == other.reading_part()
+    }
+
+    /// These settings with the parts `same_reading` leaves out set to the defaults.
+    fn reading_part(&self) -> Settings {
+        let defaults = Settings::default();
+        Settings {
+            // The pace.
+            paused_until: 0,
+            read_all_at: 0,
+            look_all_at: 0,
+            listen_all_at: 0,
+            speed: String::new(),
+            paused_kinds: Vec::new(),
+            time_format: defaults.time_format.clone(),
+            // The windows'.
+            theme: defaults.theme.clone(),
+            theme_name: defaults.theme_name.clone(),
+            own_themes: defaults.own_themes.clone(),
+            preview: defaults.preview,
+            preview_size: defaults.preview_size.clone(),
+            preview_dragged_width: defaults.preview_dragged_width,
+            preview_dragged_image: defaults.preview_dragged_image,
+            popup_width: defaults.popup_width,
+            popup_height: defaults.popup_height,
+            match_case: defaults.match_case,
+            match_whole_word: defaults.match_whole_word,
+            match_path: defaults.match_path,
+            match_regex: defaults.match_regex,
+            typed_toggles: defaults.typed_toggles,
+            new_search_each_time: defaults.new_search_each_time,
+            monitor: defaults.monitor.clone(),
+            monitor_name: defaults.monitor_name.clone(),
+            update_checked_at: defaults.update_checked_at,
+            ..self.clone()
+        }
+    }
+}
+
+/// How hard reading works. Normal is the default: behind everything the person does, waiting for a quiet moment when
+/// another program uses nearly all of the processor or graphics card, and slower when one uses a good part of it. Full
+/// is "Full speed" (and each kind's "everything now"): it never waits for other programs, at normal priority, with
+/// more documents read at once. Gentle and Fast are the steps between, for a speed control.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Speed {
+    /// Always at the slower pace (a rest after each item), as Normal is when the PC is busy.
+    Gentle,
+    #[default]
+    Normal,
+    /// Never slower for other programs, only waiting when one uses nearly all of the PC; ahead of what's merely in the
+    /// background (below normal priority).
+    Fast,
+    Full,
+}
+
+impl Speed {
+    pub const ALL: [Speed; 4] = [Speed::Gentle, Speed::Normal, Speed::Fast, Speed::Full];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Speed::Gentle => "gentle",
+            Speed::Normal => "normal",
+            Speed::Fast => "fast",
+            Speed::Full => "full",
+        }
+    }
+
+    pub fn parse(text: &str) -> Speed {
+        Speed::ALL.into_iter().find(|speed| speed.name().eq_ignore_ascii_case(text.trim())).unwrap_or_default()
+    }
+
+    /// Whether it waits for a quiet moment while another program uses nearly all of the processor or graphics card.
+    pub fn waits_for_quiet(self) -> bool {
+        self != Speed::Full
+    }
+
+    /// Whether it rests after each item: `slow` says another program uses a good part of the PC.
+    pub fn rests(self, slow: bool) -> bool {
+        match self {
+            Speed::Gentle => true,
+            Speed::Normal => slow,
+            Speed::Fast | Speed::Full => false,
+        }
+    }
+
+    /// How many documents are read at once, on a processor with `cores` logical cores: one, but for Fast and Full.
+    /// Full leaves 8 cores (and at least half) to the rest: the images' reader has up to 8 threads of its own, and the
+    /// model servers need some. Up to 24: on 32 cores, 24 read GovDocs' 11,500 files in 147 s, 16 in 165 s.
+    pub fn text_workers(self, cores: usize) -> usize {
+        match self {
+            Speed::Gentle | Speed::Normal => 1,
+            Speed::Fast => cores.clamp(1, 2),
+            Speed::Full => (cores / 2).max(cores.saturating_sub(8)).clamp(1, 24),
+        }
+    }
+
+    /// How many folders Bedrock lists at once while it catches up on a drive, on a processor with `cores` logical
+    /// cores: 2 up to Normal, 4 at Fast, 8 at Full, and never more than every core but one (at least one).
+    pub fn name_listers(self, cores: usize) -> usize {
+        let wanted = match self {
+            Speed::Gentle | Speed::Normal => 2,
+            Speed::Fast => 4,
+            Speed::Full => 8,
+        };
+        wanted.min(cores.saturating_sub(1)).max(1)
+    }
+
+    /// How many images are read at once (each reader with up to 8 threads of its own): one, but at Full, a reader for
+    /// every 12 cores, up to 3.
+    pub fn picture_workers(self, cores: usize) -> usize {
+        match self {
+            Speed::Full => (cores / 12).clamp(1, 3),
+            _ => 1,
+        }
+    }
+
+    /// How many images (or scanned PDFs) each image reader takes ahead of its turn, to have them decoded or their
+    /// pages rendered on threads of their own while it reads the one before (each image is still read on its own, so
+    /// what's read is the same): none up to Normal, which holds nothing more than before; two at Fast and Full, where
+    /// the graphics card would otherwise wait for each one to be made ready (the indexer does it only when the graphics
+    /// card reads: on the processor it measured no faster).
+    pub fn pictures_ahead(self) -> usize {
+        match self {
+            Speed::Fast | Speed::Full => 2,
+            Speed::Gentle | Speed::Normal => 0,
+        }
+    }
+
+    /// Whether files are read at the lowest disk priority, behind the person's own (Windows' background mode).
+    pub fn background_io(self) -> bool {
+        self != Speed::Full
     }
 }
 
@@ -699,6 +982,11 @@ impl Paths {
         self.local.join("skip.txt")
     }
 
+    /// What Activity asks to read again (`Retry`), a line each, until the indexer takes it.
+    pub fn retry(&self) -> PathBuf {
+        self.local.join("retry.txt")
+    }
+
     pub fn status(&self) -> PathBuf {
         self.local.join("status.json")
     }
@@ -752,7 +1040,7 @@ fn regex_pattern(entry: &str) -> Option<&str> {
 /// Whether something can go in the list of what's left out: a regular expression has to make sense.
 pub fn check_exclusion(entry: &str) -> Result<(), String> {
     match regex_pattern(entry.trim().trim_matches('"')) {
-        Some(pattern) if pattern.is_empty() => Err("Write the expression after regex:".into()),
+        Some("") => Err("Write the expression after regex:".into()),
         Some(pattern) => Expression::new(pattern).map(|_| ()).map_err(|error| format!("That regular expression doesn't work: {error}")),
         None => Ok(()),
     }
@@ -773,6 +1061,8 @@ pub struct Exclusions {
     name_expressions: Vec<Expression>,
     /// Regular expressions with a backslash of their own (`\\`), tried on the whole path.
     path_expressions: Vec<Expression>,
+    /// The folders chosen to be read, lowercased, ending in a backslash (see `with_chosen`).
+    chosen: Vec<String>,
 }
 
 impl Exclusions {
@@ -817,7 +1107,7 @@ impl Exclusions {
     /// any part of it is an excluded name.
     pub fn excludes(&self, path: &str) -> bool {
         let lower = path.to_lowercase();
-        if self.folders.iter().any(|folder| lower.starts_with(folder.as_str()) || lower == folder[..folder.len() - 1]) {
+        if self.under_folder(&lower) {
             return true;
         }
         if self.path_patterns.iter().any(|pattern| wildcard(pattern, &lower)) || self.path_expressions.iter().any(|expression| expression.matches(path)) {
@@ -825,6 +1115,46 @@ impl Exclusions {
         }
         lower.split('\\').skip(1).any(|part| self.excludes_name_lower(part))
             || (!self.name_expressions.is_empty() && path.split('\\').skip(1).any(|part| self.matches_expression(part)))
+    }
+
+    /// Whether a folder is left out whole by one of the folders listed (so a walk needn't go into it at all).
+    pub fn excludes_folder(&self, path: &str) -> bool {
+        self.under_folder(&path.to_lowercase())
+    }
+
+    fn under_folder(&self, lower: &str) -> bool {
+        self.folders.iter().any(|folder| {
+            (lower.starts_with(folder.as_str()) || lower == &folder[..folder.len() - 1]) && !self.chosen_inside(folder, lower)
+        })
+    }
+
+    /// The folders chosen to be read: one inside an excluded folder is read all the same (the closer choice wins), so
+    /// "Desktop, but not Desktop\Home" can still read "Desktop\Home\Photos" when it's chosen too. Excluded names and
+    /// folders inside it still apply.
+    pub fn with_chosen(mut self, folders: &[String]) -> Exclusions {
+        self.chosen = folders.iter().map(|folder| {
+            let mut folder = folder.trim().to_lowercase().replace('/', "\\");
+            if !folder.ends_with('\\') {
+                folder.push('\\');
+            }
+            folder
+        }).collect();
+        self
+    }
+
+    /// Whether an excluded folder lies between `outer` and `inner` (lowercased folders ending in a backslash, `inner` in
+    /// `outer`), so reading `outer` never reaches `inner`.
+    pub fn cuts_off(&self, outer: &str, inner: &str) -> bool {
+        self.folders.iter().any(|folder| folder.starts_with(outer) && folder.len() > outer.len() && inner.starts_with(folder.as_str()))
+    }
+
+    /// Whether `lower` is in a chosen folder that lies inside the excluded `folder` (both lowercased, `folder` ending in a
+    /// backslash).
+    fn chosen_inside(&self, folder: &str, lower: &str) -> bool {
+        self.chosen.iter().any(|chosen| {
+            chosen.len() > folder.len() && chosen.starts_with(folder)
+                && (lower.starts_with(chosen.as_str()) || lower == &chosen[..chosen.len() - 1])
+        })
     }
 
     /// Whether a folder or file name is left out (for walking a folder without building full paths).
@@ -848,6 +1178,10 @@ impl Exclusions {
             syntax.push_str(&format!(" !\"\\{name}\\\""));
         }
         for folder in &self.folders {
+            // (One holding a chosen folder is applied to the results instead, where the chosen one can be let through.)
+            if self.chosen.iter().any(|chosen| chosen.len() > folder.len() && chosen.starts_with(folder.as_str())) {
+                continue;
+            }
             syntax.push_str(&format!(" !\"{folder}\""));
         }
         syntax
@@ -897,6 +1231,13 @@ pub fn log(line: &str) {
     use std::sync::Mutex;
     static FILE: OnceLock<Mutex<Option<std::fs::File>>> = OnceLock::new();
     let file = FILE.get_or_init(|| {
+        // A test run (cargo's test programs live in a `deps` folder) without a home of its own writes no log: it
+        // would be the person's own (a config test's exclusion message landed in it at every `cargo test`).
+        let test_run = std::env::current_exe().ok().and_then(|exe| exe.parent().and_then(|dir| dir.file_name()).map(|name| name == "deps"))
+            .unwrap_or(false);
+        if test_run && std::env::var_os("EXCAVATE_HOME").is_none() {
+            return Mutex::new(None);
+        }
         let path = Paths::new().log();
         if std::fs::metadata(&path).is_ok_and(|metadata| metadata.len() > 1 << 20) {
             let _ = std::fs::rename(&path, path.with_extension("old.log"));
@@ -912,16 +1253,21 @@ pub fn log(line: &str) {
     }
 }
 
-/// Writes a file whole or not at all (a temporary file, then a rename), so a reader never sees half of it.
-pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let temporary = path.with_extension("tmp");
-    std::fs::write(&temporary, bytes)?;
-    std::fs::rename(&temporary, path)
-}
+pub use common::write_atomic;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn own_names_per_home() {
+        assert_eq!(own_name("Shell", None), "Excavate.Shell");
+        let sandbox = own_name("Shell", Some(r"C:\Sandbox\One"));
+        assert!(sandbox.starts_with("Excavate.Shell.") && sandbox.len() > "Excavate.Shell.".len());
+        // The same home however it's written; another home, another name.
+        assert_eq!(sandbox, own_name("Shell", Some(r"c:\sandbox\one")));
+        assert_ne!(sandbox, own_name("Shell", Some(r"C:\Sandbox\Two")));
+    }
 
     #[test]
     fn folder_kinds() {
@@ -1013,6 +1359,34 @@ mod tests {
         assert!(!exclusions.excludes(r"C:\Users\me\Documents\Private notes.txt"));
         assert!(!exclusions.excludes(r"C:\Users\me\Documents\report.docx"));
         assert!(exclusions.everything().contains(r#"!"\node_modules\""#));
+        // A folder left out whole by its path (a walk doesn't go into it), and not one that only starts the same.
+        assert!(exclusions.excludes_folder(r"C:\Users\me\Documents\private"));
+        assert!(exclusions.excludes_folder(r"C:\Users\me\Documents\Private\2024"));
+        assert!(!exclusions.excludes_folder(r"C:\Users\me\Documents\Private notes"));
+        assert!(!exclusions.excludes_folder(r"C:\Users\me\Documents"));
+    }
+
+    #[test]
+    fn a_folder_chosen_inside_an_excluded_one_is_read() {
+        let exclusions = Exclusions::new(&[r"C:\Users\me\Desktop\Home".into(), "node_modules".into(), r"C:\Users\me\Desktop\Home\Photos\Raw".into()])
+            .with_chosen(&[r"C:\Users\me\Desktop".into(), r"C:\Users\me\Desktop\Home\Photos".into()]);
+        // Desktop is read, but not Home.
+        assert!(!exclusions.excludes(r"C:\Users\me\Desktop\notes.txt"));
+        assert!(exclusions.excludes(r"C:\Users\me\Desktop\Home\taxes.pdf"));
+        assert!(exclusions.excludes_folder(r"C:\Users\me\Desktop\Home"));
+        assert!(exclusions.excludes(r"C:\Users\me\Desktop\Home\Other\a.jpg"));
+        // Photos, chosen inside Home, is read all the same, with what's left out inside it still left out.
+        assert!(!exclusions.excludes_folder(r"C:\Users\me\Desktop\Home\Photos"));
+        assert!(!exclusions.excludes(r"C:\Users\me\Desktop\Home\Photos\beach.jpg"));
+        assert!(!exclusions.excludes(r"c:\users\me\desktop\home\photos\2024\beach.jpg"));
+        assert!(exclusions.excludes(r"C:\Users\me\Desktop\Home\Photos\Raw\a.dng"));
+        assert!(exclusions.excludes(r"C:\Users\me\Desktop\Home\Photos\app\node_modules\x.png"));
+        // A folder whose name only starts the same isn't chosen.
+        assert!(exclusions.excludes(r"C:\Users\me\Desktop\Home\Photos2\a.jpg"));
+        // Everything's syntax leaves Home to the results' check, where Photos is let through.
+        assert!(!exclusions.everything().contains(r#"desktop\home\""#));
+        assert!(exclusions.cuts_off(r"c:\users\me\desktop\", r"c:\users\me\desktop\home\photos\"));
+        assert!(!exclusions.cuts_off(r"c:\users\me\desktop\", r"c:\users\me\desktop\work\"));
     }
 
     #[test]
@@ -1095,6 +1469,94 @@ mod tests {
         assert_eq!(tomorrow_morning(day + 23 * 3600, 0), day + 86_400 + 6 * 3600);
         assert_eq!(tomorrow_morning(day + 5 * 3600 + 1800, 0), day + 86_400 + 6 * 3600);
         assert_eq!(tomorrow_morning(day + 3600, 0), day + 6 * 3600);
+    }
+
+    #[test]
+    fn a_pause_or_full_speed_is_taken_in_as_reading_goes() {
+        let settings = Settings { folders: vec![r"C:\Docs".into()], ..Settings::default() };
+        let paused = Settings { paused_until: -1, read_all_at: 5, look_all_at: 5, listen_all_at: 5, time_format: "12-hour".into(),
+                                popup_width: 900, preview_size: "large".into(), ..settings.clone() };
+        assert!(settings.same_reading(&paused) && paused.same_reading(&settings));
+        // Anything else starts reading over.
+        assert!(!settings.same_reading(&Settings { folders: vec![r"C:\Other".into()], ..paused.clone() }));
+        assert!(!settings.same_reading(&Settings { seeing: "quick".into(), ..settings.clone() }));
+        assert!(!settings.same_reading(&Settings { look_new_at: 7, ..settings.clone() }));
+    }
+
+    #[test]
+    fn the_speed_and_kinds_paused_are_taken_in_as_reading_goes() {
+        let settings = Settings { folders: vec![r"C:\Docs".into()], ..Settings::default() };
+        let mut changed = Settings { speed: "full".into(), ..settings.clone() };
+        changed.set_kind_paused("shown", true);
+        changed.set_kind_paused("documents", true);
+        assert_eq!(changed.paused_kinds, ["documents", "shown"], "in their order");
+        assert!(settings.same_reading(&changed));
+        assert_eq!(changed.speed(), Speed::Full);
+        assert!(changed.kind_paused("shown") && !changed.kind_paused("said"));
+        changed.set_kind_paused("shown", false);
+        assert_eq!(changed.paused_kinds, ["documents"]);
+    }
+
+    #[test]
+    fn settings_from_before_the_speed_control_load() {
+        // A file from 0.1.0: no speed, no kinds paused, its old "Full speed" (every kind's "everything now") kept.
+        let old = r#"{ "hotkey": "Alt+S", "folders": ["C:\\Docs"], "read-all-at": 1700000000, "look-all-at": 1700000000,
+                       "listen-all-at": 1700000000, "paused-until": 0 }"#;
+        let settings: Settings = serde_json::from_str(old).unwrap();
+        assert_eq!(settings.speed(), Speed::Normal);
+        assert!(settings.paused_kinds.is_empty());
+        assert_eq!(settings.folders, [r"C:\Docs"]);
+        assert_eq!((settings.read_all_at, settings.look_all_at, settings.listen_all_at), (1_700_000_000, 1_700_000_000, 1_700_000_000));
+        // A speed this version doesn't know: Normal, and the rest of the file still loads.
+        let odd: Settings = serde_json::from_str(r#"{ "speed": "warp", "paused-kinds": ["said"], "hotkey": "Alt+Q" }"#).unwrap();
+        assert_eq!((odd.speed(), odd.kind_paused("said"), odd.hotkey.as_str()), (Speed::Normal, true, "Alt+Q"));
+        // Saved and loaded again: the same.
+        let saved = serde_json::to_string(&Settings { speed: "gentle".into(), paused_kinds: vec!["images".into()], ..Settings::default() }).unwrap();
+        assert!(saved.contains(r#""speed":"gentle""#) && saved.contains(r#""paused-kinds":["images"]"#));
+        let again: Settings = serde_json::from_str(&saved).unwrap();
+        assert_eq!((again.speed(), again.kind_paused("images")), (Speed::Gentle, true));
+    }
+
+    #[test]
+    fn asking_to_read_again() {
+        let retries = [Retry { why: why::DAMAGED.into(), path: None }, Retry { why: why::ONLINE.into(), path: Some(r"C:\Docs\a b.pdf".into()) }];
+        let text: String = retries.iter().map(|retry| retry.line() + "\n").collect();
+        assert_eq!(Retry::parse(&text), retries);
+        assert!(Retry::parse("nonsense\t\n\n").is_empty());
+        // Settings → Privacy's "Check everything again" goes the same way.
+        assert_eq!(Retry::parse("secrets\t\n"), [Retry { why: why::SECRETS.into(), path: None }]);
+        assert_eq!(why::of_error("PdfiumLibraryInternalError(PasswordError)"), why::PASSWORD);
+        assert_eq!(why::of_error("PdfiumLibraryInternalError(FormatError)"), why::DAMAGED);
+        assert_eq!(why::of_skip(SKIP_ONLINE), why::ONLINE);
+        assert_eq!(why::of_skip(SKIP_STOPPED), why::STOPPED);
+        assert_eq!(why::of_skip("what's said"), why::SKIPPED);
+    }
+
+    #[test]
+    fn speeds() {
+        for speed in Speed::ALL {
+            assert_eq!(Speed::parse(speed.name()), speed);
+        }
+        assert_eq!(Speed::parse("?"), Speed::Normal);
+        // Normal as it always was: one document at a time, waiting and resting for other programs.
+        assert!(Speed::Normal.waits_for_quiet() && Speed::Normal.rests(true) && !Speed::Normal.rests(false));
+        assert_eq!(Speed::Normal.text_workers(32), 1);
+        assert!(Speed::Gentle.rests(false) && Speed::Fast.waits_for_quiet() && !Speed::Fast.rests(true));
+        assert!(!Speed::Full.waits_for_quiet() && !Speed::Full.rests(true) && !Speed::Full.background_io());
+        assert_eq!(Speed::Full.text_workers(32), 24);
+        assert_eq!(Speed::Full.text_workers(64), 24);
+        assert_eq!(Speed::Full.text_workers(24), 16);
+        assert_eq!(Speed::Full.text_workers(16), 8);
+        assert_eq!(Speed::Full.text_workers(8), 4);
+        assert_eq!(Speed::Full.text_workers(2), 1);
+        assert_eq!((Speed::Full.picture_workers(32), Speed::Full.picture_workers(8), Speed::Normal.picture_workers(32)), (2, 1, 1));
+        // Images made ready ahead: only at the speeds that hold more for it.
+        assert_eq!(Speed::ALL.map(Speed::pictures_ahead), [0, 0, 2, 2]);
+        // Bedrock's listers: up to 8, never every core.
+        assert_eq!(Speed::ALL.map(|speed| speed.name_listers(32)), [2, 2, 4, 8]);
+        assert_eq!(Speed::ALL.map(|speed| speed.name_listers(4)), [2, 2, 3, 3]);
+        assert_eq!(Speed::ALL.map(|speed| speed.name_listers(1)), [1, 1, 1, 1]);
+        assert!(Speed::Gentle < Speed::Normal && Speed::Fast < Speed::Full);
     }
 
     #[test]

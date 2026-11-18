@@ -1,32 +1,37 @@
-//! "Learn more": the pages travel with the app (they read offline and match this version) and open as Markdown files.
+//! "Learn more": the pages open on GitHub, at the release this copy is (so they match what it does).
 
 use crate::app::App;
-use crate::settings::log;
 
-const PAGES: [(&str, &str, &str); 4] = [
-    ("everything", "EVERYTHING.md", include_str!("../../docs/EVERYTHING.md")),
-    ("privacy", "PRIVACY.md", include_str!("../../docs/PRIVACY.md")),
-    ("models", "MODELS.md", include_str!("../../docs/MODELS.md")),
+const REPOSITORY: &str = "https://github.com/aynader/Excavate";
+
+const PAGES: [(&str, &str); 4] = [
+    ("everything", "docs/EVERYTHING.md"),
+    ("privacy", "docs/PRIVACY.md"),
+    ("models", "docs/MODELS.md"),
     // The Indexers page's figures: where and how they were measured.
-    ("measured", "BENCHMARKS.md", include_str!("../../benchmarks/README.md")),
+    ("measured", "benchmarks/README.md"),
 ];
 
-/// Opens a page by its short name, with whatever opens Markdown here (Notepad when nothing does).
-pub fn open(app: &App, page: &str) {
-    // A page on the web, as it is.
-    if page.starts_with("https://") {
-        let _ = winsys::shell::open(0, page);
-        return;
+/// A page's address: the file at this version's release tag.
+fn address(page: &str) -> Option<String> {
+    let (_, file) = PAGES.iter().find(|(name, _)| *name == page)?;
+    Some(format!("{REPOSITORY}/blob/v{}/{file}", env!("CARGO_PKG_VERSION")))
+}
+
+/// Opens a page by its short name, or a web address as it is, in the browser.
+pub fn open(_app: &App, page: &str) {
+    let address = if page.starts_with("https://") { Some(page.to_string()) } else { address(page) };
+    if let Some(address) = address {
+        let _ = winsys::shell::open(0, &address);
     }
-    let Some((_, file, text)) = PAGES.iter().find(|(name, ..)| *name == page) else { return };
-    let folder = app.paths.local.join("docs");
-    let path = folder.join(file);
-    if std::fs::create_dir_all(&folder).and_then(|()| std::fs::write(&path, text)).is_err() {
-        log(&format!("can't write {}", path.display()));
-        return;
-    }
-    let path = path.display().to_string();
-    if winsys::shell::open(0, &path).is_err() {
-        let _ = std::process::Command::new("notepad.exe").arg(&path).spawn();
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn pages_open_at_this_release() {
+        let privacy = super::address("privacy").unwrap();
+        assert_eq!(privacy, format!("https://github.com/aynader/Excavate/blob/v{}/docs/PRIVACY.md", env!("CARGO_PKG_VERSION")));
+        assert!(super::address("nothing").is_none());
     }
 }

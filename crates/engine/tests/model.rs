@@ -122,8 +122,8 @@ fn naive_glob(p: &[char], t: &[char]) -> bool {
 /// Whether a whole word `w` is in `text` (bounded by what isn't a letter or digit).
 fn naive_word(text: &str, w: &str) -> bool {
     text.match_indices(w).any(|(at, _)| {
-        let before = text[..at].chars().next_back().map_or(true, |c| !(c.is_alphanumeric() || c == '_'));
-        let after = text[at + w.len()..].chars().next().map_or(true, |c| !(c.is_alphanumeric() || c == '_'));
+        let before = text[..at].chars().next_back().is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
+        let after = text[at + w.len()..].chars().next().is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
         before && after
     })
 }
@@ -350,7 +350,7 @@ fn run(ops: Vec<Op>, table_from_start: bool) -> Result<(), TestCaseError> {
             Op::Compact => {
                 index.settle();
                 // In place, or into a new index, by turns.
-                let map = if index.len() % 2 == 0 {
+                let map = if index.len().is_multiple_of(2) {
                     index.compact_in_place()
                 } else {
                     let (fresh, map) = index.compact();

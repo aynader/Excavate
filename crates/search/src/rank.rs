@@ -118,13 +118,11 @@ pub fn name_match(name: &str, terms: &Terms) -> Option<(f32, Vec<Range<usize>>)>
             Some(found) => found,
             // Initials are a guess: asking for exact matches asks for no guessing.
             None if matching.case || matching.whole_word => return None,
-            None => match initials(name, &boundaries, word) {
-                Some(ranges) => {
-                    highlights.extend(ranges);
-                    total += 0.7;
-                    continue;
-                }
-                None => return None,
+            None => {
+                let ranges = initials(name, &boundaries, word)?;
+                highlights.extend(ranges);
+                total += 0.7;
+                continue;
             },
         };
         if range.start < previous_end {
@@ -325,11 +323,10 @@ pub fn score(candidate: &Candidate, quality: f32, context: &Context) -> f32 {
     {
         score -= 12.0;
     }
-    if let Some(rest) = path.strip_prefix(&context.profile) {
-        if OWN.iter().any(|own| rest.starts_with(own)) {
+    if let Some(rest) = path.strip_prefix(&context.profile)
+        && OWN.iter().any(|own| rest.starts_with(own)) {
             score += 5.0;
         }
-    }
     let depth = path.matches('\\').count() as f32;
     score -= 0.4 * (depth - 4.0).max(0.0);
     score -= 0.05 * candidate.name.chars().count() as f32;

@@ -54,28 +54,14 @@ fn offset_seconds() -> i64 {
     }
 }
 
-/// Days since 1970-01-01 → (year, month, day) (Howard Hinnant's civil_from_days).
+/// Days since 1970-01-01 → (year, month, day).
 fn civil(days: i64) -> Date {
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    let year = (yoe + era * 400 + i64::from(month <= 2)) as i32;
-    (year, month, day)
+    let (year, month, day) = common::civil(days);
+    (year as i32, month as u32, day as u32)
 }
 
 fn days_from_civil((year, month, day): Date) -> i64 {
-    let year = i64::from(year) - i64::from(month <= 2);
-    let era = year.div_euclid(400);
-    let yoe = year.rem_euclid(400);
-    let mp = (i64::from(month) + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + i64::from(day) - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
+    common::days_from_civil(i64::from(year), i64::from(month), i64::from(day))
 }
 
 fn days_between(earlier: Date, later: Date) -> i64 {

@@ -1,13 +1,13 @@
 [workspace]
 resolver = "3"
-members = ["app", "indexer", "crates/engine", "crates/config", "crates/content", "crates/extract", "crates/privacy", "crates/everything", "crates/mark", "crates/winsys", "crates/search", "crates/sweep", "crates/seeing", "benchmarks/measure"]
+members = ["app", "indexer", "crates/engine", "crates/common", "crates/config", "crates/content", "crates/extract", "crates/privacy", "crates/everything", "crates/mark", "crates/winsys", "crates/search", "crates/sweep", "crates/seeing", "benchmarks/measure"]
 default-members = ["app", "indexer"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "MIT"
-rust-version = "1.95"
+rust-version = "1.98"
 authors = ["Amr Nader"]
 
 [workspace.dependencies]
@@ -18,6 +18,7 @@ winsys = { path = "crates/winsys" }
 search = { path = "crates/search" }
 sweep = { path = "crates/sweep" }
 seeing = { path = "crates/seeing" }
+common = { path = "crates/common" }
 config = { path = "crates/config" }
 content = { path = "crates/content" }
 extract = { path = "crates/extract" }
@@ -71,6 +72,7 @@ windows = { version = "0.62", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_Shell_Common",
+    "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_WindowsAndMessaging",
 ] }
 
@@ -80,6 +82,13 @@ lto = "fat"
 codegen-units = 1
 strip = true
 debug = false
+
+# Release as it behaves (optimized, no debug checks) but quick to build: for checking what only shows in a release.
+[profile.quickrel]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
 
 # Fast incremental builds while working, but optimized dependencies (Slint's renderer, image decoding). Little debug
 # information: full debug info came to over 550 MB of .pdb files per build.
@@ -95,3 +104,11 @@ debug = false
 # Patched in vendor/ (frame_throttle.rs only); drop this when a Slint update fixes it.
 [patch.crates-io]
 i-slint-backend-winit = { path = "vendor/i-slint-backend-winit" }
+
+# Clippy as CI runs it (warnings fail it), less these, which are this code's style rather than faults: loops over
+# several arrays by one index, lists of highlighted ranges that hold one, and long signatures and types kept whole.
+[workspace.lints.clippy]
+needless_range_loop = "allow"
+single_range_in_vec_init = "allow"
+too_many_arguments = "allow"
+type_complexity = "allow"

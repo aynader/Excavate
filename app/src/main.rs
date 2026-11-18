@@ -6,17 +6,23 @@
 
 #![windows_subsystem = "windows"]
 
+mod activity;
 mod app;
+mod bedrock_helper;
 mod bench;
 mod blur;
 mod contents;
 mod demo;
+mod diagnostics;
 mod docs;
 mod everything_setup;
+mod files_read;
 mod format;
+mod found;
 mod functions;
 mod icons;
 mod indexer;
+mod install;
 mod intro;
 mod launchers;
 mod own_index;
@@ -27,6 +33,8 @@ mod seeking;
 mod setup;
 mod themes;
 mod update;
+mod watchdog;
+mod whole_text;
 
 slint::include_modules!();
 
@@ -43,12 +51,28 @@ thread_local! {
 }
 
 /// Runs `f` with the app, on the UI thread (where it lives). Closures sent from other threads land here through
-/// `slint::invoke_from_event_loop`.
+/// `slint::invoke_from_event_loop`. One that holds the UI thread a quarter of a second or more is logged with where
+/// it came from: the popup can't answer meanwhile (see `watchdog`).
+#[track_caller]
 pub fn with_app(f: impl FnOnce(&Rc<App>)) {
+    let caller = std::panic::Location::caller();
     let app = APP.with(|app| app.borrow().clone());
     if let Some(app) = app {
+        let started = std::time::Instant::now();
         f(&app);
+        let took = started.elapsed();
+        if took >= std::time::Duration::from_millis(250) {
+            log(&format!("slow on the UI thread: {} ms in {}:{}", took.as_millis(), caller.file(), caller.line()));
+        } else if ui_timing().is_some_and(|least| took >= least) {
+            log(&format!("on the UI thread: {:.1} ms in {}:{}", took.as_secs_f64() * 1000.0, caller.file(), caller.line()));
+        }
     }
+}
+
+/// For measuring: `EXCAVATE_UI_TIMING=<ms>` logs every `with_app` that takes at least that long (not only the slow ones).
+pub fn ui_timing() -> Option<std::time::Duration> {
+    static LEAST: std::sync::OnceLock<Option<std::time::Duration>> = std::sync::OnceLock::new();
+    *LEAST.get_or_init(|| std::env::var("EXCAVATE_UI_TIMING").ok().and_then(|ms| ms.parse::<f64>().ok()).map(|ms| std::time::Duration::from_secs_f64(ms / 1000.0)))
 }
 
 pub const TRAY_OPEN: u16 = 1;
@@ -74,6 +98,39 @@ fn main() {
     let bench = args.iter().any(|arg| arg == "--bench");
     // Started by an update: the copy it replaces is quitting.
     let after_update = args.iter().any(|arg| arg == "--after-update");
+    // `--quit`: asks the copy running for this home to quit, as its tray menu's Quit does (for scripts and tests).
+    if args.iter().any(|arg| arg == "--quit") {
+        let heard = winsys::tray::ask_to_quit(&config::window_class("Shell"));
+        log(&format!("--quit: {}", if heard { "asked" } else { "no Excavate running" }));
+        winsys::process::exit_now(if heard { 0 } else { 1 });
+    }
+    // Run from where it was unzipped: Excavate puts itself in place first (install.rs). `--uninstall` takes it out.
+    match install::decide(&args) {
+        install::Start::Run => {}
+        // (Silently, a copy already in place is put in place again: winget repairs that way, and nothing opens.)
+        install::Start::Hand(_) if install::silent(&args) => winsys::process::exit_now(install::install_silently()),
+        install::Start::Hand(exe) => {
+            install::hand_over(&exe);
+            return;
+        }
+        install::Start::Install { update } => {
+            if install::silent(&args) {
+                winsys::process::exit_now(install::install_silently());
+            }
+            let paths = Paths::new();
+            install::run_install(update, &Settings::load(&paths));
+            winsys::process::exit_now(0);
+        }
+        install::Start::Uninstall => {
+            let paths = Paths::new();
+            if install::silent(&args) {
+                winsys::process::exit_now(install::uninstall_silently(&paths));
+            }
+            let settings = Settings::load(&paths);
+            install::run_uninstall(paths, &settings);
+            winsys::process::exit_now(0);
+        }
+    }
     let first = if after_update {
         winsys::single_instance_after(&config::instance_name("Running"), std::time::Duration::from_secs(20))
     } else {
@@ -81,12 +138,14 @@ fn main() {
     };
     if !first {
         // Already running: ask it to open, and leave.
-        winsys::tray::knock();
+        winsys::tray::knock(&config::window_class("Shell"));
         return;
     }
     let started = std::time::Instant::now();
     // There's no console to see a panic on: it goes in the log.
     std::panic::set_hook(Box::new(|info| log(&format!("panic: {info}"))));
+    // A busy moment mustn't turn the popup into a "Not responding" stand-in with a plain icon on the taskbar.
+    winsys::window::no_ghosting();
     let paths = Paths::new();
     // An update downloaded and checked earlier: put in place, and started instead of this.
     if !bench && update::apply_staged(&paths) {
@@ -156,6 +215,8 @@ fn main() {
     // Updates, with the setting on: looked for a minute after starting, then once a day.
     let updates = slint::Timer::default();
     updates.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(60), || with_app(|app| {
+        // The indexer, started again should it have ended by itself.
+        app.indexer.watch();
         let due = {
             let settings = app.settings.borrow();
             settings.auto_update && settings.setup_done && app::now() - settings.update_checked_at >= update::EVERY
@@ -166,8 +227,33 @@ fn main() {
             update::check(&app.paths);
         }
     }));
+    // With the setting on, a program an earlier version's updater left out is fetched (once, from this version's release).
+    if !bench && app.settings.borrow().auto_update {
+        update::repair(&app.paths);
+    }
     log(&format!("started in {} ms (renderer {renderer})", started.elapsed().as_millis()));
+    watchdog::start();
+    // Activity's view of reading, kept ready off the UI thread (slowly, until Settings opens).
+    activity::start(app.paths.clone());
+    if !winsys::media::available() {
+        log(&format!("media: {}", winsys::media::MISSING));
+    }
 
+    // For measuring: Settings opened as the tray menu opens it, every so many seconds, and closed again before the next.
+    let cycle = slint::Timer::default();
+    if let Some(every) = std::env::var("EXCAVATE_SETTINGS_CYCLE").ok().and_then(|seconds| seconds.parse::<u64>().ok()) {
+        let opened = std::rc::Rc::new(std::cell::Cell::new(false));
+        cycle.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(every.max(2)), move || with_app(|app| {
+            if opened.replace(!opened.get()) {
+                setup::close_for_measuring();
+            } else {
+                let started = std::time::Instant::now();
+                popup::hide_for_settings(app);
+                setup::open(app, false);
+                log(&format!("settings cycle: opened in {:.1} ms", started.elapsed().as_secs_f64() * 1000.0));
+            }
+        }));
+    }
     if bench {
         bench::run(&app);
     } else if std::env::var_os("EXCAVATE_SETUP_STEP").is_some() && app.settings.borrow().setup_done {

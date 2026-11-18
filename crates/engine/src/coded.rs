@@ -123,7 +123,7 @@ impl Coded {
 
     /// One more entry, with a value of its own (the next full write codes it).
     pub fn push(&mut self, value: u32) {
-        if self.len % 32 == 0 {
+        if self.len.is_multiple_of(32) {
             self.ranks.push(self.values.len() as u32);
             self.codes.push(0);
         }
@@ -271,7 +271,7 @@ impl Coded {
     /// Reads the values in entry order from `from` (a multiple of 32), a word of codes at a time: what a scan of every
     /// entry uses, with no count of the entries before each and no branch on its code.
     pub fn cursor(&self, from: usize) -> Cursor<'_> {
-        debug_assert!(from % 32 == 0);
+        debug_assert!(from.is_multiple_of(32));
         Cursor { coded: self, at: from, word: 0, rank: self.ranks.get(from / 32).map_or(self.values.len(), |&rank| rank as usize) }
     }
 }
@@ -288,7 +288,7 @@ impl Cursor<'_> {
     /// The next entry's value, given its two other times.
     #[inline]
     pub fn next(&mut self, first: u32, second: u32) -> u32 {
-        if self.at % 32 == 0 {
+        if self.at.is_multiple_of(32) {
             self.word = self.coded.codes[self.at / 32];
         }
         let code = (self.word & 3) as usize;

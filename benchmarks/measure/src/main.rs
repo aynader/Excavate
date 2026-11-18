@@ -6,15 +6,23 @@
 //! measure reading --excavate <release folder> --kind <kind> --choice quick|balanced|deep [--files 300] [--runs 5]
 //!                 [--seed 1] [--keep <home>] [--out reading.json]
 //! measure finding --home <home kept by reading> --excavate <release folder> [--queries 1000] [--seed 1] [--out finding.json]
+//! measure conversing --prepare yes --excavate <release folder> --choice quick|balanced --work <folder> [--out prepared.json]
+//! measure conversing --home <home it made> --excavate <release folder> --queries <queries.jsonl> [--out conversing.json]
+//! measure memory  --home <home kept by reading> --excavate <release folder> [--rest 120] [--searches 30]
+//!                 [--max-app 120] [--max-reader 60] [--max-helper 40] [--max-searching 260] [--out memory.json]
 //! ```
 //!
 //! Kinds: documents, image-text, image-shown, speech, speech-fleurs, video-shown. The corpus: `--data <folder>` as
 //! `make_corpus.py` makes it, or each part on its own with `--documents`, `--images`, `--audio`, `--videos`, `--truth`.
 //! `names` needs Everything running, and administrator rights to build Bedrock from the drives' tables as Excavate
 //! does when allowed (without them it lists folders, as Excavate does when it isn't).
+// The programs it starts end with their job object (`Job`), when a benchmark ends or fails: none is waited for.
+#![allow(clippy::zombie_processes)]
 
+mod conversing;
 mod corpus;
 mod finding;
+mod memory;
 mod names;
 mod process;
 mod reading;
@@ -92,6 +100,22 @@ fn main() {
             queries: number("queries", 1000),
             seed: number("seed", 1) as u64,
         }),
+        "memory" => memory::run(&memory::Options {
+            home: path("home"),
+            excavate: path("excavate"),
+            rest: number("rest", 120) as u64,
+            searches: number("searches", 30),
+            limits: [number("max-app", 120) as u64, number("max-reader", 60) as u64, number("max-helper", 40) as u64,
+                     number("max-searching", 260) as u64],
+        }),
+        "conversing" => conversing::run(&conversing::Options {
+            excavate: path("excavate"),
+            work: work.clone(),
+            choice: text("choice", "balanced"),
+            prepare: flags.contains_key("prepare"),
+            home: flags.get("home").map(PathBuf::from),
+            queries: flags.get("queries").map(PathBuf::from),
+        }),
         _ => usage(),
     };
     let report = serde_json::json!({
@@ -106,6 +130,8 @@ fn main() {
     println!("written: {}", out.display());
     use std::io::Write;
     let _ = std::io::stdout().flush();
-    // Ended at once: after Everything's SDK has been used, a normal exit can hang (seen in the test machine).
-    winsys::process::exit_now(0);
+    // Ended at once: after Everything's SDK has been used, a normal exit can hang (seen in the test machine). A memory
+    // check over its limits fails the run.
+    let over = report["result"]["over"].as_array().is_some_and(|over| !over.is_empty());
+    winsys::process::exit_now(if over { 1 } else { 0 });
 }

@@ -35,6 +35,7 @@ fn watched_changes_keep_dates_and_attributes() {
     std::fs::set_permissions(&added, permissions.clone()).unwrap();
     wait("read-only reaches the index", || names.read(|index| index.more(e).attributes & 0x1 != 0));
 
+    #[allow(clippy::permissions_set_readonly_false)] // (a test file, made writable again on purpose)
     permissions.set_readonly(false);
     std::fs::set_permissions(&added, permissions).unwrap();
     names.stop();

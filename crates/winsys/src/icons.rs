@@ -89,8 +89,8 @@ unsafe fn read_bitmap(bitmap: HBITMAP) -> Option<Bitmap> {
             return None;
         }
         // Icons carry alpha; a photo's thumbnail may carry none at all (every alpha 0): opaque then.
-        let has_alpha = pixels.chunks_exact(4).any(|pixel| pixel[3] != 0);
-        for pixel in pixels.chunks_exact_mut(4) {
+        let has_alpha = pixels.as_chunks::<4>().0.iter().any(|pixel| pixel[3] != 0);
+        for pixel in pixels.as_chunks_mut::<4>().0 {
             pixel.swap(0, 2);
             if !has_alpha {
                 pixel[3] = 255;
@@ -117,7 +117,7 @@ mod tests {
         let windows = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".into());
         let icon = image(&format!(r"{windows}\explorer.exe"), 32, Kind::Icon).expect("explorer's icon");
         assert!(icon.width >= 32 && icon.rgba.len() == (icon.width * icon.height * 4) as usize);
-        assert!(icon.rgba.chunks_exact(4).any(|pixel| pixel[3] == 0), "an icon has transparent corners");
+        assert!(icon.rgba.as_chunks::<4>().0.iter().any(|pixel| pixel[3] == 0), "an icon has transparent corners");
         assert!(image(&windows, 32, Kind::Icon).is_some(), "a folder's icon");
         assert!(image(r"C:\no\such\file.txt", 32, Kind::Icon).is_none());
         let wallpaper = format!(r"{windows}\Web\Wallpaper\Windows\img0.jpg");

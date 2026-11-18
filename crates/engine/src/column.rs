@@ -168,7 +168,7 @@ impl<T: Copy> Clone for Column<T> {
 impl<T: Copy> Column<T> {
     /// `len` values at `offset` in the mapping, with room for `cap` (the caller checked they're inside it and aligned).
     pub fn mapped(map: &Arc<Mapping>, offset: usize, len: usize, cap: usize) -> Column<T> {
-        assert!(offset % std::mem::align_of::<T>() == 0 && offset + cap * std::mem::size_of::<T>() <= map.len() && len <= cap);
+        assert!(offset.is_multiple_of(std::mem::align_of::<T>()) && offset + cap * std::mem::size_of::<T>() <= map.len() && len <= cap);
         Column::Mapped { map: map.clone(), at: map.at(offset) as *mut T, len, cap }
     }
 
@@ -184,7 +184,7 @@ impl<T: Copy> Column<T> {
     }
 
     /// The column in Excavate's memory, with room for `more` (it outgrew its room in the file).
-    fn to_heap(&mut self, more: usize) -> &mut Vec<T> {
+    fn onto_heap(&mut self, more: usize) -> &mut Vec<T> {
         if let Column::Mapped { len, .. } = self {
             let mut vec = Vec::with_capacity(*len + more);
             vec.extend_from_slice(self);
@@ -202,7 +202,7 @@ impl<T: Copy> Column<T> {
             Column::Heap(vec) => vec.reserve_exact(more),
             Column::Mapped { len, cap, .. } if *len + more <= *cap => {}
             Column::Mapped { .. } => {
-                self.to_heap(more);
+                self.onto_heap(more);
             }
         }
     }
@@ -213,7 +213,7 @@ impl<T: Copy> Column<T> {
             Column::Mapped { len, cap, .. } if *len + more <= *cap => {}
             Column::Mapped { len, .. } => {
                 let more = more.max(*len / 32).max(4096);
-                self.to_heap(more);
+                self.onto_heap(more);
             }
         }
     }
@@ -228,7 +228,7 @@ impl<T: Copy> Column<T> {
             }
             Column::Mapped { len, .. } => {
                 let more = (*len / 32).max(4096);
-                self.to_heap(more).push(value);
+                self.onto_heap(more).push(value);
             }
         }
     }
@@ -243,7 +243,7 @@ impl<T: Copy> Column<T> {
             }
             Column::Mapped { len, .. } => {
                 let more = (*len / 32).max(values.len() + 4096);
-                self.to_heap(more).extend_from_slice(values);
+                self.onto_heap(more).extend_from_slice(values);
             }
         }
     }

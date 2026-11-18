@@ -66,6 +66,8 @@ pub fn cost(pid: u32) -> Option<(f64, u64)> {
 pub struct Job(HANDLE);
 
 unsafe impl Send for Job {}
+// (Only asked about from several threads; the handle itself never changes.)
+unsafe impl Sync for Job {}
 
 impl Job {
     pub fn new() -> Job {
@@ -81,6 +83,20 @@ impl Job {
 
     pub fn add(&self, child: &std::process::Child) -> bool {
         unsafe { AssignProcessToJobObject(self.0, child.as_raw_handle() as HANDLE) != 0 }
+    }
+
+    /// Whether the process `pid` is in this job (or a job inside it).
+    pub fn contains(&self, pid: u32) -> bool {
+        unsafe {
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if process.is_null() {
+                return false;
+            }
+            let mut inside = 0;
+            let asked = windows_sys::Win32::System::JobObjects::IsProcessInJob(process, self.0, &mut inside) != 0;
+            CloseHandle(process);
+            asked && inside != 0
+        }
     }
 
     /// The CPU time of every process in it so far, ended ones too, in seconds.

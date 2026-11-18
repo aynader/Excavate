@@ -26,10 +26,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-/// Threads that list a drive again while a saved index answers searches (a new build, with nothing to search yet,
-/// takes them all).
-const GENTLE_THREADS: usize = 2;
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Phase {
     #[default]
@@ -48,6 +44,8 @@ pub struct State {
     pub entries: usize,
     pub volumes: Vec<String>,
     pub loaded_in: Option<Duration>,
+    /// Why the saved index wasn't used, when there was one (it's listed afresh): said in the log.
+    pub not_loaded: String,
     /// How long listing the drives once more took to fill in dates made and opened (an index saved without them).
     pub times_filled_in: Option<Duration>,
     /// Listing the drives once more for that, now.
@@ -237,7 +235,14 @@ impl Names {
         let started = Instant::now();
         // The saved index, when it has any of these drives (a drive plugged in or taken out between two starts doesn't
         // mean listing every drive again): a drive it has that isn't here is taken out, one it hasn't is listed.
-        let loaded = Index::open(&self.file).ok().filter(|index| {
+        let opened = Index::open(&self.file);
+        if let Err(error) = &opened {
+            if self.file.exists() {
+                let why = error.to_string();
+                self.set(|s| s.not_loaded = why);
+            }
+        }
+        let loaded = opened.ok().filter(|index| {
             index.roots().iter().any(|&r| index.flags[r as usize] & DEAD == 0 && drives.iter().any(|d| index.name(r) == d.trim_end_matches('\\')))
         }).map(|mut index| {
             let away: Vec<u32> = index.roots().iter().copied()
@@ -272,9 +277,11 @@ impl Names {
         }
         self.set(|s| s.watches = watches.len());
         let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(8);
-        // Listing a whole drive again while a saved index answers searches: gently (at full speed the disk is at
-        // 100% for minutes after a start that came hours after the last), slower but out of the way.
-        let gentle = threads.min(GENTLE_THREADS);
+        // Listing a whole drive again while a saved index answers searches: at the speed control's pace (`walk::PACE`,
+        // which it changes at any time), gently by default (at full speed the disk is at 100% for minutes after a start
+        // that came hours after the last), slower but out of the way. A new build, with nothing to search yet, takes
+        // every thread.
+        let paced = walk::most_listers();
         if catch_up {
             // The table first (the listing looks entries up by it), built off the lock (a mapped file has it).
             if !self.index.read().unwrap().has_table() {
@@ -283,6 +290,11 @@ impl Names {
             }
             let saved = journal::load(&self.file);
             let mut refused = 0;
+            // With Excavate Bedrock, a drive whose journal can't say what changed isn't listed folder by folder
+            // (minutes): every drive is read again from its file table (seconds) and the new index takes the old one's
+            // place, while the old one answers meanwhile.
+            let service = service_installed();
+            let mut read_again = false;
             for volume in &volumes {
                 if volume.root == NONE {
                     continue;
@@ -318,6 +330,10 @@ impl Names {
                             caught.removed += listed.removed;
                         });
                     }
+                    Err(why) if service => {
+                        self.set(|s| s.journal_failed.push(format!("{}: {why:?} (read again through Excavate Bedrock)", volume.path)));
+                        read_again = true;
+                    }
                     Err(why) => {
                         let overwritten = matches!(why, journal::Why::Overwritten);
                         self.set(|s| s.journal_failed.push(format!("{}: {why:?}", volume.path)));
@@ -327,7 +343,7 @@ impl Names {
                         let relisting = Relisting { drive: volume.path.clone(), total, from: walk::listed(), overwritten };
                         let began = Instant::now();
                         self.set(|s| s.relisting = Some(relisting));
-                        let left_out = walk::reconcile_until(&self.index, volume.root, drive, true, gentle, &self.stop).refused;
+                        let left_out = walk::reconcile_paced(&self.index, volume.root, drive, true, paced, &walk::PACE, &self.stop).refused;
                         self.set(|s| {
                             s.relisting = None;
                             s.relisted = Some(Relisted { drive: volume.path.clone(), took: began.elapsed(), overwritten });
@@ -335,6 +351,35 @@ impl Names {
                         refused += left_out;
                         if let Some(position) = position {
                             self.journal.lock().unwrap().insert(volume.path.clone(), journal::Saved { position, refused: left_out });
+                        }
+                    }
+                }
+            }
+            if read_again {
+                let began = Instant::now();
+                match build_index(&drives, &self.stop) {
+                    Ok((index, saved, _)) => {
+                        volumes = roots_of(&index, &drives);
+                        *self.journal.lock().unwrap() = saved;
+                        *self.index.write().unwrap() = index;
+                        refused = 0;
+                        self.set(|s| s.relisted = Some(Relisted { drive: "every drive".into(), took: began.elapsed(), overwritten: true }));
+                    }
+                    Err(why) => {
+                        // The service couldn't: each drive whose journal couldn't say is listed the usual way.
+                        self.set(|s| s.error = format!("reading again through Excavate Bedrock: {why}"));
+                        for volume in &volumes {
+                            let known = self.journal.lock().unwrap().contains_key(&volume.path);
+                            if volume.root == NONE || known {
+                                continue;
+                            }
+                            let position = journal::position(&volume.path);
+                            let drive = volume.path.trim_end_matches('\\');
+                            let left_out = walk::reconcile_paced(&self.index, volume.root, drive, true, paced, &walk::PACE, &self.stop).refused;
+                            refused += left_out;
+                            if let Some(position) = position {
+                                self.journal.lock().unwrap().insert(volume.path.clone(), journal::Saved { position, refused: left_out });
+                            }
                         }
                     }
                 }
@@ -348,6 +393,13 @@ impl Names {
                 refused += self.add_drive(volume, threads);
             }
             self.set(|s| { s.refused = refused; s.caught_up_in = Some(started.elapsed()); });
+        } else if let Some((index, saved, _)) = service_installed().then(|| build_index(&drives, &self.stop).ok()).flatten() {
+            // Through Excavate Bedrock: every drive from its file table, in seconds.
+            volumes = roots_of(&index, &drives);
+            *self.journal.lock().unwrap() = saved;
+            let entries = index.live();
+            *self.index.write().unwrap() = index;
+            self.set(|s| { s.phase = Phase::CatchingUp; s.entries = entries; s.refused = 0; s.built_in = Some(started.elapsed()); });
         } else {
             let mut index = Index::new();
             let mut refused = 0;
@@ -357,7 +409,13 @@ impl Names {
                 let position = journal::position(drive);
                 let walked = walk::walk_until(&mut index, drive, threads, &self.stop);
                 if walked.stopped {
-                    // Switched off while listing: a part of the drives isn't worth keeping.
+                    // Quit or switched off while listing: what was listed is kept, and found at the next start, which
+                    // lists this drive again (keeping what's there; it has no journal position yet) and any after it.
+                    // (Saved through a new file put in place: a save cut short by the quit leaves nothing half done.)
+                    index.shrink();
+                    *self.index.write().unwrap() = index;
+                    self.rank();
+                    self.save();
                     return;
                 }
                 let left_out = walked.refused.values().sum::<usize>();
@@ -386,7 +444,7 @@ impl Names {
             let started = Instant::now();
             self.set(|s| s.filling = true);
             for volume in volumes.iter().filter(|volume| volume.root != NONE) {
-                walk::reconcile_until(&self.index, volume.root, volume.path.trim_end_matches('\\'), true, gentle, &self.stop);
+                walk::reconcile_paced(&self.index, volume.root, volume.path.trim_end_matches('\\'), true, paced, &walk::PACE, &self.stop);
             }
             if self.stop.load(Ordering::Relaxed) {
                 return;
@@ -554,6 +612,22 @@ impl Names {
             }
         };
         let mut batch = Vec::with_capacity(4096);
+        // The index's own files (and the temporary ones they're saved through): writing them is reported like any
+        // change, and applying that marked the index changed, so it was written again 30 s later, which was reported
+        // again: a wake-up and a write every half minute with nothing else happening, and many more while Windows
+        // wrote the mapped file's pages. What happens to them is left out; their entries stay as they are (made the
+        // first time they're seen), with their size and date brought up to date when the folder is next listed.
+        let kept = [self.file.clone(), journal::file_for(&self.file)];
+        let own: Vec<String> = [kept[0].clone(), kept[1].clone(), kept[0].with_extension("saving"), kept[1].with_extension("journal-saving")]
+            .iter().map(|path| path.to_string_lossy().replace('/', "\\").to_lowercase()).collect();
+        let own_names: Vec<String> = own.iter().filter_map(|path| path.rsplit('\\').next().map(str::to_string)).collect();
+        let is_own = |drive: &str, prefix: &str, path: &str| {
+            let name = path.rsplit('\\').next().unwrap_or(path);
+            own_names.iter().any(|own| own.eq_ignore_ascii_case(name)) && {
+                let relative = if prefix.is_empty() { path.to_string() } else { format!("{prefix}\\{path}") };
+                own.contains(&walk::join(drive, &relative).to_lowercase())
+            }
+        };
         let mut last_drives = Instant::now();
         // (Which drive letters there are: the cheap thing to watch; a change sends for the full look.)
         let mut drive_mask = unsafe { windows_sys::Win32::Storage::FileSystem::GetLogicalDrives() };
@@ -607,12 +681,35 @@ impl Names {
             }
             let mut relist: Vec<(u32, bool)> = Vec::new();
             let mut moved_in: Vec<(usize, u32)> = Vec::new();
+            let mut news = false;
             {
                 let mut index = self.index.write().unwrap();
                 for (id, event) in batch.drain(..) {
                     if id == NUDGE {
                         continue;
                     }
+                    if let (Event::Change(change), Some(watch)) = (&event, watches.get(&id)) {
+                        let volume = &volumes[watch.volume];
+                        let own_path = |path: &str| is_own(&volume.path, &watch.prefix, path);
+                        // A file of its own that the index hasn't got yet (saved before it was there) is made.
+                        let there = |path: &str| {
+                            let name = path.rsplit('\\').next().unwrap_or(path);
+                            own_names[2..].iter().any(|temporary| temporary.eq_ignore_ascii_case(name)) || {
+                                let relative = if watch.prefix.is_empty() { path.to_string() } else { format!("{}\\{path}", watch.prefix) };
+                                watch::find(&index, volume.root, &relative).is_some()
+                            }
+                        };
+                        let skip = match change {
+                            Change::Modified(path, _) | Change::Removed(path) => own_path(path),
+                            Change::Added(path, _) => own_path(path) && there(path),
+                            Change::Renamed(from, to) => own_path(from) && own_path(to) && there(to),
+                            Change::Overflowed => false,
+                        };
+                        if skip {
+                            continue;
+                        }
+                    }
+                    news = true;
                     match event {
                         Event::Change(change) => {
                             let Some(watch) = watches.get(&id) else { continue };
@@ -672,15 +769,13 @@ impl Names {
                 }
                 index.settle();
             }
-            // Folders that arrived whole, listed now that the lock is free.
-            for (_, folder) in moved_in {
-                let path = {
-                    let index = self.index.read().unwrap();
-                    if index.gone(folder) { continue; }
-                    index.path(folder)
-                };
-                walk::reconcile_until(&self.index, folder, &path, true, threads, &self.stop);
-            }
+            // Folders that arrived whole, listed now that the lock is free: all of them at once (the listers start once
+            // for the batch, not once for each of a program's new folders).
+            let jobs: Vec<(String, u32, bool)> = {
+                let index = self.index.read().unwrap();
+                moved_in.into_iter().filter(|&(_, folder)| !index.gone(folder)).map(|(_, folder)| (index.path(folder), folder, true)).collect()
+            };
+            walk::reconcile_many(&self.index, jobs, threads, &self.stop);
             // Lists again what a watch may have missed: just that folder.
             for (id, deep) in relist {
                 let Some(watch) = watches.get(&id) else { continue };
@@ -694,6 +789,10 @@ impl Names {
                 if overflowed {
                     self.set(|s| s.overflows += 1);
                 }
+            }
+            if !news {
+                // Only the index's own files: nothing to keep.
+                continue;
             }
             let total = (applied.added + applied.removed + applied.renamed + applied.modified) as u64;
             let live = self.index.read().unwrap().live();
@@ -905,6 +1004,15 @@ fn plan(hub: &Hub, watches: &mut HashMap<u32, Watched>, next_id: &mut u32, volum
     }
 }
 
+/// Each drive's entry in `index` (NONE for one it hasn't).
+fn roots_of(index: &Index, drives: &[String]) -> Vec<Volume> {
+    drives.iter().map(|drive| {
+        let root = index.roots().iter().copied()
+            .find(|&r| index.flags[r as usize] & DEAD == 0 && index.name(r) == drive.trim_end_matches('\\')).unwrap_or(NONE);
+        Volume { path: drive.clone(), root }
+    }).collect()
+}
+
 /// What a build from the drives' own file tables did (`build_from_tables`).
 #[derive(Debug, Default)]
 pub struct Built {
@@ -913,47 +1021,120 @@ pub struct Built {
     pub read: Vec<String>,
     pub walked: Vec<String>,
     pub took: Duration,
+    /// Read through Excavate Bedrock (the service).
+    pub through_service: bool,
 }
 
 /// The index built from nothing by reading each drive's own file table, as Everything's service does: seconds instead
-/// of minutes, and every folder, the protected ones too. Needs administrator rights (the volume is read raw), so it
-/// runs in a helper Windows asked permission for (`excavate-indexer --build-names`), once, when there's no index yet;
-/// the helper reads, saves the index at `file` with each drive's journal position, and ends. Excavate (without those
-/// rights) then opens it and catches up from the journals like after any restart. Only names, sizes, dates and
-/// attributes are read; nothing is written but `file` and its journal note. `drives` for tests (default: every
-/// indexed drive). A drive without an MFT is listed folder by folder; one whose MFT fails partway fails the build
-/// (then Excavate lists the drives the usual way).
+/// of minutes, and every folder, the protected ones too. Through Excavate Bedrock (the service) when it's installed;
+/// otherwise it needs administrator rights (the volume is read raw), so it runs in a helper Windows asked permission
+/// for (`excavate-indexer --build-names`), once, when there's no index yet. The index is saved at `file` with each
+/// drive's journal position; Excavate (without those rights) then opens it and catches up from the journals like after
+/// any restart. Only names, sizes, dates and attributes are read; nothing is written but `file` and its journal note.
+/// `drives` for tests (default: every indexed drive). A drive without an MFT is listed folder by folder; one whose MFT
+/// fails partway fails the build (then Excavate lists the drives the usual way).
 pub fn build_from_tables(file: &std::path::Path, drives: Option<Vec<String>>) -> Result<Built, String> {
-    let started = Instant::now();
-    let drives = drives.unwrap_or_else(indexed_drives);
-    let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(8);
     let stop = AtomicBool::new(false);
+    let (index, saved, built) = build_index(&drives.unwrap_or_else(indexed_drives), &stop)?;
+    if let Some(folder) = file.parent() {
+        let _ = std::fs::create_dir_all(folder);
+    }
+    index.save(file).map_err(|error| format!("saving: {error}"))?;
+    journal::save(file, &saved);
+    Ok(built)
+}
+
+/// Whether Excavate Bedrock (the service) is installed: then a drive is read from its file table in seconds, without
+/// asking for administrator rights.
+pub fn service_installed() -> bool {
+    std::env::var_os("EXCAVATE_NO_SERVICE").is_none() && crate::service::installed()
+}
+
+/// Every drive in `drives` read into a new index, ready to search (sorted, its table made), with each drive's journal
+/// position from just before it was read. Each drive through the service when it's installed and reads it, else from
+/// its volume (with administrator rights), else folder by folder.
+pub fn build_index(drives: &[String], stop: &AtomicBool) -> Result<(Index, HashMap<String, journal::Saved>, Built), String> {
+    let started = Instant::now();
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(8);
     let mut index = Index::new();
     let mut saved = HashMap::new();
     let mut built = Built::default();
-    for drive in &drives {
+    // Where each journal is before reading: what changes from here on is caught up from it afterwards.
+    let positions: HashMap<String, journal::Position> = drives.iter().filter_map(|d| Some((d.clone(), journal::position(d)?))).collect();
+    let mut done: Vec<String> = Vec::new();
+    if service_installed() {
+        if let Ok(pipe) = crate::service::connect() {
+            let names: Vec<String> = drives.iter().map(|d| d.trim_end_matches('\\').to_string()).collect();
+            let mut builder: Option<crate::mft::Builder> = None;
+            let mut failed: Option<String> = None;
+            let listed = crate::service::list_through(pipe, &names, |part| match part {
+                crate::service::Listed::Drive { drive, records } => {
+                    // Record numbers are per drive (and not kept): each drive starts afresh.
+                    index.by_record = Default::default();
+                    let b = crate::mft::Builder::new(&mut index, &drive);
+                    b.expect(&mut index, records as usize);
+                    builder = Some(b);
+                }
+                crate::service::Listed::Records(records) => {
+                    if let Some(b) = builder.as_mut() {
+                        for (n, record) in records {
+                            b.add(&mut index, n, record);
+                        }
+                    }
+                }
+                crate::service::Listed::DriveDone { drive, error } => {
+                    let b = builder.take();
+                    if error.is_empty() {
+                        if let Some(b) = b {
+                            b.finish(&mut index);
+                        }
+                        if let Some(full) = drives.iter().find(|d| d.trim_end_matches('\\').eq_ignore_ascii_case(&drive)) {
+                            done.push(full.clone());
+                        }
+                    } else if b.is_some() {
+                        // Begun and then failed: what came of it can't be trusted.
+                        failed.get_or_insert(format!("{drive}: {error}"));
+                    }
+                }
+            });
+            if let Some(why) = failed {
+                return Err(why);
+            }
+            if let Err(error) = listed {
+                return Err(format!("Excavate Bedrock: {error}"));
+            }
+            index.by_record = Default::default();
+            built.through_service = true;
+        }
+    }
+    for drive in drives {
+        if stop.load(Ordering::Relaxed) {
+            return Err("stopped".into());
+        }
         let name = drive.trim_end_matches('\\');
-        // Where the journal is before reading: what changes from here on is caught up from it afterwards.
-        let position = journal::position(drive);
-        let before = index.len();
-        let read = crate::mft::RawVolume::open(name).ok().map(|mut volume| crate::mft::raw(&mut index, &mut volume, name));
-        // Record numbers are per drive (and not kept): the next drive starts afresh.
-        index.by_record = Default::default();
-        let refused = match read {
-            Some(Ok(_)) => {
-                built.read.push(drive.clone());
-                0
+        let refused = if done.contains(drive) {
+            built.read.push(drive.clone());
+            0
+        } else {
+            let before = index.len();
+            let read = crate::mft::RawVolume::open(name).ok().map(|mut volume| crate::mft::raw(&mut index, &mut volume, name));
+            index.by_record = Default::default();
+            match read {
+                Some(Ok(_)) => {
+                    built.read.push(drive.clone());
+                    0
+                }
+                // Not an NTFS volume, or not openable (nothing was added): listed folder by folder.
+                Some(Err(_)) | None if index.len() == before => {
+                    let walked = walk::walk_until(&mut index, drive, threads, stop);
+                    built.walked.push(drive.clone());
+                    walked.refused.values().sum::<usize>()
+                }
+                Some(Err(error)) => return Err(format!("{name}: {error}")),
+                None => return Err(format!("{name}: couldn't be opened")),
             }
-            // Not an NTFS volume (nothing was added): listed folder by folder.
-            Some(Err(_)) | None if index.len() == before => {
-                let walked = walk::walk_until(&mut index, drive, threads, &stop);
-                built.walked.push(drive.clone());
-                walked.refused.values().sum::<usize>()
-            }
-            Some(Err(error)) => return Err(format!("{name}: {error}")),
-            None => return Err(format!("{name}: couldn't be opened")),
         };
-        if let Some(position) = position {
+        if let Some(&position) = positions.get(drive) {
             saved.insert(drive.clone(), journal::Saved { position, refused });
         }
     }
@@ -969,13 +1150,8 @@ pub fn build_from_tables(file: &std::path::Path, drives: Option<Vec<String>>) ->
     index.sort_names();
     index.build_table();
     built.entries = index.live();
-    if let Some(folder) = file.parent() {
-        let _ = std::fs::create_dir_all(folder);
-    }
-    index.save(file).map_err(|error| format!("saving: {error}"))?;
-    journal::save(file, &saved);
     built.took = started.elapsed();
-    Ok(built)
+    Ok((index, saved, built))
 }
 
 /// A watch's change buffer, in KB (`ENGINE_HUB_KB` makes them small, for tests that need overflows).

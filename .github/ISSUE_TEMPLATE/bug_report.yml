@@ -1,0 +1,42 @@
+name: Bug report
+description: Something doesn't work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A privacy or security problem (a secret shown or stored, something leaving your PC) goes through
+        [SECURITY.md](https://github.com/aynader/Excavate/blob/main/SECURITY.md) instead, so it isn't public.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: If you can make it happen again, how.
+      placeholder: |
+        1. Open Excavate with Alt+S
+        2. Search for ...
+        3. ...
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        Settings → About → **Copy diagnostics**, then paste here. It has the version, Windows build, processor and
+        graphics card, your settings without paths, and the last lines of the log with paths shortened. Read it
+        before posting, and remove anything you'd rather not share. If your version doesn't have the button, give
+        the version from Settings → About and your Windows version.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Screenshots, or what's different about your PC (other search tools, antivirus, drives, a very large library).

@@ -39,6 +39,13 @@ pub struct Entry {
 /// The engine recorded for an image whose text its folder leaves out.
 pub const SKIPPED: &str = "left out";
 
+/// The error recorded for a file "Skip" let go while its text was read (a scanned PDF's pages): it's listed with the
+/// other skipped ones (`skipped`), not among the damaged.
+pub const SKIPPED_ERROR: &str = "Skipped";
+
+/// What couldn't be read, shown in a group of `config::why`: up to this many files each (the counts are of them all).
+pub const PROBLEM_FILES: usize = 30;
+
 #[derive(Clone, Debug)]
 pub struct Update {
     pub path: String,
@@ -80,6 +87,11 @@ pub struct Catalog {
     db: Mutex<Connection>,
     /// Chosen folders (lowercased) whose images aren't looked at for what they show.
     unshown: Mutex<Vec<String>>,
+}
+
+/// A file's id as a number (FNV-1a, 64 bits): the same in every run.
+pub fn hashed(id: &str) -> u64 {
+    id.bytes().fold(0xcbf2_9ce4_8422_2325u64, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3))
 }
 
 pub fn id(path: &str) -> String {
@@ -270,14 +282,15 @@ impl Catalog {
         let _ = transaction.commit();
     }
 
-    /// The next videos for a model, newest first, as `seen_next` has images: of those whose folder reads `kind` (a
-    /// `config::video_kind` bit).
+    /// The next videos for a model, newest first (a large one later: `work::size_wait`), as `seen_next` has images: of
+    /// those whose folder reads `kind` (a `config::video_kind` bit).
     pub fn video_next(&self, engine: &str, relook_at: i64, limit: usize, kind: u8) -> Vec<(String, u64, i64)> {
         let db = self.db();
-        let Ok(mut statement) = db.prepare(
+        let Ok(mut statement) = db.prepare(&format!(
             "SELECT v.path, v.size, v.modified FROM videos v LEFT JOIN seen s ON s.id = v.id AND s.engine = ?1
-             WHERE (v.kinds & ?4) != 0 AND (s.id IS NULL OR s.modified != v.modified OR s.at < ?2) ORDER BY v.modified DESC LIMIT ?3",
-        ) else {
+             WHERE (v.kinds & ?4) != 0 AND (s.id IS NULL OR s.modified != v.modified OR s.at < ?2) ORDER BY v.modified - {} DESC LIMIT ?3",
+            crate::work::size_wait_sql("v.size"),
+        )) else {
             return Vec::new();
         };
         statement
@@ -358,14 +371,15 @@ impl Catalog {
         let _ = transaction.commit();
     }
 
-    /// The next recordings for the model that listens (`engine`), newest first, as `seen_next` has images: not heard as
-    /// they are now since `relisten_at`.
+    /// The next recordings for the model that listens (`engine`), newest first (a long one later: `work::size_wait`), as
+    /// `seen_next` has images: not heard as they are now since `relisten_at`.
     pub fn recording_next(&self, engine: &str, relisten_at: i64, limit: usize) -> Vec<(String, u64, i64)> {
         let db = self.db();
-        let Ok(mut statement) = db.prepare(
+        let Ok(mut statement) = db.prepare(&format!(
             "SELECT r.path, r.size, r.modified FROM recordings r LEFT JOIN seen s ON s.id = r.id AND s.engine = ?1
-             WHERE s.id IS NULL OR s.modified != r.modified OR s.at < ?2 ORDER BY r.modified DESC LIMIT ?3",
-        ) else {
+             WHERE s.id IS NULL OR s.modified != r.modified OR s.at < ?2 ORDER BY r.modified - {} DESC LIMIT ?3",
+            crate::work::size_wait_sql("r.size"),
+        )) else {
             return Vec::new();
         };
         statement
@@ -448,6 +462,11 @@ impl Catalog {
         }
     }
 
+    /// Forgets what one engine made of every video (`seen`): each is read by it again.
+    pub fn seen_forget_engine(&self, engine: &str) -> usize {
+        self.db().execute("DELETE FROM seen WHERE engine = ?1", params![engine]).unwrap_or(0)
+    }
+
     /// Every image read by the first pass, and every video (lowercase paths): what a model's vectors may keep.
     pub fn picture_ids(&self) -> std::collections::HashSet<String> {
         let db = self.db();
@@ -473,12 +492,14 @@ impl Catalog {
         let _ = self.db().execute("DELETE FROM seen", []);
     }
 
-    pub fn all(&self) -> HashMap<String, Entry> {
+    /// Every file known, by `hashed` id: a number a file instead of its path (the reader's start compares a listing
+    /// with this; 50 MB for 131,000 files kept as paths, a few as numbers).
+    pub fn all_hashed(&self) -> HashMap<u64, Entry> {
         let db = self.db();
         let mut entries = HashMap::new();
         let Ok(mut statement) = db.prepare("SELECT id, size, modified, state, read_at, engine FROM files") else { return entries };
         let rows = statement.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, Entry {
+            Ok((hashed(&row.get::<_, String>(0)?), Entry {
                 size: row.get::<_, i64>(1)? as u64,
                 modified: row.get(2)?,
                 state: State::from(row.get(3)?),
@@ -492,6 +513,21 @@ impl Catalog {
             }
         }
         entries
+    }
+
+    /// The ids of the files known for which `keep` says yes, read one by one.
+    pub fn ids_where(&self, mut keep: impl FnMut(&str) -> bool) -> Vec<String> {
+        let db = self.db();
+        let mut out = Vec::new();
+        let Ok(mut statement) = db.prepare("SELECT id FROM files") else { return out };
+        if let Ok(rows) = statement.query_map([], |row| row.get::<_, String>(0)) {
+            for id in rows.flatten() {
+                if keep(&id) {
+                    out.push(id);
+                }
+            }
+        }
+        out
     }
 
     pub fn get(&self, path: &str) -> Option<Entry> {
@@ -529,11 +565,18 @@ impl Catalog {
                     update.group, update.later, update.hash as i64
                 ]);
             }
+            // A file read now isn't online only any more; one that's gone isn't anything that couldn't be read.
+            let mut online = transaction.prepare_cached("DELETE FROM skipped WHERE id = ?1 AND kind = ?2").expect("the online statement");
+            for update in updates {
+                let _ = online.execute(params![id(&update.path), config::SKIP_ONLINE]);
+            }
             let mut delete = transaction.prepare_cached("DELETE FROM files WHERE id = ?1").expect("the delete statement");
             let mut unseen = transaction.prepare_cached("DELETE FROM seen WHERE id = ?1").expect("the unseen statement");
+            let mut unskipped = transaction.prepare_cached("DELETE FROM skipped WHERE id = ?1").expect("the unskipped statement");
             for path in removed {
                 let _ = delete.execute([id(path)]);
                 let _ = unseen.execute([id(path)]);
+                let _ = unskipped.execute([id(path)]);
             }
         }
         let _ = transaction.commit();
@@ -574,18 +617,138 @@ impl Catalog {
                                   params![id(path), kind, path, crate::work::now()]);
     }
 
+    /// Files kept online only, found while listing: among what couldn't be read (since they were first found), in one
+    /// transaction.
+    pub fn online_add(&self, paths: &[String]) {
+        if paths.is_empty() {
+            return;
+        }
+        let mut db = self.db();
+        let Ok(transaction) = db.transaction() else { return };
+        {
+            let Ok(mut insert) = transaction.prepare_cached("INSERT OR IGNORE INTO skipped (id, kind, path, at) VALUES (?1, ?2, ?3, ?4)") else { return };
+            let now = crate::work::now();
+            for path in paths {
+                let _ = insert.execute(params![id(path), config::SKIP_ONLINE, path, now]);
+            }
+        }
+        let _ = transaction.commit();
+    }
+
     /// What couldn't be read, the latest first: files that failed, and what "Skip" let go.
     pub fn errors(&self, limit: usize) -> Vec<(String, String)> {
         let db = self.db();
-        let Ok(mut statement) = db.prepare("SELECT path, error, read_at FROM files WHERE state = 2
+        let Ok(mut statement) = db.prepare("SELECT path, error, read_at FROM files WHERE state = 2 AND error != ?2
                                             UNION ALL SELECT path, 'Skipped (' || kind || ')', at FROM skipped
                                             ORDER BY 3 DESC LIMIT ?1") else {
             return Vec::new();
         };
         statement
-            .query_map([limit as i64], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .query_map(params![limit as i64, SKIPPED_ERROR], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
             .map(|rows| rows.flatten().collect())
             .unwrap_or_default()
+    }
+
+    /// Everything that couldn't be read, counted by why (`config::why`, in that order, the empty groups left out),
+    /// and the latest files of each (up to `PROBLEM_FILES`): (group, path, what was said).
+    pub fn problems(&self) -> (Vec<(String, u64)>, Vec<config::status::Problem>) {
+        let mut counts: HashMap<&'static str, u64> = HashMap::new();
+        let mut files: Vec<config::status::Problem> = Vec::new();
+        let mut kept: HashMap<&'static str, usize> = HashMap::new();
+        let db = self.db();
+        let mut keep = |why: &'static str, path: String, said: String| {
+            let kept = kept.entry(why).or_default();
+            if *kept < PROBLEM_FILES {
+                *kept += 1;
+                files.push(config::status::Problem { why: why.into(), path, said });
+            }
+        };
+        // (By the error's own words: password-protected, a reader that stopped on it, or damaged.)
+        if let Ok(mut statement) = db.prepare("SELECT error, count(*) FROM files WHERE state = 2 AND error != ?1 GROUP BY error")
+            && let Ok(rows) = statement.query_map([SKIPPED_ERROR], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as u64))) {
+                for (error, count) in rows.flatten() {
+                    *counts.entry(config::why::of_error(&error)).or_default() += count;
+                }
+            }
+        if let Ok(mut statement) = db.prepare("SELECT kind, count(*) FROM skipped GROUP BY kind")
+            && let Ok(rows) = statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as u64))) {
+                for (kind, count) in rows.flatten() {
+                    *counts.entry(config::why::of_skip(&kind)).or_default() += count;
+                }
+            }
+        // The latest of each: a few hundred rows at most, through the index of failures.
+        if let Ok(mut statement) = db.prepare("SELECT path, error FROM files WHERE state = 2 AND error != ?1 ORDER BY read_at DESC LIMIT ?2")
+            && let Ok(rows) = statement.query_map(params![SKIPPED_ERROR, (PROBLEM_FILES * 4) as i64], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))) {
+                for (path, error) in rows.flatten() {
+                    keep(config::why::of_error(&error), path, error);
+                }
+            }
+        if let Ok(mut statement) = db.prepare("SELECT path, kind FROM skipped ORDER BY at DESC LIMIT ?1")
+            && let Ok(rows) = statement.query_map([(PROBLEM_FILES * 6) as i64], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))) {
+                for (path, kind) in rows.flatten() {
+                    keep(config::why::of_skip(&kind), path, kind);
+                }
+            }
+        let counts = config::why::ALL.iter().filter_map(|why| counts.get(why).map(|count| (why.to_string(), *count))).filter(|(_, count)| *count > 0).collect();
+        (counts, files)
+    }
+
+    /// Clears what keeps files from being read again: a group of what couldn't be read (`config::why`), all of it or
+    /// one file. The lanes that ask the catalog what's next (what images show, what's said, Thorough's) find them at
+    /// once; what's returned has to be listed again (its record is gone, so it's read as new). Files kept online only
+    /// are returned without anything cleared: they're brought down first (`run`), and their row goes when they're read.
+    pub fn retry(&self, why: &str, path: Option<&str>) -> Vec<String> {
+        let one = path.map(id);
+        let mut again = Vec::new();
+        let db = self.db();
+        let matches = |row_id: &str| one.as_deref().is_none_or(|one| one == row_id);
+        // Files that failed, by their error (a document's reader that stopped on one is among "stopped" too).
+        if matches!(why, config::why::DAMAGED | config::why::PASSWORD | config::why::STOPPED) {
+            {
+                let Ok(mut statement) = db.prepare("SELECT id, path, error FROM files WHERE state = 2 AND error != ?1") else { return again };
+                let rows: Vec<(String, String, String)> = statement
+                    .query_map([SKIPPED_ERROR], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                    .map(|rows| rows.flatten().collect()).unwrap_or_default();
+                for (row_id, path, error) in rows {
+                    if matches(&row_id) && config::why::of_error(&error) == why {
+                        let _ = db.execute("DELETE FROM files WHERE id = ?1", [&row_id]);
+                        again.push(path);
+                    }
+                }
+            }
+        }
+        // Files let go: skipped, kept online only, a model's reader that stopped on them twice.
+        if !matches!(why, config::why::DAMAGED | config::why::PASSWORD) {
+            {
+                let Ok(mut statement) = db.prepare("SELECT id, path, kind FROM skipped") else { return again };
+                let rows: Vec<(String, String, String)> = statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                    .map(|rows| rows.flatten().collect()).unwrap_or_default();
+                for (row_id, path, kind) in rows {
+                    if !matches(&row_id) || config::why::of_skip(&kind) != why {
+                        continue;
+                    }
+                    if why == config::why::ONLINE {
+                        again.push(path);
+                        continue;
+                    }
+                    let _ = db.execute("DELETE FROM skipped WHERE id = ?1 AND kind = ?2", params![row_id, kind]);
+                    // What a model couldn't do, done again; Thorough's read wanted again.
+                    let _ = db.execute("DELETE FROM seen WHERE id = ?1 AND ok = 0", [&row_id]);
+                    let _ = db.execute("UPDATE files SET deep = ?2 WHERE id = ?1 AND deep = ?3", params![row_id, DEEP_WANTED, DEEP_FAILED]);
+                    // Its text let go while it was read: read again as new.
+                    if db.execute("DELETE FROM files WHERE id = ?1 AND state = 2 AND error = ?2", params![row_id, SKIPPED_ERROR]).unwrap_or(0) > 0 {
+                        again.push(path);
+                    }
+                }
+            }
+        }
+        again
+    }
+
+    /// A file kept online only, brought down to be read: it's no longer listed as online only.
+    pub fn online_done(&self, path: &str) {
+        let _ = self.db().execute("DELETE FROM skipped WHERE id = ?1 AND kind = ?2", params![id(path), config::SKIP_ONLINE]);
     }
 }
 
@@ -624,7 +787,7 @@ mod tests {
         assert_eq!(catalog.under(r"C:\docs\SUB").len(), 1);
         catalog.apply(&[], &[r"C:\DOCS\A.TXT".into()]);
         assert!(catalog.get(r"C:\Docs\a.txt").is_none());
-        assert_eq!(catalog.all().len(), 3);
+        assert_eq!(catalog.all_hashed().len(), 3);
         // Deep: what was read before it's chosen is wanted, the doubtful first, and it's done with what it read.
         catalog.apply(&[Update { deep: DEEP_FIRST, modified: 1, ..update(r"C:\Docs\e.png", State::Read, "picture") },
                         update(r"C:\Docs\f.png", State::Read, "picture"),
@@ -693,9 +856,77 @@ mod tests {
         assert_eq!(catalog.heard_gone(&["parakeet", "whisper-turbo"]), [r"c:\docs\call.m4a"]);
         catalog.heard_forget(r"c:\docs\call.m4a", &["parakeet", "whisper-turbo"]);
         assert!(catalog.heard_gone(&["parakeet", "whisper-turbo"]).is_empty());
+        // A long recording waits behind newer short ones (`work::size_wait`): a 100 MB one from today after a 1 MB
+        // one from three weeks ago, before one from six weeks ago.
+        let (today, day) = (1_800_000_000i64, 86_400i64);
+        catalog.recordings_replace(&[(r"C:\Docs\long.wav".into(), 100 << 20, today), (r"C:\Docs\memo.mp3".into(), 1 << 20, today - 21 * day),
+                                     (r"C:\Docs\old.mp3".into(), 1 << 20, today - 42 * day)]);
+        let order: Vec<String> = catalog.recording_next("parakeet", 0, 5).into_iter().map(|(path, ..)| path).collect();
+        assert_eq!(order, [r"C:\Docs\memo.mp3", r"C:\Docs\long.wav", r"C:\Docs\old.mp3"]);
+        for size in [0u64, 8 << 20, (8 << 20) + 1, 100 << 20, 1 << 30, 1 << 50] {
+            let sql: i64 = catalog.db().query_row(&format!("SELECT {}", crate::work::size_wait_sql(&size.to_string())), [], |row| row.get(0)).unwrap();
+            assert_eq!(sql, crate::work::size_wait(size), "{size}");
+        }
+        catalog.recordings_replace(&[]);
         assert_eq!(catalog.meta("x"), 0);
         catalog.set_meta("x", 5);
         assert_eq!(catalog.meta("x"), 5);
+        drop(catalog);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn what_couldnt_be_read_and_reading_it_again() {
+        let path = std::env::temp_dir().join(format!("excavate-catalog-problems-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let catalog = Catalog::open(&path).unwrap();
+        let failed = |path: &str, error: &str| Update {
+            path: path.into(), size: 1, modified: 2, kind: "pdf", state: State::Failed, engine: String::new(), read_at: 3, error: error.into(),
+            characters: 0, deep: DEEP_NO, group: 0, later: false, hash: 0,
+        };
+        catalog.apply(&[
+            failed(r"C:\Docs\locked.pdf", "PdfiumLibraryInternalError(PasswordError)"),
+            failed(r"C:\Docs\broken.pdf", "PdfiumLibraryInternalError(FormatError)"),
+            failed(r"C:\Docs\odd.png", "The component cannot be found."),
+            failed(r"C:\Docs\scan.pdf", SKIPPED_ERROR),
+            failed(r"C:\Docs\deck.pptx", config::why::READER_STOPPED),
+            Update { state: State::Read, deep: DEEP_FAILED, kind: "picture", ..failed(r"C:\Docs\photo.png", "") },
+        ], &[]);
+        catalog.skipped_add(r"C:\Docs\scan.pdf", "text in images");
+        catalog.skipped_add(r"C:\Docs\talk.mp4", "what's said");
+        catalog.seen_set(r"C:\Docs\talk.mp4", "said-parakeet", 4, 100, false);
+        catalog.skipped_add(r"C:\Cloud\a.docx", config::SKIP_ONLINE);
+        catalog.skipped_add(r"C:\Docs\photo.png", config::SKIP_STOPPED);
+        catalog.seen_set(r"C:\Docs\photo.png", "eg2", 2, 100, false);
+        let (counts, files) = catalog.problems();
+        let counts: Vec<(&str, u64)> = counts.iter().map(|(why, count)| (why.as_str(), *count)).collect();
+        assert_eq!(counts, [("password", 1), ("online", 1), ("damaged", 2), ("skipped", 2), ("stopped", 2)]);
+        assert!(files.iter().any(|file| file.why == "stopped" && file.path == r"C:\Docs\deck.pptx"), "a document its reader stopped on");
+        assert!(files.iter().any(|file| file.why == "online" && file.path == r"C:\Cloud\a.docx"));
+        assert!(files.iter().all(|file| file.path != r"C:\Docs\scan.pdf" || file.why == "skipped"), "a skipped scan isn't damaged");
+        // "Try again" for the damaged: their records go, to be listed again; the password-protected stay.
+        let mut again = catalog.retry(config::why::DAMAGED, None);
+        again.sort();
+        assert_eq!(again, [r"C:\Docs\broken.pdf", r"C:\Docs\odd.png"]);
+        assert!(catalog.get(r"C:\Docs\broken.pdf").is_none() && catalog.get(r"C:\Docs\locked.pdf").is_some());
+        // "Read again" for one skipped file: what was said in the video is wanted again, at once.
+        assert!(catalog.retry(config::why::SKIPPED, Some(r"c:\docs\TALK.mp4")).is_empty());
+        catalog.videos_replace(&[(r"C:\Docs\talk.mp4".into(), 9, 4, 7)]);
+        assert_eq!(catalog.video_next("said-parakeet", 0, 5, 4).len(), 1);
+        // The skipped scan: listed again.
+        assert_eq!(catalog.retry(config::why::SKIPPED, None), [r"C:\Docs\scan.pdf"]);
+        // The reader stopped on it: the document listed again; the model's twice looked at again, and Thorough's read
+        // wanted again.
+        assert_eq!(catalog.retry(config::why::STOPPED, None), [r"C:\Docs\deck.pptx"]);
+        assert!(catalog.get(r"C:\Docs\deck.pptx").is_none());
+        assert!(catalog.seen_next("eg2", 0, 5).iter().any(|(path, ..)| path == r"C:\Docs\photo.png"));
+        assert_eq!(catalog.deep_count(), 1);
+        // Online only: handed back to be brought down; listed until it's read.
+        assert_eq!(catalog.retry(config::why::ONLINE, None), [r"C:\Cloud\a.docx"]);
+        let (counts, _) = catalog.problems();
+        assert_eq!(counts, [("password".to_string(), 1), ("online".to_string(), 1)]);
+        catalog.apply(&[Update { state: State::Read, ..failed(r"C:\Cloud\a.docx", "") }], &[]);
+        assert_eq!(catalog.problems().0, [("password".to_string(), 1)]);
         drop(catalog);
         let _ = std::fs::remove_file(&path);
     }

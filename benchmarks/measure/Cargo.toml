@@ -11,6 +11,8 @@ engine.workspace = true
 everything.workspace = true
 config.workspace = true
 content.workspace = true
+search.workspace = true
+seeing.workspace = true
 winsys.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -27,3 +29,6 @@ features = [
   "Win32_System_RemoteDesktop",
   "Win32_System_Threading",
 ]
+
+[lints]
+workspace = true

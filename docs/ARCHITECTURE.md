@@ -6,8 +6,10 @@ Native Windows programs written in Rust, with no runtime to install: no WebView,
 |---|---|
 | `excavate.exe` | The popup and the settings window (Slint), the tray icon and the shortcut. Runs all the time, ranks every source as one list, shows previews. Holds Bedrock, the file-name index. Never loads a model. |
 | `excavate-indexer.exe` | The reader: lists the chosen folders, reads what's new or changed, writes the content index, follows changes. Started by the popup in a job object (it ends with it), at idle priority. |
+| `excavate-bedrock.exe` | Excavate Bedrock: a small Windows service, set up once with your consent, that reads the drives' file tables for Bedrock. It starts when Excavate asks over a local pipe, answers with names, sizes, dates and attributes only, leaves out other accounts' files, and stops after a minute with nothing to do. |
+| `excavate-setup.exe` | The installer, with Excavate packed inside: installs it for the current user under `%LOCALAPPDATA%\Programs\Excavate`, without administrator rights, and adds it to the Start menu and Windows' Apps list. |
 | `excavate-helper.exe` | Searches by what images show and what documents mean: holds the models' text halves and every image's vector, answers the popup on a local port, and ends a few minutes after the last search. |
-| `pdfium.dll`, `DirectML.dll` | PDF reading; OCR on the graphics card. |
+| `pdfium.dll`, `onnxruntime.dll`, `DirectML.dll` | PDF reading; OCR, on the processor or on the graphics card. |
 | Downloaded when chosen | The models, llama.cpp's server (Thorough and the image models on the graphics card), `excavate-listen.exe` (speech). |
 
 Idle, every thread waits on a message, an event or the kernel: no timers, no polling.
@@ -34,10 +36,14 @@ The columns are mapped from the saved file: Windows reads pages in as they're to
 so the index costs almost no private memory and a save writes only what changed. A file not saved cleanly is never
 trusted; the drives are listed again instead.
 
-- **Building**: a drive's NTFS table read directly (with administrator rights, once), or its folders listed.
+- **Building**: a drive's NTFS table read directly, through Excavate Bedrock (or by Excavate itself when it runs as
+  administrator), or its folders listed.
 - **Following**: folder watches on one I/O completion port while running; the NTFS change journal at each start for
   what changed while Excavate was closed. An overflowed watch lists just its folder again.
 - **Searching**: Everything's syntax, across cores; fuzzy search over the distinct names.
+
+Bedrock is also published on its own, as the [bedrock-index](https://crates.io/crates/bedrock-index) crate
+([repository](https://github.com/aynader/Bedrock)).
 
 ## The reader (`indexer/`)
 
@@ -77,6 +83,12 @@ number of readers (the popup).
   whole (`getUserName` finds "user name"), Chinese, Japanese and Korean a character at a time.
 - **A query**: every word must match, in the text or the name; the last word as a prefix while typing; longer words
   also one letter off (OCR's misreads).
+
+## Previews
+
+Images, videos, PDFs and text are drawn by Excavate, with secrets blurred. Word, Excel and PowerPoint files are shown
+by Office's own previewers (Windows' preview handlers), in a process of their own, unless something secret was found
+in the file: then its text is shown instead, masked.
 
 ## Updates
 

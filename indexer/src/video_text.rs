@@ -27,6 +27,16 @@ use winsys::video::{At, Frame, Video};
 pub struct Shown {
     pub ms: u64,
     pub text: String,
+    /// Where it showed (shares of the frame) and until when (ms), for the preview to outline the words searched for;
+    /// None for a line read without its place.
+    pub place: Option<([f32; 4], u64)>,
+}
+
+#[cfg(test)]
+impl Shown {
+    pub fn new(ms: u64, text: impl Into<String>) -> Shown {
+        Shown { ms, text: text.into(), place: None }
+    }
 }
 
 /// Where a line with a secret shows (left, top, right, bottom, as shares of the frame), from the frame looked at before
@@ -87,6 +97,8 @@ pub struct Steps {
     pub detect: Duration,
     pub compare: Duration,
     pub recognize: Duration,
+    /// Where its frames were decoded (`winsys::video::Decoder`; the last way, if one failed partway).
+    pub decoder: &'static str,
 }
 
 pub struct VideoText {
@@ -121,6 +133,8 @@ struct Reading {
     /// Secrets on screen now (their box, to see when it's gone), and those that have gone.
     open: Vec<(TextBox, SecretBox)>,
     secrets: Vec<SecretBox>,
+    /// Lines kept that are on screen now (their box, and which of `shown` each is): when it's gone, its place ends.
+    open_lines: Vec<(TextBox, usize)>,
     /// Labels of a secret showing now ("Password" on a line of its own): what's beside or under them is its value.
     labels: Vec<TextBox>,
     labelled: bool,
@@ -136,6 +150,14 @@ impl Reading {
             .partition(|(seen, _)| !boxes.iter().any(|now| same(seen, now, picture)));
         self.open = still;
         self.secrets.extend(gone.into_iter().map(|(_, secret)| SecretBox { to_ms: ms, ..secret }));
+        let (gone, still): (Vec<_>, Vec<_>) = std::mem::take(&mut self.open_lines).into_iter()
+            .partition(|(seen, _)| !boxes.iter().any(|now| same(seen, now, picture)));
+        self.open_lines = still;
+        for (_, index) in gone {
+            if let Some((_, until)) = self.shown.get_mut(index).and_then(|line| line.place.as_mut()) {
+                *until = ms;
+            }
+        }
     }
 }
 
@@ -199,6 +221,7 @@ impl VideoText {
             shown: Vec::new(),
             open: Vec::new(),
             secrets: Vec::new(),
+            open_lines: Vec::new(),
             labels: Vec::new(),
             labelled: false,
             last_ms: 0,
@@ -266,9 +289,19 @@ impl VideoText {
             self.read_new(looked, &mut reading, steps)?;
             at = moment.max(at) + every;
         }
+        steps.decoder = match video.stalled {
+            Some(winsys::video::Decoder::Card) => "software, after the card's decoder stalled",
+            Some(winsys::video::Decoder::Integrated) => "software, after the processor's graphics stalled",
+            _ => video.decoder.name(),
+        };
         // Secrets still showing at the end show until the end.
         let end = (video.length.max(at) * 1000.0) as u64;
         reading.secrets.extend(reading.open.drain(..).map(|(_, secret)| SecretBox { to_ms: end, ..secret }));
+        for (_, index) in std::mem::take(&mut reading.open_lines) {
+            if let Some((_, until)) = reading.shown.get_mut(index).and_then(|line| line.place.as_mut()) {
+                *until = end;
+            }
+        }
         Ok(Read { shown: reading.shown, secrets: reading.secrets, labelled: reading.labelled })
     }
 
@@ -397,11 +430,12 @@ impl VideoText {
             // A secret on screen: its box is covered while it shows.
             if !crate::work::private(&text).1.is_empty() {
                 let bounds = share(text_box.bounds);
-                reading.open.push((text_box, SecretBox { from_ms: since.min(ms), to_ms: ms, bounds }));
+                reading.open.push((text_box.clone(), SecretBox { from_ms: since.min(ms), to_ms: ms, bounds }));
             }
             if reading.kept.insert(folded(&text)) {
                 steps.lines_kept += 1;
-                reading.shown.push(Shown { ms, text });
+                reading.open_lines.push((text_box.clone(), reading.shown.len()));
+                reading.shown.push(Shown { ms, text, place: Some((share(text_box.bounds), ms)) });
             }
         }
         // A label with nothing found beside or under it (its value too faint, or too small, to be found): where the
@@ -454,7 +488,7 @@ fn shrink(picture: &winsys::imaging::Rgb, side: u32) -> winsys::imaging::Rgb {
         for dy in 0..step {
             let row = &picture.pixels[(y * step + dy) * width * 3..][..out_width * step * 3];
             for (x, block) in row.chunks_exact(step * 3).enumerate() {
-                for pixel in block.chunks_exact(3) {
+                for pixel in block.as_chunks::<3>().0 {
                     sums[x * 3] += u32::from(pixel[0]);
                     sums[x * 3 + 1] += u32::from(pixel[1]);
                     sums[x * 3 + 2] += u32::from(pixel[2]);
@@ -541,7 +575,7 @@ fn grey_cells(pixels: &[u8], width: usize, height: usize, [left, top, right, bot
             let (mut sum, mut count) = (0u32, 0u32);
             for y in (ya..yb).step_by(step) {
                 let line = &pixels[(y * width + xa) * 3..(y * width + xb) * 3];
-                for pixel in line.chunks_exact(3).step_by(step) {
+                for pixel in line.as_chunks::<3>().0.iter().step_by(step) {
                     sum += (pixel[0] as u32 * 77 + pixel[1] as u32 * 150 + pixel[2] as u32 * 29) >> 8;
                     count += 1;
                 }
@@ -597,7 +631,7 @@ pub fn measure(paths: &config::Paths) {
         "wall_s": wall.as_secs_f64(), "cpu_s": used.as_secs_f64(), "cpu_s_per_hour": used.as_secs_f64() * 3600.0 / length.max(1.0),
         "probes": s.probes, "keyframes": s.keyframes, "spans": s.spans, "span_frames": s.span_frames,
         "unchanged": s.unchanged, "no_text": s.no_text, "same_text": s.same_text,
-        "read": s.read, "boxes_read": s.boxes_read, "lines_kept": s.lines_kept,
+        "read": s.read, "boxes_read": s.boxes_read, "lines_kept": s.lines_kept, "decoder": s.decoder,
         "cpu_ms": {
             "decode": ms(s.decode), "thumb": ms(s.thumb), "detect": ms(s.detect), "compare": ms(s.compare),
             "recognize": ms(s.recognize),
@@ -676,8 +710,8 @@ pub fn read_one(context: &crate::work::Context, catalog: &crate::catalog::Catalo
                 }
             }
             catalog.seen_set(&path, ENGINE, modified, work::now(), true);
-            config::log(&format!("text in videos: {path}: {lines} lines in {:.1} s ({} keyframes, {} between, {} read)",
-                                 started.elapsed().as_secs_f64(), steps.keyframes, steps.span_frames, steps.read));
+            config::log(&format!("text in videos: {path}: {lines} lines in {:.1} s ({} keyframes, {} between, {} read), decoded on {}",
+                                 started.elapsed().as_secs_f64(), steps.keyframes, steps.span_frames, steps.read, steps.decoder));
         }
         Err(error) => {
             config::log(&format!("text in videos, {path}: {error}"));
@@ -687,6 +721,9 @@ pub fn read_one(context: &crate::work::Context, catalog: &crate::catalog::Catalo
     true
 }
 
+/// At most this many of a video's lines are kept with their places.
+const VIDEO_LINES_KEPT: usize = 3000;
+
 /// A video's lines as the index keeps them: one a line, with where each starts and its moment, secrets covered.
 fn doc(path: &str, size: u64, modified: i64, shown: Vec<Shown>, boxes: &[SecretBox], labelled: bool) -> Option<content::Doc> {
     if shown.is_empty() && boxes.is_empty() {
@@ -695,9 +732,15 @@ fn doc(path: &str, size: u64, modified: i64, shown: Vec<Shown>, boxes: &[SecretB
     let mut secrets = Vec::new();
     let mut body = String::new();
     let mut times = Vec::with_capacity(shown.len());
+    let mut places = Vec::new();
+    let share = |value: f32| (value.clamp(0.0, 1.0) * 10_000.0).round() as i64;
     for line in shown {
         let (text, found) = crate::work::private(&line.text);
         secrets.extend(found);
+        // Where each line showed and when: [from ms, to ms, left, top, right, bottom, its text as kept].
+        if let Some((bounds, until)) = line.place.filter(|_| places.len() < VIDEO_LINES_KEPT) {
+            places.push(serde_json::json!([line.ms as i64, until.max(line.ms) as i64, share(bounds[0]), share(bounds[1]), share(bounds[2]), share(bounds[3]), text]));
+        }
         if !body.is_empty() {
             body.push('\n');
         }
@@ -716,10 +759,12 @@ fn doc(path: &str, size: u64, modified: i64, shown: Vec<Shown>, boxes: &[SecretB
     }
     // Where secrets show, and when: [from ms, to ms, left, top, right, bottom], the box in ten-thousandths of the frame.
     if !boxes.is_empty() {
-        let share = |value: f32| (value.clamp(0.0, 1.0) * 10_000.0).round() as i64;
         marks["video"] = serde_json::json!({ "boxes": boxes.iter().map(|b| {
             [b.from_ms as i64, b.to_ms as i64, share(b.bounds[0]), share(b.bounds[1]), share(b.bounds[2]), share(b.bounds[3])]
         }).collect::<Vec<_>>() });
+    }
+    if !places.is_empty() {
+        marks["video"]["lines"] = serde_json::Value::Array(places);
     }
     Some(content::Doc {
         path: path.to_string(),
@@ -739,24 +784,27 @@ mod tests {
 
     #[test]
     fn lines_kept_with_their_moments() {
-        let shown = vec![Shown { ms: 1500, text: "Quarterly results".into() }, Shown { ms: 64_000, text: "Next steps".into() }];
+        let shown = vec![Shown::new(1500, "Quarterly results"), Shown { ms: 64_000, text: "Next steps".into(), place: Some(([0.1, 0.8, 0.5, 0.9], 70_000)) }];
         let doc = doc(r"C:\Videos\talk.mp4", 9, 4, shown, &[], false).expect("a doc");
         assert_eq!(doc.body, "Quarterly results\nNext steps");
         assert_eq!(doc.source, content::Source::Video);
         assert_eq!(content::moment_of(&doc.marks, 20), Some(64.0));
         assert_eq!(content::moment_of(&doc.marks, 3), Some(1.5));
         assert!(super::doc("x.mp4", 1, 1, Vec::new(), &[], false).is_none());
+        // Where "Next steps" showed, and until when, for the preview's outline.
+        let marks: serde_json::Value = serde_json::from_slice(&doc.marks).unwrap();
+        assert_eq!(marks["video"]["lines"], serde_json::json!([[64000, 70000, 1000, 8000, 5000, 9000, "Next steps"]]));
     }
 
     #[test]
     fn secrets_kept_with_where_and_when() {
-        let shown = vec![Shown { ms: 2000, text: "password: hunter22".into() }];
+        let shown = vec![Shown::new(2000, "password: hunter22")];
         let boxes = [SecretBox { from_ms: 2000, to_ms: 9000, bounds: [0.1, 0.5, 0.6, 0.55] }];
         let doc = doc(r"C:\Videos\demo.mp4", 9, 4, shown, &boxes, false).expect("a doc");
         let marks: serde_json::Value = serde_json::from_slice(&doc.marks).unwrap();
         assert_eq!(marks["video"]["boxes"], serde_json::json!([[2000, 9000, 1000, 5000, 6000, 5500]]));
         // A label alone, its value covered and not kept: the kind is still said.
-        let shown = vec![Shown { ms: 0, text: "Password".into() }];
+        let shown = vec![Shown::new(0, "Password")];
         let doc = super::doc(r"C:\Videos\wifi.mp4", 9, 4, shown, &boxes, true).expect("a doc");
         let marks: serde_json::Value = serde_json::from_slice(&doc.marks).unwrap();
         assert_eq!(marks["kinds"], serde_json::json!(["password"]));

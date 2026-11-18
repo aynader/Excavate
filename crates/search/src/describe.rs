@@ -18,7 +18,28 @@ pub enum Route {
 
 /// Words that ask for an image.
 const MEDIA: &[&str] = &["photo", "photos", "picture", "pictures", "pic", "pics", "image", "images", "screenshot", "screenshots",
-                         "selfie", "selfies", "snapshot", "snapshots"];
+                         "selfie", "selfies", "snapshot", "snapshots", "photograph", "photographs"];
+
+/// A word asking for an image, or a letter off one ("phot", "picutre", "imgae"): typed fast, as descriptions are.
+fn is_media(word: &str) -> bool {
+    MEDIA.contains(&word) || (!matches!(word, "pictured" | "imaged" | "imagen" | "photon" | "photons" | "mage" | "mages")
+        && word.len() >= 4 && ["photo", "photos", "picture", "pictures", "image", "images", "screenshot", "screenshots"].iter().any(|media| near(word, media)))
+}
+
+/// Whether two different words are a letter apart: one changed, added or left out, or two side by side swapped.
+fn near(word: &str, other: &str) -> bool {
+    let (a, b): (Vec<char>, Vec<char>) = (word.chars().collect(), other.chars().collect());
+    if a == b || a.len().abs_diff(b.len()) > 1 {
+        return false;
+    }
+    let same_start = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    let same_end = a.iter().rev().zip(b.iter().rev()).take_while(|(x, y)| x == y).count().min(a.len().min(b.len()) - same_start);
+    match (a.len() - same_start - same_end, b.len() - same_start - same_end) {
+        (1, 1) | (1, 0) | (0, 1) => true,
+        (2, 2) => a[same_start] == b[same_start + 1] && a[same_start + 1] == b[same_start],
+        _ => false,
+    }
+}
 
 /// Words that join a description's parts, rarely a file's name.
 pub(crate) const JOINING: &[&str] = &["a", "an", "the", "of", "with", "in", "on", "at", "where", "from", "near", "my", "our", "his", "her",
@@ -59,7 +80,7 @@ pub fn route(terms: &Terms) -> Route {
     if joining == 0 {
         return Route::Name;
     }
-    if words.iter().any(|word| MEDIA.contains(&word.as_str())) {
+    if words.iter().any(|word| is_media(word)) {
         Route::Image
     } else {
         Route::Description
@@ -229,6 +250,10 @@ mod tests {
         assert_eq!(of(r"C:\Users\a dog on the beach"), Route::Name);
         assert_eq!(of("a dog on the beach"), Route::Description);
         assert_eq!(of("photo of a dog"), Route::Image);
+        // A letter off.
+        assert_eq!(of("a phot of a giraffe at a fence"), Route::Image);
+        assert_eq!(of("picutre of two zebras in the woods"), Route::Image);
+        assert_eq!(of("a man pictured with a horse"), Route::Description);
     }
     #[test]
     fn kinds_asked_for() {

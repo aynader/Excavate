@@ -25,9 +25,14 @@ use std::time::{Duration, Instant};
 /// It ends this long after the last search.
 const STAYS: Duration = Duration::from_secs(300);
 
+/// Documents' vectors are let go this long after the last search (a quarter of a million pieces hold 200 MB), and
+/// loaded again, in about half a second, for the next search that wants documents.
+const DOCUMENTS_STAY: Duration = Duration::from_secs(60);
+
 enum Encoder {
     Llama(Server),
-    Siglip(SiglipText),
+    // (Boxed: it's large beside the other.)
+    Siglip(Box<SiglipText>),
 }
 
 #[derive(Default)]
@@ -35,11 +40,30 @@ enum Slot {
     #[default]
     Loading,
     Ready(Encoder),
-    Failed(String),
+    /// Why, and since when: it's loaded again a while later (`RELOAD_AFTER`).
+    Failed(String, Instant),
+}
+
+/// A model that couldn't be loaded is tried again this long after, at the next search: the reader may have finished
+/// downloading it meanwhile. (It stayed failed for the helper's life, and a helper asked often never ends: searches by
+/// what images show found nothing on a first run until Excavate was restarted.)
+const RELOAD_AFTER: Duration = Duration::from_secs(20);
+
+/// Whether a model's slot is due to be loaded (again): it failed a while ago, or its server has stopped.
+fn reload_due(slot: &mut Slot) -> bool {
+    match slot {
+        Slot::Loading => false,
+        Slot::Failed(_, since) => since.elapsed() >= RELOAD_AFTER,
+        Slot::Ready(Encoder::Llama(server)) => !server.running(),
+        Slot::Ready(Encoder::Siglip(_)) => false,
+    }
 }
 
 struct Model {
     engine: Engine,
+    /// Where the models are, and whether a graphics card can run them: for loading it (again).
+    models: PathBuf,
+    gpu: bool,
     slot: Mutex<Slot>,
     vectors: Mutex<Option<Vectors>>,
     /// Each video's frames averaged (`Vectors::video_means`), and the vectors' version they were made from.
@@ -72,6 +96,8 @@ pub fn serve(paths: &Paths) {
     let folder = paths.seeing();
     let models: Vec<Arc<Model>> = engines.iter().map(|&engine| Arc::new(Model {
         engine,
+        models: models_folder.clone(),
+        gpu,
         slot: Mutex::new(Slot::Loading),
         vectors: Mutex::new(Vectors::load(&folder, engine)),
         means: Mutex::new(((u32::MAX, 0), Vec::new())),
@@ -79,30 +105,23 @@ pub fn serve(paths: &Paths) {
     })).collect();
     // The text halves load side by side; a search uses whichever are ready.
     for model in &models {
-        let (model, models_folder) = (model.clone(), models_folder.clone());
-        std::thread::spawn(move || {
-            let started = Instant::now();
-            let loaded = load(&models_folder, model.engine, gpu);
-            match &loaded {
-                Ok(_) => log(&format!("seeker: {} ready in {} ms", model.engine.name(), started.elapsed().as_millis())),
-                Err(error) => log(&format!("seeker: {}: {error}", model.engine.name())),
-            }
-            *model.slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = match loaded {
-                Ok(encoder) => Slot::Ready(encoder),
-                Err(error) => Slot::Failed(error),
-            };
-        });
+        start_loading(model);
     }
 
     let facts = Mutex::new(seeing::facts::Facts::load(&folder));
     // Documents by what they mean: EmbeddingGemma 2's vectors of their text, scored with its description's vector.
-    let meaning: Mutex<Option<Vectors>> = Mutex::new(None);
+    let meaning: Arc<Mutex<Option<Vectors>>> = Arc::default();
     let last = Arc::new(Mutex::new(Instant::now()));
     {
-        let (last, file) = (last.clone(), paths.seeker());
+        let (last, file, meaning) = (last.clone(), paths.seeker(), meaning.clone());
         std::thread::spawn(move || loop {
             std::thread::sleep(Duration::from_secs(5));
-            if last.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).elapsed() > STAYS {
+            let quiet = last.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).elapsed();
+            if quiet > DOCUMENTS_STAY && let Ok(mut vectors) = meaning.try_lock() && vectors.is_some() {
+                *vectors = None;
+                log("seeker: documents' vectors let go until the next search");
+            }
+            if quiet > STAYS {
                 log("seeker: no searches for a while, ending");
                 let _ = std::fs::remove_file(&file);
                 // (llama.cpp's servers end with it: they're in its job object.)
@@ -120,6 +139,24 @@ pub fn serve(paths: &Paths) {
     }
 }
 
+/// Loads a model's text half on a thread of its own (its slot says Loading meanwhile).
+fn start_loading(model: &Arc<Model>) {
+    *model.slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Slot::Loading;
+    let model = model.clone();
+    std::thread::spawn(move || {
+        let started = Instant::now();
+        let loaded = load(&model.models, model.engine, model.gpu);
+        match &loaded {
+            Ok(_) => log(&format!("seeker: {} ready in {} ms", model.engine.name(), started.elapsed().as_millis())),
+            Err(error) => log(&format!("seeker: {}: {error}", model.engine.name())),
+        }
+        *model.slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = match loaded {
+            Ok(encoder) => Slot::Ready(encoder),
+            Err(error) => Slot::Failed(error, Instant::now()),
+        };
+    });
+}
+
 fn load(models: &Path, engine: Engine, gpu: bool) -> Result<Encoder, String> {
     if !models::seeing_present(models, engine) {
         return Err("its model isn't downloaded yet".into());
@@ -127,27 +164,35 @@ fn load(models: &Path, engine: Engine, gpu: bool) -> Result<Encoder, String> {
     let folder = models::seeing_folder(models, engine);
     let engine = engine.model();
     match engine {
-        Engine::Siglip => SiglipText::load(models, 4).map(Encoder::Siglip),
+        Engine::Siglip => SiglipText::load(models, 4).map(|siglip| Encoder::Siglip(Box::new(siglip))),
         Engine::Gemma | Engine::Qwen | Engine::GemmaText => {
             let model = folder.join(if engine == Engine::Gemma { models::GEMMA_MODEL } else { models::QWEN_MODEL }).display().to_string();
             let pooling = if engine == Engine::Gemma { "mean" } else { "last" };
             // The text half only (no image encoder): on the graphics card when there's one, else 0.1 s a search on the CPU.
             let layers = if gpu { "99" } else { "0" };
-            let args = ["-m", &model, "--embedding", "--pooling", pooling, "-c", "2048", "-b", "2048", "-ub", "2048", "-np", "1", "-ngl", layers];
+            // A description is a few words: room for 512 tokens is plenty, and takes a quarter of the memory 2048 did.
+            let args = ["-m", &model, "--embedding", "--pooling", pooling, "-c", "512", "-b", "512", "-ub", "512", "-np", "1", "-ngl", layers];
             Server::launch(models, &args, false, &format!("seeker {}", engine.name()), &|| false).map(Encoder::Llama)
         }
     }
 }
 
 /// One description's vector from one model, unit length.
-fn encode(model: &Model, text: &str) -> Option<Result<Vec<f32>, String>> {
+fn encode(model: &Arc<Model>, text: &str) -> Option<Result<Vec<f32>, String>> {
     if let Some(vector) = model.cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(text) {
         return Some(Ok(vector.clone()));
     }
     let mut slot = model.slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    // Failed a while ago (not downloaded yet, say), or its server stopped: loaded again, and waited for as at the start.
+    if reload_due(&mut slot) {
+        log(&format!("seeker: {}: loading it again", model.engine.name()));
+        drop(slot);
+        start_loading(model);
+        return None;
+    }
     let result = match &mut *slot {
         Slot::Loading => return None,
-        Slot::Failed(error) => Err(error.clone()),
+        Slot::Failed(error, _) => Err(error.clone()),
         Slot::Ready(Encoder::Siglip(siglip)) => siglip.text(text),
         Slot::Ready(Encoder::Llama(server)) => {
             let body = serde_json::json!({ "content": [looking::query_prompt(model.engine, text)] });
@@ -164,6 +209,14 @@ fn encode(model: &Model, text: &str) -> Option<Result<Vec<f32>, String>> {
         cache.insert(text.to_string(), vector.clone());
     }
     Some(result)
+}
+
+/// A description as EmbeddingGemma 2 compares it best: without the "a photo of" that tidying puts in front, which
+/// SigLIP 2 was trained with and EmbeddingGemma 2 wasn't. On 133 descriptions of COCO photos typed as people type
+/// them (158 conversational searches on COCO), the right photo first 51.1% of the time against 45.9%, in the first ten 82.0%
+/// against 79.7%. ("a screenshot of" stays: it says what kind of image.)
+fn for_gemma(text: &str) -> &str {
+    text.strip_prefix("a photo of ").or_else(|| text.strip_prefix("a photo ")).filter(|rest| !rest.trim().is_empty()).unwrap_or(text)
 }
 
 /// What a search found.
@@ -185,7 +238,7 @@ fn of_kind(path: &str, extensions: &[String]) -> bool {
 
 /// Finds images for `text`, a time or a place in it answered from the images' facts; only of these extensions, when
 /// there are any (the app's chip: "Video", or ">v").
-fn find(models: &[Arc<Model>], folder: &PathBuf, facts: &Mutex<seeing::facts::Facts>, text: &str, limit: usize, extensions: &[String]) -> Found {
+fn find(models: &[Arc<Model>], folder: &Path, facts: &Mutex<seeing::facts::Facts>, text: &str, limit: usize, extensions: &[String]) -> Found {
     let understood = {
         let mut facts = facts.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         facts.refresh();
@@ -210,7 +263,7 @@ fn find(models: &[Arc<Model>], folder: &PathBuf, facts: &Mutex<seeing::facts::Fa
         let mut chosen: Vec<(String, i64)> = facts.by_path.iter().map(|(path, fact)| (path.clone(), fact.when)).collect();
         drop(facts);
         chosen.retain(|(path, _)| fits(path) && of_kind(path, extensions));
-        chosen.sort_by(|a, b| b.1.cmp(&a.1));
+        chosen.sort_by_key(|hit| std::cmp::Reverse(hit.1));
         let hits = chosen.into_iter().take(limit).enumerate()
             .map(|(place, (path, _))| seeing::Hit { path, score: 9.0 - place as f32 * 0.001, similarity: 1.0 })
             .collect();
@@ -223,10 +276,11 @@ fn find(models: &[Arc<Model>], folder: &PathBuf, facts: &Mutex<seeing::facts::Fa
 }
 
 /// Finds images for `text` by what they show: (hits, the models it used, the models still loading, how many images).
-fn search(models: &[Arc<Model>], folder: &PathBuf, text: &str, limit: usize, extensions: &[String]) -> (Vec<seeing::Hit>, Vec<&'static str>, Vec<&'static str>, usize) {
+fn search(models: &[Arc<Model>], folder: &Path, text: &str, limit: usize, extensions: &[String]) -> (Vec<seeing::Hit>, Vec<&'static str>, Vec<&'static str>, usize) {
     let (mut ready, mut waiting) = (Vec::new(), Vec::new());
     let mut queries: Vec<(&Arc<Model>, Vec<f32>)> = Vec::new();
     for model in models {
+        let text = if model.engine == Engine::Gemma { for_gemma(text) } else { text };
         match encode(model, text) {
             None => waiting.push(model.engine.name()),
             Some(Ok(vector)) => queries.push((model, vector)),
@@ -260,31 +314,30 @@ fn search(models: &[Arc<Model>], folder: &PathBuf, text: &str, limit: usize, ext
         }
     }
     // A video's best moment stands for it, with what its frames together add.
-    let mut hits = seeing::rank(&scored, &bonuses, if extensions.is_empty() { limit } else { usize::MAX });
-    hits.retain(|hit| of_kind(&hit.path, extensions));
-    hits.truncate(limit);
+    let hits = seeing::rank_where(&scored, &bonuses, limit, |path| of_kind(path, extensions));
     (hits, ready, waiting, images)
 }
 
 /// Documents whose meaning fits `text`, each by its best piece: (path, standing), and how many pieces there are.
-fn documents(models: &[Arc<Model>], folder: &PathBuf, meaning: &Mutex<Option<Vectors>>, text: &str, limit: usize, extensions: &[String]) -> (Vec<seeing::Hit>, usize) {
+fn documents(models: &[Arc<Model>], folder: &Path, meaning: &Mutex<Option<Vectors>>, text: &str, limit: usize, extensions: &[String]) -> (Vec<seeing::Hit>, usize) {
     let Some(gemma) = models.iter().find(|model| model.engine == Engine::Gemma) else { return (Vec::new(), 0) };
-    let Some(Ok(query)) = encode(gemma, text) else { return (Vec::new(), 0) };
+    let Some(Ok(query)) = encode(gemma, for_gemma(text)) else { return (Vec::new(), 0) };
     let mut vectors = meaning.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     match vectors.as_mut() {
         Some(vectors) => vectors.refresh(),
         None => *vectors = Vectors::load(folder, Engine::GemmaText),
     }
     let Some(vectors) = vectors.as_ref().filter(|vectors| !vectors.is_empty()) else { return (Vec::new(), 0) };
+    // Each document once, by its best piece.
     let mut seen = std::collections::HashSet::new();
-    let mut hits = seeing::combine(&[(vectors, vectors.scores(&query))], if extensions.is_empty() { limit.saturating_mul(8) } else { usize::MAX });
+    let file = |path: &str| path.rsplit_once("#c=").map_or(path, |(file, _)| file).to_string();
+    let mut hits = seeing::best_where(&[(vectors, vectors.scores(&query))], limit, |path| {
+        let file = file(path);
+        of_kind(&file, extensions) && seen.insert(file.to_lowercase())
+    });
     for hit in &mut hits {
-        if let Some((path, _)) = hit.path.rsplit_once("#c=") {
-            hit.path = path.to_string();
-        }
+        hit.path = file(&hit.path);
     }
-    hits.retain(|hit| of_kind(&hit.path, extensions) && seen.insert(hit.path.to_lowercase()));
-    hits.truncate(limit);
     (hits, vectors.len())
 }
 
@@ -294,7 +347,7 @@ fn from_this_pc(host: &str, origin: bool, port: u16) -> bool {
     !origin && (host == format!("127.0.0.1:{port}") || host == format!("localhost:{port}"))
 }
 
-fn answer(stream: TcpStream, models: &[Arc<Model>], folder: &PathBuf, facts: &Mutex<seeing::facts::Facts>, meaning: &Mutex<Option<Vectors>>)
+fn answer(stream: TcpStream, models: &[Arc<Model>], folder: &Path, facts: &Mutex<seeing::facts::Facts>, meaning: &Mutex<Option<Vectors>>)
           -> Result<(), String> {
     stream.set_read_timeout(Some(Duration::from_secs(10))).map_err(|error| error.to_string())?;
     let mut reader = BufReader::new(stream.try_clone().map_err(|error| error.to_string())?);
@@ -327,6 +380,8 @@ fn answer(stream: TcpStream, models: &[Arc<Model>], folder: &PathBuf, facts: &Mu
         let asked: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
         // What asks for an image taken out ("that one photo with a cake in it"), unless asked as typed ("raw", for measuring).
         let typed = asked["text"].as_str().unwrap_or("").trim();
+        // (Within the model's 512 tokens: a token is three or four letters, and a search is rarely a sentence.)
+        let typed = typed.char_indices().nth(1200).map_or(typed, |(at, _)| &typed[..at]);
         let tidied = if asked["raw"].as_bool() == Some(true) { typed.to_string() } else { seeing::query::tidy(typed) };
         let text = tidied.as_str();
         let limit = asked["limit"].as_u64().unwrap_or(60).clamp(1, 1000) as usize;
@@ -414,6 +469,15 @@ Connection: close
     }
 
     #[test]
+    fn gemma_without_the_photo_of() {
+        assert_eq!(for_gemma("a photo of a card"), "a card");
+        assert_eq!(for_gemma("a photo at the beach"), "at the beach");
+        assert_eq!(for_gemma("a screenshot of the bank app"), "a screenshot of the bank app");
+        assert_eq!(for_gemma("a photo of "), "a photo of ");
+        assert_eq!(for_gemma("dog beach"), "dog beach");
+    }
+
+    #[test]
     fn only_excavates_own_requests() {
         assert!(from_this_pc("127.0.0.1:50123", false, 50123));
         assert!(from_this_pc("localhost:50123", false, 50123));
@@ -421,5 +485,21 @@ Connection: close
         assert!(!from_this_pc("127.0.0.1:50123", true, 50123), "a web page");
         assert!(!from_this_pc("127.0.0.1:1", false, 50123));
         assert!(!from_this_pc("", false, 50123));
+    }
+}
+
+#[cfg(test)]
+mod reload_tests {
+    use super::*;
+
+    /// A model that couldn't be loaded (not downloaded yet) is tried again a while later, not left failed for the
+    /// helper's life; one loading isn't started twice.
+    #[test]
+    fn a_failed_model_is_loaded_again_later() {
+        assert!(!reload_due(&mut Slot::Loading));
+        assert!(!reload_due(&mut Slot::Failed("its model isn't downloaded yet".into(), Instant::now())));
+        if let Some(earlier) = Instant::now().checked_sub(RELOAD_AFTER + Duration::from_secs(1)) {
+            assert!(reload_due(&mut Slot::Failed("its model isn't downloaded yet".into(), earlier)));
+        }
     }
 }

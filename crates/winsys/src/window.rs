@@ -206,3 +206,23 @@ pub fn client_origin(handle: isize) -> Option<(i32, i32)> {
     // SAFETY: a plain query, filling our own point.
     unsafe { ClientToScreen(hwnd(handle), &mut point) }.as_bool().then_some((point.x, point.y))
 }
+
+/// Keeps Windows from swapping a window that hasn't answered for 5 s for a "Not responding" stand-in (a plain icon
+/// on the taskbar that can outlive the stall for a tool window). The window just answers late instead.
+pub fn no_ghosting() {
+    // SAFETY: no arguments; affects only this process.
+    unsafe { windows::Win32::UI::WindowsAndMessaging::DisableProcessWindowsGhosting() }
+}
+
+/// Where the pointer is, in the window's client pixels.
+pub fn cursor_in(handle: isize) -> Option<(i32, i32)> {
+    use windows::Win32::Graphics::Gdi::ScreenToClient;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let mut point = windows::Win32::Foundation::POINT::default();
+    // SAFETY: the point is ours; the window may be gone, which only fails the call.
+    unsafe {
+        GetCursorPos(&mut point).ok()?;
+        ScreenToClient(windows::Win32::Foundation::HWND(handle as *mut _), &mut point).ok().ok()?;
+    }
+    Some((point.x, point.y))
+}

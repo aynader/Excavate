@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Excavate: instant file search for Windows 11, by name, contents and meaning</title>
+<meta name="description" content="Excavate is a free, open-source search popup for Windows 11. Press Alt+S to find apps and files by name, the words inside documents, the text in images, what photos and videos show, and what's said in recordings. Everything runs on your PC.">
+<link rel="canonical" href="https://aynader.github.io/Excavate/">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/mark-32.png">
+<link rel="apple-touch-icon" href="assets/mark-256.png">
+<meta name="theme-color" content="#16120e">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Excavate: search, the way it should be">
+<meta property="og:description" content="Alt+S on Windows 11: apps and files by name, the words inside them, the text in images, what photos and videos show, and what's said. All on your PC.">
+<meta property="og:url" content="https://aynader.github.io/Excavate/">
+<meta property="og:image" content="https://aynader.github.io/Excavate/assets/og-image.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<!-- SEARCH-CONSOLE-VERIFICATION -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Excavate",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": "Windows 11",
+  "description": "A search popup for Windows 11: apps and files by name, the words inside documents, the text in images, what photos and videos show, and what's said in recordings. Everything runs on your PC.",
+  "url": "https://aynader.github.io/Excavate/",
+  "downloadUrl": "https://github.com/aynader/Excavate/releases/latest",
+  "license": "https://opensource.org/licenses/MIT",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+<style>
+:root {
+  --bg: #16120e; --bg-2: #1d1813; --card: #241e17; --raised: #2b241c; --line: #3a3127; --line-2: #4a3f32;
+  --ink: #f3ede4; --ink-2: #c9bfb1; --muted: #998d7d;
+  --accent: #e8a13a; --accent-soft: rgba(232, 161, 58, 0.14); --accent-ink: #1b1309;
+  --win: #7fc28a; --lose: #d98b6a;
+  --radius: 14px;
+  --display: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+kbd {
+  display: inline-block; min-width: 1.8em; padding: 0.1em 0.5em; border: 1px solid var(--line-2);
+  border-bottom-width: 3px; border-radius: 7px; background: var(--card); color: var(--ink);
+  font: 600 0.9em/1.4 "Segoe UI", system-ui, sans-serif; text-align: center;
+}
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Top bar */
+.top { position: sticky; top: 0; z-index: 10; background: rgba(22, 18, 14, 0.72); backdrop-filter: blur(14px) saturate(1.3);
+  border-bottom: 1px solid transparent; transition: border-color .2s; }
+.top.scrolled { border-bottom-color: var(--line); }
+.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font-weight: 650; font-size: 18px; }
+.brand:hover { text-decoration: none; }
+.brand img { width: 28px; height: 28px; }
+.top nav { display: flex; align-items: center; gap: 22px; font-size: 15px; }
+.top nav a { color: var(--ink-2); }
+.top nav a.small { padding: 6px 14px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-weight: 650; }
+.top nav a.small:hover { text-decoration: none; filter: brightness(1.06); }
+
+/* Hero */
+.hero { position: relative; text-align: center; padding: 64px 0 34px; }
+.hero::before { content: ""; position: absolute; inset: -80px 0 auto; height: 520px; z-index: -1; pointer-events: none;
+  background: radial-gradient(600px 300px at 50% 30%, rgba(232, 161, 58, 0.13), transparent 70%); }
+.hero img.mark { width: 84px; height: 84px; }
+.hero h1 { font: 700 clamp(38px, 6.2vw, 64px)/1.06 var(--display); margin: 18px 0 16px; letter-spacing: -0.025em; }
+.flip { font: 600 clamp(19px, 2.6vw, 24px)/1.3 var(--display); color: var(--ink-2); margin: 0 0 14px; }
+.flip .reel { display: inline-block; position: relative; height: 1.3em; vertical-align: bottom; overflow: hidden; color: var(--accent);
+  text-align: left; transition: width .35s ease; }
+.flip .reel span { display: block; white-space: nowrap; transition: transform .45s cubic-bezier(.2,.8,.2,1), opacity .45s; }
+.flip .reel span.out { position: absolute; top: 0; left: 0; transform: translateY(-110%); opacity: 0; }
+.flip .reel span.in { transform: translateY(110%); opacity: 0; }
+.hero p.lede { font-size: clamp(16px, 2vw, 18px); color: var(--muted); max-width: 640px; margin: 0 auto 28px; }
+.cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 10px;
+  font-weight: 650; font-size: 16px; border: 1px solid var(--line-2); color: var(--ink); background: var(--card);
+  transition: border-color .15s, transform .15s;
+}
+.btn:hover { text-decoration: none; border-color: var(--muted); }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn svg { width: 18px; height: 18px; }
+.note { color: var(--muted); font-size: 14px; margin-top: 14px; }
+
+/* The film, in a window */
+.window { margin: 30px auto 0; max-width: 980px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line-2);
+  background: #0f0c09; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.02), 0 0 120px rgba(232, 161, 58, 0.06); }
+.window .bar { display: flex; align-items: center; height: 34px; padding-left: 12px; background: #201a14; border-bottom: 1px solid var(--line);
+  font-size: 12.5px; color: var(--muted); }
+.window .bar img { width: 14px; height: 14px; margin-right: 8px; }
+.window .bar .ctl { margin-left: auto; display: flex; height: 100%; }
+.window .bar .ctl i { width: 46px; display: grid; place-items: center; }
+.window .bar .ctl i::before { content: ""; width: 10px; height: 10px; border: 1px solid var(--muted); border-width: 0 0 1px 0; }
+.window .bar .ctl i:nth-child(2)::before { border-width: 1px; height: 9px; width: 9px; }
+.window .bar .ctl i:nth-child(3)::before { border: 0; width: 12px; height: 12px;
+  background: linear-gradient(45deg, transparent 47%, var(--muted) 47% 53%, transparent 53%), linear-gradient(-45deg, transparent 47%, var(--muted) 47% 53%, transparent 53%); }
+.window video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #000; }
+
+/* Example searches, drifting */
+.marquee { margin: 54px 0 0; display: grid; gap: 10px; cursor: grab; user-select: none; touch-action: pan-y;
+  -webkit-mask: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent); mask: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent); }
+.marquee.dragging { cursor: grabbing; }
+.lane { overflow: hidden; }
+.track { display: flex; gap: 10px; width: max-content; will-change: transform; }
+.q { display: inline-flex; align-items: center; gap: 10px; padding: 9px 14px 9px 12px; border-radius: 999px; background: var(--bg-2);
+  border: 1px solid var(--line); white-space: nowrap; font-size: 15px; color: var(--ink); }
+.q svg { width: 15px; height: 15px; color: var(--muted); flex: none; }
+.q b { font-weight: 600; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft);
+  padding: 2px 8px; border-radius: 999px; }
+
+/* Sections */
+section { padding: 84px 0 8px; }
+.eyebrow { font-size: 13px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
+h2 { font: 700 clamp(28px, 3.6vw, 38px)/1.15 var(--display); letter-spacing: -0.015em; margin: 0 0 10px; }
+.sub { color: var(--ink-2); margin: 0 0 30px; max-width: 760px; }
+
+/* Split showcase */
+.split { display: grid; grid-template-columns: minmax(250px, 340px) 1fr; gap: 22px; align-items: start; }
+.kinds { display: grid; gap: 6px; }
+.kind { position: relative; text-align: left; width: 100%; padding: 14px 16px 14px 18px; border-radius: 12px; border: 1px solid transparent;
+  background: transparent; color: var(--ink-2); font: inherit; cursor: pointer; overflow: hidden; transition: background .2s, border-color .2s; }
+.kind:hover { background: var(--bg-2); }
+.kind[aria-selected="true"] { background: var(--bg-2); border-color: var(--line); color: var(--ink); }
+.kind strong { display: block; font-size: 16px; color: var(--ink); }
+.kind span { display: block; font-size: 14px; color: var(--muted); margin-top: 2px; }
+.kind .progress { position: absolute; left: 0; bottom: 0; height: 2px; width: 0; background: var(--accent); }
+.kind[aria-selected="true"] .progress.run { animation: fill var(--cycle, 6s) linear forwards; }
+@keyframes fill { to { width: 100%; } }
+
+/* A small Excavate popup, drawn in HTML */
+.popup { border-radius: 14px; background: #1d1b19; border: 1px solid var(--line-2); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); overflow: hidden;
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+.popup .field { margin: 14px 14px 10px; height: 44px; border-radius: 10px; background: rgba(255, 245, 233, 0.05); border: 1px solid rgba(255, 242, 224, 0.18);
+  display: flex; align-items: center; gap: 10px; padding: 0 14px; font-size: 16px; }
+.popup .field svg { width: 17px; height: 17px; color: var(--muted); flex: none; }
+.popup .field .caret { width: 1.5px; height: 20px; background: var(--ink); margin-left: -6px; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.popup .chips { display: flex; gap: 6px; padding: 0 14px 10px; flex-wrap: wrap; }
+.popup .chips i { font-style: normal; font-size: 12.5px; padding: 3px 11px; border-radius: 999px; border: 1px solid rgba(255, 242, 224, 0.16); color: var(--ink-2); }
+.popup .chips i.on { background: var(--ink); color: #1d1b19; border-color: var(--ink); }
+.popup .rows { padding: 2px 6px 6px; min-height: 236px; }
+.row { display: flex; gap: 12px; align-items: center; padding: 9px 12px; border-radius: 9px; position: relative; opacity: 0; transform: translateY(6px);
+  animation: rise .35s ease forwards; }
+.row:nth-child(2) { animation-delay: .06s; } .row:nth-child(3) { animation-delay: .12s; } .row:nth-child(4) { animation-delay: .18s; }
+@keyframes rise { to { opacity: 1; transform: none; } }
+.row.sel { background: rgba(255, 242, 224, 0.08); }
+.row.sel::before { content: ""; position: absolute; left: 4px; top: 50%; width: 4px; height: 16px; margin-top: -8px; border-radius: 2px; background: var(--accent); }
+.icon { width: 32px; height: 32px; border-radius: 6px; flex: none; display: grid; place-items: center; font: 700 9.5px/1 system-ui, sans-serif; color: #fff; letter-spacing: .02em; }
+.icon.pdf { background: #c8463b; } .icon.xls { background: #2f7a4a; } .icon.doc { background: #2f62b0; } .icon.txt { background: #6d655c; }
+.icon.aud { background: #7a4fb0; } .icon.vid { background: #3a3a3a; }
+.icon.img { background: linear-gradient(160deg, #f0b35c, #c96a3a 55%, #5b3a2b); }
+.icon.img.sea { background: linear-gradient(180deg, #8fc0e0 0 45%, #e3c690 45% 100%); }
+.icon.img.board { background: linear-gradient(180deg, #f4f1ea, #d9d4c9); }
+.body { min-width: 0; flex: 1; }
+.name { display: flex; align-items: center; gap: 8px; font-size: 14.5px; color: var(--ink); white-space: nowrap; }
+.name mark { background: none; color: var(--accent); font-weight: 650; }
+.name .n { overflow: hidden; text-overflow: ellipsis; }
+.name .pill { margin-left: 6px; }
+.pill { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid rgba(255, 242, 224, 0.2); color: var(--ink-2); }
+.badge { font-size: 10.5px; font-weight: 650; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.detail { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detail mark { background: none; color: var(--accent); }
+.detail .dots { letter-spacing: 1px; }
+.meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.popup .foot { display: flex; align-items: center; gap: 14px; padding: 9px 16px; border-top: 1px solid rgba(255, 242, 224, 0.08); font-size: 11.5px; color: var(--muted); }
+.popup .foot .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--win); }
+.popup .foot kbd { font-size: 10px; padding: 0 5px; border-bottom-width: 1px; border-radius: 4px; }
+.popup .foot .keys { margin-left: auto; display: flex; gap: 12px; }
+
+/* Benchmarks */
+.table { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-2); }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.05em; }
+td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+td.win { color: var(--win); font-weight: 650; }
+td.bars { width: 34%; min-width: 160px; }
+.cmp { height: 6px; border-radius: 3px; background: var(--line); margin: 3px 0; overflow: hidden; }
+.cmp i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--muted); transition: width 1s cubic-bezier(.2,.8,.2,1); }
+.cmp.b i { background: var(--accent); }
+.shown .cmp i { width: var(--w); }
+.legend { display: flex; gap: 18px; font-size: 13px; color: var(--muted); margin: 0 0 10px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; background: var(--muted); }
+.legend i.b { background: var(--accent); }
+.fine { color: var(--muted); font-size: 14px; margin-top: 12px; }
+
+/* Privacy */
+.privacy { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.card { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 20px 18px; transition: border-color .2s, transform .2s; }
+.card:hover { border-color: var(--line-2); transform: translateY(-2px); }
+.card h3 { margin: 10px 0 6px; font-size: 17px; }
+.card p { margin: 0; color: var(--ink-2); font-size: 15px; }
+.card svg { width: 22px; height: 22px; color: var(--accent); }
+
+/* Requirements and install */
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 22px; }
+.steps { display: grid; gap: 10px; counter-reset: step; }
+.step { display: flex; gap: 14px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.step::before { counter-increment: step; content: counter(step); flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 14px; }
+.step p { margin: 2px 0 0; color: var(--ink-2); font-size: 15px; }
+.step code { color: var(--ink); }
+
+/* Closing call */
+.closing { text-align: center; padding: 96px 0 20px; }
+.closing h2 { margin-bottom: 12px; }
+.closing p { color: var(--ink-2); margin: 0 0 26px; }
+
+/* Footer */
+footer { margin-top: 72px; border-top: 1px solid var(--line); padding: 28px 0 40px; color: var(--muted); font-size: 14px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between; }
+footer nav { display: flex; flex-wrap: wrap; gap: 18px; }
+footer a { color: var(--ink-2); }
+
+/* Shown as they come into view */
+.reveal { opacity: 0; transform: translateY(14px); transition: opacity .6s ease, transform .6s ease; }
+.reveal.shown { opacity: 1; transform: none; }
+
+@media (max-width: 820px) {
+  .split { grid-template-columns: 1fr; }
+  .kinds { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .kind span { display: none; }
+  .meta, .popup .foot .keys { display: none; }
+}
+@media (max-width: 640px) {
+  .top nav a:not(.small) { display: none; }
+  .hero { padding-top: 36px; }
+  th, td { padding: 10px 12px; }
+  td.bars { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .row { opacity: 1; transform: none; }
+  .reveal { opacity: 1; transform: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="top" id="top">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="assets/mark-32.png" alt="" width="28" height="28">Excavate</a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#benchmarks">Benchmarks</a>
+      <a href="#privacy">Privacy</a>
+      <a href="https://github.com/aynader/Excavate">GitHub</a>
+      <a class="small" href="https://github.com/aynader/Excavate/releases/latest">Download</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <img class="mark" src="assets/mark-256.png" alt="Excavate's mark" width="84" height="84">
+    <h1>Search, the way it should be.</h1>
+    <p class="flip">Find anything on your PC <span class="reel" aria-hidden="true"><span>by its name</span></span><span class="sr">by its name, the words inside it, the text in an image, what a photo shows, or what's said in a recording</span></p>
+    <p class="lede">Press <kbd>Alt</kbd> + <kbd>S</kbd> on Windows 11. Apps and files on every drive, the words inside your
+      documents, the text in your images, what your photos and videos show and what's said in your recordings, within
+      milliseconds and all on your PC.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/aynader/Excavate/releases/latest">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m-5-5l5 5l5-5M5 20h14"/></svg>
+        Download for Windows 11</a>
+      <a class="btn" href="https://github.com/aynader/Excavate">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34c-.45-1.16-1.11-1.47-1.11-1.47c-.91-.62.07-.6.07-.6c1 .07 1.53 1.03 1.53 1.03c.89 1.53 2.34 1.09 2.91.83c.09-.65.35-1.09.63-1.34c-2.22-.25-4.55-1.11-4.55-4.94c0-1.09.39-1.98 1.03-2.68c-.1-.25-.45-1.27.1-2.65c0 0 .84-.27 2.75 1.02a9.6 9.6 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02c.55 1.38.2 2.4.1 2.65c.64.7 1.03 1.59 1.03 2.68c0 3.84-2.34 4.68-4.57 4.93c.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/></svg>
+        Source on GitHub</a>
+    </div>
+    <p class="note">Free and open source (MIT) · Windows 11, 64-bit · about 50 MB, models download as you choose them</p>
+  </div>
+
+  <div class="wrap">
+    <div class="window">
+      <div class="bar"><img src="assets/mark-32.png" alt="">Excavate<span class="ctl" aria-hidden="true"><i></i><i></i><i></i></span></div>
+      <video controls preload="metadata" playsinline poster="assets/excavate-demo-poster.jpg">
+        <source src="assets/excavate-demo.mp4" type="video/mp4">
+        <a href="assets/excavate-demo.mp4">Watch the demo (MP4)</a>
+      </video>
+    </div>
+  </div>
+
+  <div class="marquee" id="marquee" aria-label="Searches people type">
+    <div class="lane"><div class="track" data-speed="0.35"></div></div>
+    <div class="lane"><div class="track" data-speed="-0.28"></div></div>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <p class="eyebrow">One popup</p>
+      <h2>Everything on your PC, in one list</h2>
+      <p class="sub">Each keystroke is answered from the places you use, then filled in with names from every drive and
+        with what's inside your files, images, videos and recordings, all ranked together.</p>
+      <div class="split reveal">
+        <div class="kinds" role="tablist" aria-label="What Excavate finds" id="kinds"></div>
+        <div class="popup" role="tabpanel" id="panel" aria-live="polite">
+          <div class="field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><span id="typed"></span><span class="caret"></span></div>
+          <div class="chips" id="chips"></div>
+          <div class="rows" id="rows"></div>
+          <div class="foot"><span class="dot"></span><span id="said">Ready</span><span class="keys"><span><kbd>Enter</kbd> Open</span><span><kbd>Ctrl+Enter</kbd> Show in folder</span></span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="benchmarks">
+    <div class="wrap">
+      <p class="eyebrow">Measured, not promised</p>
+      <h2>Bedrock and Everything, side by side</h2>
+      <p class="sub">On an everyday laptop (Intel Core i9-13900HX, 32 GB, RTX 4080 Laptop) with 9,453,012 files and
+        folders on two drives, Bedrock, Excavate's own index, against <a href="https://www.voidtools.com">Everything</a>
+        1.4 with its owner's settings. Version 0.1.0, November 2026.</p>
+      <div class="legend"><span><i class="b"></i>Bedrock</span><span><i></i>Everything</span><span>Shorter is better</span></div>
+      <div class="table reveal" id="names">
+        <table>
+          <thead><tr><th>Names</th><th class="num">Bedrock</th><th class="num">Everything</th><th class="bars"><span class="sr">Compared</span></th></tr></thead>
+          <tbody>
+            <tr><td>Typical search, first 100 results (median of 44 kinds)</td><td class="num win">7.0 ms</td><td class="num">27.5 ms</td><td class="bars" data-a="7.0" data-b="27.5"></td></tr>
+            <tr><td>A new file found</td><td class="num win">6.2 ms</td><td class="num">926 ms</td><td class="bars" data-a="6.2" data-b="926"></td></tr>
+            <tr><td>Opening at start</td><td class="num win">0.067 s</td><td class="num">2.1 s</td><td class="bars" data-a="0.067" data-b="2.1"></td></tr>
+            <tr><td>Building from the drives' own tables</td><td class="num win">10.1 s</td><td class="num">27.9 s</td><td class="bars" data-a="10.1" data-b="27.9"></td></tr>
+            <tr><td>Memory</td><td class="num win">87.5 MB</td><td class="num">800 MB</td><td class="bars" data-a="87.5" data-b="800"></td></tr>
+            <tr><td>Processor time when idle, per minute</td><td class="num">0.69 s</td><td class="num win">0.14 s</td><td class="bars" data-a="0.69" data-b="0.14"></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="fine">Bedrock is faster on 33 of the 44 searches. Everything is a few milliseconds faster on searches by
+        date or size and on those with hundreds of thousands of results, and lighter when idle.</p>
+
+      <div class="table reveal" style="margin-top: 26px">
+        <table>
+          <thead><tr><th>Finding by what's inside (Balanced)</th><th>Data</th><th class="num">First</th><th class="num">Top ten</th></tr></thead>
+          <tbody>
+            <tr><td>Documents, by words inside</td><td>GovDocs1, 3,000 files</td><td class="num">67%</td><td class="num">90%</td></tr>
+            <tr><td>Photos, by a description</td><td>COCO 2017, 300 photos</td><td class="num">81%</td><td class="num">99%</td></tr>
+            <tr><td>Videos, by a description</td><td>MSR-VTT, 150 clips</td><td class="num">68%</td><td class="num">91%</td></tr>
+            <tr><td>Recordings, by what's said (English)</td><td>LibriSpeech, 50 recordings</td><td class="num">93%</td><td class="num">93%</td></tr>
+            <tr><td>Recordings, other languages</td><td>FLEURS Arabic, German, English</td><td class="num">98%</td><td class="num">98%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="fine">Public datasets, so anyone can check. Every figure, the method and the raw results are in
+        <a href="https://github.com/aynader/Excavate/blob/main/benchmarks/README.md">the benchmarks</a>, with a
+        clean 4-core virtual machine to confirm them.</p>
+    </div>
+  </section>
+
+  <section id="privacy">
+    <div class="wrap">
+      <p class="eyebrow">Private by design</p>
+      <h2>Nothing leaves your PC</h2>
+      <p class="sub">Every model runs on your own processor or graphics card, with no account and nothing uploaded.
+        Excavate goes online only to download the models you choose and, if you let it, to check for updates.</p>
+      <div class="privacy reveal">
+        <div class="card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12s3.5-7 9-7s9 7 9 7s-3.5 7-9 7s-9-7-9-7z"/><path d="M4 4l16 16"/></svg>
+          <h3>Secrets stay hidden</h3>
+          <p>Passwords, codes, keys, card numbers, IBANs and IDs are blurred in previews and never stored. Images stay
+            blurred until they've been read.</p>
+        </div>
+        <div class="card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <h3>Found and hidden, shown to you</h3>
+          <p>Settings lists what was found by kind. After Windows Hello you can see where each one is, with the secret
+            outlined in place.</p>
+        </div>
+        <div class="card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4v5c0 5-3.5 8-8 9c-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2l4-4"/></svg>
+          <h3>Signed updates</h3>
+          <p>Each release is signed, and Excavate checks the signature before it uses an update.
+            <a href="https://github.com/aynader/Excavate/blob/main/docs/PRIVACY.md">What stays on your PC</a></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="requirements">
+    <div class="wrap two">
+      <div class="reveal">
+        <p class="eyebrow">Requirements</p>
+        <h2>Runs on the PC you have</h2>
+        <div class="table">
+          <table>
+            <thead><tr><th></th><th>Minimum</th><th>Recommended</th></tr></thead>
+            <tbody>
+              <tr><td>Windows</td><td>11, 64-bit</td><td>11, up to date</td></tr>
+              <tr><td>Processor</td><td>4 cores</td><td>8 cores or more</td></tr>
+              <tr><td>Memory</td><td>8 GB</td><td>16 GB</td></tr>
+              <tr><td>Graphics card</td><td>none needed</td><td>8 GB, a current driver</td></tr>
+              <tr><td>Disk</td><td>1 GB plus the index</td><td>15 GB, for every model</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="fine">Names, documents, and Quick or Balanced reading run on the processor. Thorough and the
+          Balanced and Thorough image search use the graphics card.</p>
+      </div>
+      <div class="reveal">
+        <p class="eyebrow">Install</p>
+        <h2>Ready in a minute</h2>
+        <div class="steps">
+          <div class="step"><div><strong>Download</strong><p>The setup from <a href="https://github.com/aynader/Excavate/releases/latest">Releases</a>, one file.</p></div></div>
+          <div class="step"><div><strong>Run it</strong><p>It installs for you alone, without administrator rights, and adds itself to the Start menu.</p></div></div>
+          <div class="step"><div><strong>A few short steps</strong><p>The shortcut, how names are found, which folders to read and how
+            closely (Quick, Balanced or Thorough), with how long each takes on your PC.</p></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap closing">
+    <h2>Press <kbd>Alt</kbd> + <kbd>S</kbd> and find it.</h2>
+    <p>Free and open source, for Windows 11.</p>
+    <a class="btn primary" href="https://github.com/aynader/Excavate/releases/latest">Download Excavate</a>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Excavate · free and open source, MIT licence</span>
+    <nav>
+      <a href="https://github.com/aynader/Excavate">GitHub</a>
+      <a href="https://github.com/aynader/Excavate/releases">Releases</a>
+      <a href="https://github.com/aynader/Excavate/blob/main/docs/SEARCH.md">Search syntax</a>
+      <a href="https://github.com/aynader/Excavate/blob/main/docs/PRIVACY.md">Privacy</a>
+      <a href="https://github.com/aynader/Excavate/issues">Report a problem</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const icon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>';
+
+  // The top bar's line once the page moves.
+  const top = document.getElementById("top");
+  addEventListener("scroll", () => top.classList.toggle("scrolled", scrollY > 8), { passive: true });
+
+  // "Find anything on your PC by …", turning over.
+  const ways = ["by its name", "by the words inside", "by the text in an image", "by what a photo shows", "by what's said"];
+  const reel = document.querySelector(".reel");
+  const measure = text => { const probe = document.createElement("span"); probe.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap";
+    probe.textContent = text; reel.appendChild(probe); const width = probe.offsetWidth + 4; probe.remove(); return width; };
+  reel.style.width = measure(ways[0]) + "px";
+  let way = 0;
+  if (!still) setInterval(() => {
+    way = (way + 1) % ways.length;
+    const old = reel.querySelector("span:not(.out)");
+    const next = document.createElement("span");
+    next.textContent = ways[way]; next.className = "in";
+    reel.appendChild(next);
+    reel.style.width = measure(ways[way]) + "px";
+    old.classList.add("out");
+    next.offsetWidth;
+    setTimeout(() => next.className = "", 20);
+    setTimeout(() => old.remove(), 500);
+  }, 2400);
+
+  // Searches people type, drifting, and dragged by hand.
+  const searches = [
+    ["budget 2026", "Name"], ["a photo I took of a card", "Shown"], ["the kitchen renovation quote", "In text"],
+    ["compilers old final exam", "By meaning"], ["milchstraße", "Said"], ["sprint goals whiteboard", "In image"],
+    ["ext:pdf invoice", "Name"], ["the dog on the beach", "Shown"], ["when we talked about the budget", "Said"],
+    ["lecture 21 clique", "In video"], ["receipt from the restaurant", "In image"], ["passport", "Shown"],
+    ["dm:thisweek report", "Name"], ["the slide with the pie chart", "Shown"], ["wifi setup notes", "In text"],
+  ];
+  const chip = ([text, kind]) => `<span class="q">${icon}${text}<b>${kind}</b></span>`;
+  const tracks = [...document.querySelectorAll(".track")];
+  tracks.forEach((track, index) => {
+    const list = index ? [...searches].reverse() : searches;
+    const half = list.map(chip).join("");
+    track.innerHTML = half + half;
+  });
+  const marquee = document.getElementById("marquee");
+  const offsets = tracks.map(() => 0);
+  let drag = null, hovered = false, last = performance.now();
+  const step = now => {
+    const dt = Math.min(64, now - last); last = now;
+    tracks.forEach((track, index) => {
+      const width = track.scrollWidth / 2;
+      if (!drag && !hovered && !still) offsets[index] += Number(track.dataset.speed) * dt / 16;
+      offsets[index] = ((offsets[index] % width) + width) % width;
+      track.style.transform = `translateX(${-offsets[index]}px)`;
+    });
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  marquee.addEventListener("pointerenter", () => hovered = true);
+  marquee.addEventListener("pointerleave", () => { hovered = false; drag = null; marquee.classList.remove("dragging"); });
+  marquee.addEventListener("pointerdown", event => { drag = event.clientX; marquee.classList.add("dragging"); marquee.setPointerCapture(event.pointerId); });
+  marquee.addEventListener("pointermove", event => { if (drag === null) return; const by = event.clientX - drag; drag = event.clientX;
+    tracks.forEach((track, index) => offsets[index] -= by * (index ? -1 : 1)); });
+  marquee.addEventListener("pointerup", () => { drag = null; marquee.classList.remove("dragging"); });
+
+  // What it finds, one kind at a time, in a small copy of the popup.
+  const kinds = [
+    { title: "Names on every drive", line: "Typos forgiven, apps first, Everything's syntax understood.", query: "budget 2026", chip: "All",
+      said: "9,453,012 names on 2 drives",
+      rows: [["xls", "<mark>Budget 2026</mark>.xlsx", "C:\\Users\\Mara\\Documents\\Finance", "", "Today"],
+             ["pdf", "<mark>budget</mark>-<mark>2026</mark>-final.pdf", "D:\\Work\\Planning", "", "Yesterday"],
+             ["doc", "<mark>Budget 2026</mark> notes.docx", "C:\\Users\\Mara\\Documents", "", "Mon"],
+             ["txt", "<mark>budget</mark> ideas <mark>2026</mark>.txt", "C:\\Users\\Mara\\Desktop", "", "Jan 4"]] },
+    { title: "Inside your documents", line: "PDFs, Office, email and code, with the passage that matched.", query: "kitchen renovation quote", chip: "Documents",
+      said: "Read 31,240 documents",
+      rows: [["pdf", "Quotes and offers.pdf", "House  ·  …the <mark>kitchen renovation quote</mark> comes to 14,200 with…", "In text", "Mar 2"],
+             ["doc", "House plans.docx", "House  ·  …ask for a second <mark>quote</mark> on the <mark>kitchen</mark>…", "In text", "Feb 11"],
+             ["txt", "calls.txt", "Notes  ·  …builder came by about the <mark>renovation</mark>…", "In text", "Feb 3"]] },
+    { title: "Text in images", line: "Screenshots, scans and whiteboards, with the words outlined.", query: "sprint goals", chip: "Images",
+      said: "Read 6,613 images",
+      rows: [["img board", "IMG_2041.jpg", "Phone  ·  <mark>Sprint goals</mark>  ·  ship onboarding, fix search lag", "In image", "Tue"],
+             ["img board", "Screenshot 2026-11-03.png", "Screenshots  ·  …<mark>sprint goals</mark> for the week…", "In image", "Nov 3"],
+             ["pdf", "Retro board.pdf", "Team  ·  …last <mark>sprint</mark>'s <mark>goals</mark> were…", "In scan", "Oct 28"]] },
+    { title: "What photos show", line: "Describe it the way you'd say it.", query: "the dog on the beach", chip: "Images",
+      said: "Looked at 34,367 images",
+      rows: [["img sea", "IMG_0412.jpg", "Pictures\\Holiday 2025", "Shown", "Aug 14"],
+             ["img sea", "IMG_0398.jpg", "Pictures\\Holiday 2025", "Shown", "Aug 14"],
+             ["img", "PXL_20250610.jpg", "Pictures\\Phone", "Shown", "Jun 10"],
+             ["vid", "walk with Bruno.mp4", "At 0:42", "Shown", "Jun 10"]] },
+    { title: "Videos and recordings", line: "What's said, what's shown and the text on screen, opened at that moment.", query: "when we talked about the budget", chip: "Audio",
+      said: "Listened to 214 recordings",
+      rows: [["aud", "Team call 12 Nov.m4a", "At 12:41  ·  …so when we <mark>talked about the budget</mark> last week…", "Said", "Nov 12"],
+             ["vid", "Planning meeting.mp4", "At 3:05  ·  …the <mark>budget</mark> for next year…", "Said", "Oct 30"],
+             ["vid", "Lecture 21.mp4", "At 18:20  ·  Clique is NP-complete", "In video", "Oct 2"]] },
+    { title: "The same file, once", line: "Copies in other folders fold into one result.", query: "a.gif", chip: "All",
+      said: "Ready",
+      rows: [["img", "a.gif <span class=\"pill\">+11 copies</span>", "C:\\…\\page 1 files\\sync_data", "", "Today"],
+             ["img", "beach.jpg <span class=\"pill\">+2 copies</span>", "Pictures\\Holiday 2025", "", "Aug 14"],
+             ["doc", "Report final.docx", "Documents\\Work", "", "Jul 2"]] },
+  ];
+  const kindsEl = document.getElementById("kinds");
+  const cycle = 6000;
+  kindsEl.style.setProperty("--cycle", cycle + "ms");
+  kindsEl.innerHTML = kinds.map((kind, index) =>
+    `<button class="kind" role="tab" id="kind-${index}" aria-controls="panel" aria-selected="false"><strong>${kind.title}</strong><span>${kind.line}</span><i class="progress"></i></button>`).join("");
+  const buttons = [...kindsEl.children];
+  const typed = document.getElementById("typed"), rowsEl = document.getElementById("rows"), chipsEl = document.getElementById("chips"), saidEl = document.getElementById("said");
+  const chipNames = ["All", "Documents", "Images", "Audio", "Video"];
+  let current = -1, timer = null, typing = null, auto = true;
+  const show = index => {
+    current = index;
+    const kind = kinds[index];
+    buttons.forEach((button, at) => {
+      button.setAttribute("aria-selected", at === index);
+      const bar = button.querySelector(".progress");
+      bar.classList.remove("run"); void bar.offsetWidth;
+      if (at === index && auto && !still) bar.classList.add("run");
+    });
+    document.getElementById("panel").setAttribute("aria-labelledby", "kind-" + index);
+    chipsEl.innerHTML = chipNames.map(name => `<i class="${name === kind.chip ? "on" : ""}">${name}</i>`).join("");
+    saidEl.textContent = kind.said;
+    rowsEl.innerHTML = "";
+    clearInterval(typing);
+    const draw = () => rowsEl.innerHTML = kind.rows.map(([type, name, detail, badge, when], at) =>
+      `<div class="row${at === 0 ? " sel" : ""}"><div class="icon ${type}">${type.startsWith("img") ? "" : type.toUpperCase()}</div>
+       <div class="body"><div class="name"><span class="n">${name}</span>${badge ? ` <span class="badge">${badge}</span>` : ""}</div><div class="detail">${detail}</div></div>
+       <div class="meta">${when}</div></div>`).join("");
+    if (still) { typed.textContent = kind.query; draw(); return; }
+    let letters = 0;
+    typed.textContent = "";
+    typing = setInterval(() => {
+      letters++;
+      typed.textContent = kind.query.slice(0, letters);
+      if (letters >= kind.query.length) { clearInterval(typing); draw(); }
+    }, 38);
+  };
+  const next = () => show((current + 1) % kinds.length);
+  const start = () => { clearInterval(timer); if (auto && !still) timer = setInterval(next, cycle); };
+  buttons.forEach((button, index) => {
+    button.addEventListener("click", () => { auto = false; clearInterval(timer); show(index); });
+    button.addEventListener("keydown", event => {
+      const by = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
+      if (!by) return;
+      event.preventDefault();
+      const to = (index + by + kinds.length) % kinds.length;
+      auto = false; clearInterval(timer); show(to); buttons[to].focus();
+    });
+  });
+
+  // Shown as they come into view: the showcase starts, and the bars fill.
+  document.querySelectorAll("td.bars[data-a]").forEach(cell => {
+    const a = Number(cell.dataset.a), b = Number(cell.dataset.b), most = Math.max(a, b);
+    cell.innerHTML = `<div class="cmp b"><i style="--w:${Math.max(2, a / most * 100)}%"></i></div><div class="cmp"><i style="--w:${Math.max(2, b / most * 100)}%"></i></div>`;
+  });
+  let started = false;
+  const seen = new IntersectionObserver(entries => entries.forEach(entry => {
+    if (!entry.isIntersecting) return;
+    entry.target.classList.add("shown");
+    seen.unobserve(entry.target);
+    if (entry.target.classList.contains("split") && !started) { started = true; if (current < 0) show(0); start(); }
+  }), { threshold: 0.2 });
+  document.querySelectorAll(".reveal").forEach(element => seen.observe(element));
+})();
+</script>
+</body>
+</html>

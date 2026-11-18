@@ -239,8 +239,11 @@ pub fn set_disabled(disabled: bool) {
     DISABLED.store(disabled, Ordering::Relaxed);
 }
 
+/// Disabled, or `EXCAVATE_NO_EVERYTHING` set: a sandbox's indexer that walks its folders and never asks the person's
+/// Everything anything (scripts/dev/Sandbox.psm1).
 fn disabled() -> bool {
-    DISABLED.load(Ordering::Relaxed)
+    static SWITCHED_OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    DISABLED.load(Ordering::Relaxed) || *SWITCHED_OFF.get_or_init(|| std::env::var_os("EXCAVATE_NO_EVERYTHING").is_some())
 }
 
 enum Job {
@@ -282,11 +285,10 @@ impl Everything {
                   reply: impl FnOnce(Result<Vec<Page>, Error>) + Send + 'static) {
         self.latest.fetch_max(generation, Ordering::SeqCst);
         let job = Job::Search { generation: Some(generation), queries, reply: Box::new(reply) };
-        if let Err(error) = self.jobs.send(job) {
-            if let Job::Search { reply, .. } = error.0 {
+        if let Err(error) = self.jobs.send(job)
+            && let Job::Search { reply, .. } = error.0 {
                 reply(Err(Error::Failed("Everything's thread ended".into())));
             }
-        }
     }
 
     pub fn search_blocking(&self, generation: u64, queries: Vec<Query>) -> Result<Vec<Page>, Error> {
@@ -303,11 +305,10 @@ impl Everything {
         let reply: Reply = Box::new(move |result| {
             let _ = sender.send(result);
         });
-        if let Err(error) = self.jobs.send(Job::Search { generation: None, queries, reply }) {
-            if let Job::Search { reply, .. } = error.0 {
+        if let Err(error) = self.jobs.send(Job::Search { generation: None, queries, reply })
+            && let Job::Search { reply, .. } = error.0 {
                 reply(Err(Error::Failed("Everything's thread ended".into())));
             }
-        }
         receiver.recv().unwrap_or_else(|_| Err(Error::Failed("Everything's thread ended".into())))
     }
 
@@ -340,11 +341,10 @@ impl Everything {
             return local.health();
         }
         let mut last = self.health.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some((at, health)) = *last {
-            if at.elapsed() < fresh && !matches!(health, Health::Unknown | Health::Loading) {
+        if let Some((at, health)) = *last
+            && at.elapsed() < fresh && !matches!(health, Health::Unknown | Health::Loading) {
                 return health;
             }
-        }
         let mut health = self.check(probe);
         // It could watch, and didn't notice in time: a PC under load can hold its updates back, so once more.
         if health == Health::Behind(Fix::Restart) && !matches!(*last, Some((_, Health::Behind(_)))) {
@@ -769,11 +769,10 @@ pub fn parse_marks(marked: &str) -> (String, Vec<Range<usize>>) {
             text.push(c);
         }
     }
-    if let Some(start) = open {
-        if start < text.len() {
+    if let Some(start) = open
+        && start < text.len() {
             ranges.push(start..text.len());
         }
-    }
     (text, ranges)
 }
 

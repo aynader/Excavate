@@ -19,6 +19,7 @@ fn slot() -> std::sync::MutexGuard<'static, Option<Arc<engine::names::Names>>> {
 /// Starts or stops the index to match the setting, and points name searches at it or back at Everything.
 pub fn apply(app: &App) {
     let on = app.settings.borrow().own_index;
+    pace(app);
     let mut slot = slot();
     match (on, slot.is_some()) {
         (true, false) => {
@@ -37,6 +38,14 @@ pub fn apply(app: &App) {
         }
         _ => {}
     }
+}
+
+/// Catching up on a drive at the speed control's level, now and each time it moves (a walk going on follows within a
+/// folder): more folders listed at once at Fast and Full, and at normal priority at Full, as the indexer reads there.
+pub fn pace(app: &App) {
+    let speed = app.settings.borrow().speed();
+    let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+    engine::walk::set_pace(speed.name_listers(cores), speed.background_io());
 }
 
 /// Says how starting goes: in the log once it's done, and to the search window's footer and Settings' Everything line
@@ -62,6 +71,9 @@ fn follow(names: Arc<engine::names::Names>) {
             }
             if said != Some(state.phase) {
                 said = Some(state.phase);
+                if state.phase == engine::names::Phase::Building && !state.not_loaded.is_empty() {
+                    log(&format!("own index: listing the drives afresh, as the saved index couldn't be used ({})", state.not_loaded));
+                }
                 let health = everything::Local::health(&*names);
                 let _ = slint::invoke_from_event_loop(move || with_app(|app| {
                     if everything::is_local() {
@@ -132,7 +144,9 @@ fn everything_running() -> bool {
 /// Whether switching it on would build it from nothing (no saved index): then Windows' administrator prompt is offered
 /// first, explained in a popup of its own before it (`AdminAsk`).
 pub fn from_nothing(app: &App) -> bool {
+    // (With Excavate Bedrock installed it's built through it, in seconds, without asking.)
     slot().is_none() && !BUILDING.load(std::sync::atomic::Ordering::SeqCst) && !app.paths.names().exists()
+        && !engine::names::service_installed()
 }
 
 /// Being built from the drives' file tables, with administrator rights.
@@ -198,9 +212,36 @@ pub const JOURNAL_SIZE: u64 = 1 << 30;
 /// Then Bedrock catches up from it after Excavate was closed for a long while too. A sandbox
 /// (`EXCAVATE_PRETEND_EVERYTHING`, `EXCAVATE_NO_ELEVATE`, `EXCAVATE_PRETEND_RELIST`) only logs it.
 pub fn fix_journal(drive: String) {
+    set_journal(drive, JOURNAL_SIZE, JOURNAL_SIZE / 8, true);
+}
+
+/// Windows' own size for a drive's record of changes: 32 MB, growing 8 MB at a time.
+pub const JOURNAL_DEFAULT: u64 = 32 << 20;
+
+/// A record of changes this large or larger was made so by "Fix this" (Windows' own is 32 MB): Settings offers to put
+/// it back.
+const JOURNAL_LARGE: u64 = 256 << 20;
+
+/// The drives whose record of changes is far larger than Windows' own ("C:"), for Settings' "Back to Windows' size".
+pub fn large_journals() -> Vec<String> {
+    engine::names::indexed_drives().into_iter()
+        .filter(|drive| engine::journal::size(drive).is_some_and(|size| size >= JOURNAL_LARGE))
+        .map(|drive| drive.trim_end_matches('\\').to_string()).collect()
+}
+
+/// Settings' "Back to Windows' size", agreed to: each drive's record of changes made Windows' own size again, through
+/// its administrator prompt (the journal keeps its id: the saved position stays good, though a long while closed may
+/// mean listing a drive again, as before "Fix this").
+pub fn journal_to_default(drives: Vec<String>) {
+    for drive in drives {
+        set_journal(format!("{drive}\\"), JOURNAL_DEFAULT, 8 << 20, false);
+    }
+}
+
+fn set_journal(drive: String, size: u64, growth: u64, larger: bool) {
     let pretend = ["EXCAVATE_PRETEND_EVERYTHING", "EXCAVATE_NO_ELEVATE", "EXCAVATE_PRETEND_RELIST"].iter().any(|name| std::env::var_os(name).is_some());
     let letter = drive.trim_end_matches('\\').to_string();
-    let args = format!("usn createjournal m={JOURNAL_SIZE} a={} {letter}", JOURNAL_SIZE / 8);
+    let args = format!("usn createjournal m={size} a={growth} {letter}");
     let _ = std::thread::Builder::new().name("journal size".into()).spawn(move || {
         let fsutil = std::path::Path::new(&std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into())).join(r"System32\fsutil.exe");
         let fixed = if pretend {
@@ -227,8 +268,10 @@ pub fn fix_journal(drive: String) {
                 }
             }
         };
-        if fixed {
+        if fixed && larger {
             *JOURNAL_FIXED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(drive);
+        } else if fixed {
+            JOURNAL_FIXED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
         }
         let _ = slint::invoke_from_event_loop(|| with_app(|app| crate::setup::refill(app)));
     });

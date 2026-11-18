@@ -7,6 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+common.workspace = true
 winsys.workspace = true
 windows.workspace = true
 serde_json.workspace = true
@@ -15,3 +16,6 @@ quick-xml = "0.42"
 mail-parser = "1"
 cfb = "0.15"
 pdfium-render = { version = "0.9", default-features = false, features = ["thread_safe", "pdfium_latest", "image_025"] }
+
+[lints]
+workspace = true

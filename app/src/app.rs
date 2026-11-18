@@ -7,11 +7,12 @@
 //!
 //! "Show all" switches to a virtual list over every Everything result in a chosen order, fetched a page at a time.
 
-use crate::contents::Contents;
+use common::grouped as group;
+use crate::contents::{Contents, Cover, Expect, ToRead};
 use crate::format;
 use crate::icons::{self, KindKey, Loader, Request};
 use crate::settings::{Paths, Settings, log};
-use crate::{Popup, Preview, Row, Theme, with_app};
+use crate::{CopyRow, Popup, Preview, Row, TextPiece, Theme, with_app};
 use everything::{Everything, Item, Page, Sort};
 use search::filter::kind_label;
 use search::history::History;
@@ -34,6 +35,9 @@ pub fn now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|duration| duration.as_secs() as i64).unwrap_or(0)
 }
 
+/// How many recent searches the popup keeps for when nothing is typed.
+const RECENT_SEARCHES: usize = 6;
+
 /// What a row stands for.
 #[derive(Clone, Debug, Default)]
 pub struct Target {
@@ -43,6 +47,23 @@ pub struct Target {
     pub size: Option<u64>,
     pub modified: Option<i64>,
     pub origin: Option<Origin>,
+}
+
+impl Target {
+    /// A file known only by its path (a copy of a result).
+    pub fn of_path(path: &str) -> Target {
+        let metadata = std::fs::metadata(path).ok();
+        let modified = metadata.as_ref().and_then(|metadata| metadata.modified().ok())
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok()).map(|since| since.as_secs() as i64);
+        Target {
+            path: path.to_string(),
+            name: path.rsplit('\\').next().unwrap_or(path).to_string(),
+            is_folder: false,
+            size: metadata.as_ref().map(std::fs::Metadata::len),
+            modified,
+            origin: None,
+        }
+    }
 }
 
 impl From<&Candidate> for Target {
@@ -190,6 +211,8 @@ struct State {
     timing: Timing,
     /// The status line, and a message that replaces it for a moment ("Copied").
     notice: Option<(String, Instant)>,
+    /// Files just sent to the Recycle Bin, and what the footer says of it, while Undo is offered.
+    undo: Option<(Vec<String>, String)>,
     everything: everything::Status,
     /// Whether its answers include what's new.
     health: everything::Health,
@@ -222,6 +245,26 @@ pub struct App {
     facts_asked: RefCell<HashSet<String>>,
     state: RefCell<State>,
     rows: Rc<VecModel<Row>>,
+    /// Several results selected (Ctrl+click, Shift+click, Shift+arrows): their paths, kept by path so they stay
+    /// marked as the results change, and which rows that makes (`marks`, one per row).
+    marked: RefCell<Vec<String>>,
+    /// Filters made from typed words ("pdfs from last week" makes `PDF` and `Last week`), shown as chips in the field.
+    chips: RefCell<Vec<search::chips::Chip>>,
+    /// Chips taken back into words with Backspace (lowercase): meant as words, they stay words until the popup hides.
+    declined: RefCell<Vec<String>>,
+    /// The filters and words the last search was made of, chips and ones still being typed: for its message.
+    searched: RefCell<(Vec<String>, String)>,
+    /// An Office file previewed by its own handler, and when the pane last said where it goes.
+    office: RefCell<Option<winsys::preview_host::Hosted>>,
+    office_seen: Cell<Option<Instant>>,
+    /// Which Office file the pane first asked for, and when: its handler opens once the selection rests on it.
+    office_asked: RefCell<Option<(String, Instant)>>,
+    office_timer: slint::Timer,
+    /// A drag out of the popup is under way (one at a time).
+    pub dragging: Cell<bool>,
+    not_office: RefCell<HashSet<String>>,
+    mark_anchor: RefCell<Option<String>>,
+    marks: Rc<VecModel<bool>>,
     all: RefCell<Option<Rc<AllModel>>>,
     pub hwnd: Cell<isize>,
     pub scale: Cell<f32>,
@@ -236,6 +279,8 @@ pub struct App {
     /// only reveals it); and the window that was in front before it opened, which gets the keyboard back.
     pub parked: Cell<bool>,
     pub before: Cell<isize>,
+    /// Closing to open settings: the keyboard stays with this process, so settings can come to the front.
+    pub handing_over: Cell<bool>,
     /// Frames drawn by the time everything closing changed was in (the empty search): one drawn after it means what
     /// the parked window holds is up to date.
     pub park_frames: Cell<u64>,
@@ -256,6 +301,7 @@ pub struct App {
     seeing_timer: slint::Timer,
     pub seeker: crate::seeking::Seeker,
     notice_timer: slint::Timer,
+    undo_timer: slint::Timer,
     pub profile: String,
     pub contents: Contents,
     pub indexer: crate::indexer::Indexer,
@@ -263,6 +309,9 @@ pub struct App {
     preview_marks: RefCell<Option<(String, Marks)>>,
     /// The file whose secrets the person revealed (with Windows Hello), shown as it is.
     pub revealed: RefCell<Option<String>>,
+    /// Rows' thumbnails covered because their file wasn't read yet (cache key, path): looked at again each second the
+    /// popup is open (`check_unread`), and drawn again once read.
+    covered_thumbs: RefCell<HashMap<String, String>>,
     /// Windows Hello's dialog is up: the popup stays open while it has the focus.
     pub verifying: Cell<bool>,
     /// Follows the indexer's progress, only while the popup is on screen.
@@ -273,10 +322,25 @@ pub struct App {
     pub wheel_at: Cell<Option<Instant>>,
     /// The newest request for an enlarged image: older answers are dropped.
     enlarged_request: Cell<u64>,
+    /// Results with the same contents as others in the same list, found by reading them (`copy_keys`): the one shown's
+    /// lowercase path, and where the others are.
+    found_copies: RefCell<HashMap<String, Vec<String>>>,
+    /// Files renamed from the results this session, by their new path (lowercase) to the old one: their copies are
+    /// known under the old path until the reader reads them again.
+    renamed_from: RefCell<HashMap<String, String>>,
+    /// What a small file's contents hash to, by (path, size, date), so a list is read once.
+    content_hashes: RefCell<HashMap<(String, u64, i64), Option<u64>>>,
+    /// Files are being read for that, on a thread.
+    copies_reading: Cell<bool>,
+    /// The copies in the list a result's "+3 copies" opened, by their paths.
+    copies_shown: RefCell<Vec<String>>,
     /// The file and the size in pixels of the enlarged image asked for last.
     enlarged_asked: RefCell<Option<(String, (u32, u32))>>,
     /// Waits for the wheel, or the window's edge, to rest.
     enlarged_timer: slint::Timer,
+    /// The newest request for the preview's text opened large, and the file it's for (`whole_text`).
+    text_request: Cell<u64>,
+    text_asked: RefCell<Option<String>>,
     /// Where names are searched.
     scope: RefCell<Scope>,
 }
@@ -297,10 +361,16 @@ pub struct Marks {
     /// A PDF's secrets on its first page, in ten-thousandths of the page (left, top, right, bottom). None: not placed
     /// (the page is covered whole); empty: none is on the first page.
     pub pdf_boxes: Option<Vec<[i64; 4]>>,
+    /// A picture or a video that will be read and isn't yet: its secrets aren't known, so it's covered whole.
+    pub waiting: bool,
+    /// A picture's lines (where each is, in its own pixels, and its text as kept), to outline the words searched for.
+    pub lines: Vec<([i32; 4], String)>,
+    /// A video's lines: [from ms, to ms, left, top, right, bottom] (ten-thousandths of the frame) and their text.
+    pub video_lines: Vec<([i64; 6], String)>,
 }
 
 impl Marks {
-    fn parse(bytes: &[u8]) -> Marks {
+    pub(crate) fn parse(bytes: &[u8]) -> Marks {
         let Ok(json) = serde_json::from_slice::<serde_json::Value>(bytes) else { return Marks::default() };
         let kinds = json["kinds"].as_array()
             .map(|kinds| kinds.iter().filter_map(|kind| kind.as_str().map(String::from)).collect())
@@ -337,6 +407,20 @@ impl Marks {
             similar: json["similar"].as_u64().unwrap_or(0) as u32,
             orientation: 1,
             pdf_boxes,
+            waiting: false,
+            video_lines: json["video"]["lines"].as_array().map(|lines| lines.iter().filter_map(|line| {
+                let line = line.as_array()?;
+                let mut place = [0i64; 6];
+                for (slot, value) in place.iter_mut().zip(line) {
+                    *slot = value.as_i64()?;
+                }
+                Some((place, line.get(6)?.as_str()?.to_string()))
+            }).collect()).unwrap_or_default(),
+            lines: picture["lines"].as_array().map(|lines| lines.iter().filter_map(|line| {
+                let line = line.as_array()?;
+                let place = [line.first()?.as_i64()? as i32, line.get(1)?.as_i64()? as i32, line.get(2)?.as_i64()? as i32, line.get(3)?.as_i64()? as i32];
+                Some((place, line.get(4)?.as_str()?.to_string()))
+            }).collect()).unwrap_or_default(),
         }
     }
 }
@@ -348,6 +432,10 @@ const KIND_SURE: f32 = 0.8;
 const KIND_SURE_NAME: f32 = 0.99;
 
 const ICON_SIZE: f32 = 32.0;
+/// The preview's note while a picture or a video waits to be read (covered whole until then).
+const NOT_READ: &str = "Not read yet";
+/// Rows' thumbnails kept covered because they wait to be read, at most (`thumb_covered`).
+const COVERED_THUMBS: usize = 256;
 const PREVIEW_SIZE: f32 = 256.0;
 /// How long the typing has to rest before a slow search is asked, in milliseconds.
 const SLOW_WAIT: u64 = 150;
@@ -398,7 +486,7 @@ impl App {
             let _ = slint::invoke_from_event_loop(move || with_app(|app| app.icon_ready(request, bitmap)));
         });
         let profile = winsys::files::known(Known::Profile).map(|path| path.display().to_string().to_lowercase()).unwrap_or_default();
-        let contents = Contents::start(paths.index());
+        let contents = Contents::start(paths.index(), paths.catalog());
         let scope = RefCell::new(Scope::with_apps(settings.names_within(), !settings.names_leave_out_apps));
         let app = Rc::new(App {
             ui: ui.as_weak(),
@@ -459,11 +547,24 @@ impl App {
                 visible: (0, 14),
                 timing: Timing::default(),
                 notice: None,
+                undo: None,
                 everything: everything::Status::default(),
                 health: everything::Health::Unknown,
                 fixing: None,
             }),
             rows: Rc::new(VecModel::default()),
+            marked: RefCell::new(Vec::new()),
+            chips: RefCell::new(Vec::new()),
+            declined: RefCell::new(Vec::new()),
+            searched: RefCell::new((Vec::new(), String::new())),
+            office: RefCell::new(None),
+            office_seen: Cell::new(None),
+            office_asked: RefCell::new(None),
+            office_timer: slint::Timer::default(),
+            dragging: Cell::new(false),
+            not_office: RefCell::new(HashSet::new()),
+            mark_anchor: RefCell::new(None),
+            marks: Rc::new(VecModel::default()),
             all: RefCell::new(None),
             hwnd: Cell::new(0),
             scale: Cell::new(1.0),
@@ -475,6 +576,7 @@ impl App {
             uncloak_timer: slint::Timer::default(),
             parked: Cell::new(false),
             before: Cell::new(0),
+            handing_over: Cell::new(false),
             park_frames: Cell::new(u64::MAX),
             warming: Cell::new(false),
             show_wanted: Cell::new(false),
@@ -486,21 +588,32 @@ impl App {
             seeing_timer: slint::Timer::default(),
             seeker: crate::seeking::Seeker::new(),
             notice_timer: slint::Timer::default(),
+            undo_timer: slint::Timer::default(),
             profile,
             contents,
             indexer: crate::indexer::Indexer::new(),
             preview_marks: RefCell::new(None),
             revealed: RefCell::new(None),
+            covered_thumbs: RefCell::new(HashMap::new()),
             verifying: Cell::new(false),
             reading_timer: slint::Timer::default(),
             opened_size: Cell::new((0, 0)),
             wheel_at: Cell::new(None),
             enlarged_request: Cell::new(0),
+            found_copies: RefCell::new(HashMap::new()),
+            renamed_from: RefCell::new(HashMap::new()),
+            content_hashes: RefCell::new(HashMap::new()),
+            copies_reading: Cell::new(false),
+            copies_shown: RefCell::new(Vec::new()),
             enlarged_asked: RefCell::new(None),
             enlarged_timer: slint::Timer::default(),
+            text_request: Cell::new(0),
+            text_asked: RefCell::new(None),
             scope,
         });
         ui.set_rows(ModelRc::from(app.rows.clone()));
+        ui.set_marks(ModelRc::from(app.marks.clone()));
+        app.show_searches();
         app.show_filters();
         app.preview_size_changed();
         app.show_toggles();
@@ -574,7 +687,92 @@ impl App {
 
     // ---- Typing -------------------------------------------------------------------------------------------------
 
+    /// The text in the field changed: finished filter phrases become chips, and the chips and words are searched.
     pub fn edited(&self, text: &str) {
+        let mut words = text.to_string();
+        let mut taken = false;
+        while let Some((chip, rest)) = search::chips::take_except(&words, &self.declined.borrow()) {
+            let mut chips = self.chips.borrow_mut();
+            // One of each sort: a second time or format takes the first one's place.
+            let sort = chip.syntax.split(':').next().unwrap_or_default().to_string();
+            chips.retain(|known| !known.syntax.starts_with(&format!("{sort}:")));
+            chips.push(chip);
+            words = rest;
+            taken = true;
+        }
+        if taken {
+            if let Some(ui) = self.ui.upgrade() {
+                ui.set_query(words.as_str().into());
+                ui.invoke_caret_to_end();
+            }
+            self.show_chips();
+        }
+        // A phrase finished at the very end ("pdf last week") filters at once; it becomes a chip with the next space,
+        // so the field doesn't change under the caret while it's typed.
+        let mut pending = self.chips.borrow().clone();
+        let mut rest = words.clone();
+        if !rest.ends_with(char::is_whitespace) {
+            let mut probe = format!("{rest} ");
+            while let Some((chip, left)) = search::chips::take_except(&probe, &self.declined.borrow()) {
+                let sort = chip.syntax.split(':').next().unwrap_or_default().to_string();
+                pending.retain(|known| !known.syntax.starts_with(&format!("{sort}:")));
+                pending.push(chip);
+                probe = left;
+            }
+            rest = probe.trim_end().to_string();
+        }
+        let composed = search::chips::compose(&pending, &rest);
+        *self.searched.borrow_mut() = (pending.iter().map(|chip| chip.label.clone()).collect(), rest.trim().to_string());
+        self.search_for(&composed);
+    }
+
+    /// Backspace on an empty search: the last chip back into words. Or a chip's × (`index`).
+    pub fn chip_back(&self, index: Option<usize>) {
+        let back = {
+            let mut chips = self.chips.borrow_mut();
+            match index {
+                Some(index) if index < chips.len() => { chips.remove(index); None }
+                Some(_) => return,
+                None => chips.pop().map(|chip| chip.words),
+            }
+        };
+        let Some(ui) = self.ui.upgrade() else { return };
+        if let Some(words) = back {
+            self.declined.borrow_mut().push(words.to_lowercase());
+            ui.set_query(words.as_str().into());
+            ui.invoke_caret_to_end();
+        }
+        self.show_chips();
+        let text = ui.get_query().to_string();
+        self.edited(&text);
+    }
+
+    /// The chips put back into words in the field (the popup hiding: it opens again with the search as it was typed).
+    pub fn chips_to_words(&self) {
+        self.declined.borrow_mut().clear();
+        *self.searched.borrow_mut() = Default::default();
+        let chips = std::mem::take(&mut *self.chips.borrow_mut());
+        if chips.is_empty() {
+            return;
+        }
+        if let Some(ui) = self.ui.upgrade() {
+            let mut words: Vec<String> = chips.into_iter().map(|chip| chip.words).collect();
+            let typed = ui.get_query().trim().to_string();
+            if !typed.is_empty() {
+                words.push(typed);
+            }
+            ui.set_query(words.join(" ").into());
+        }
+        self.show_chips();
+    }
+
+    fn show_chips(&self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let labels: Vec<SharedString> = self.chips.borrow().iter().map(|chip| SharedString::from(chip.label.as_str())).collect();
+        ui.set_typed_chips(ModelRc::new(VecModel::from(labels)));
+    }
+
+    fn search_for(&self, text: &str) {
         let terms = self.typed_terms(text);
         let generation = {
             let mut state = self.state.borrow_mut();
@@ -1019,8 +1217,8 @@ impl App {
         }
         // Functions answered here: more names, as each is checked; typed alone, the files of their kind, newest first.
         let extra = self.state.borrow().extra.clone();
-        if terms.is_empty() {
-            if let Some(kinds) = extra.kinds_alone() {
+        if terms.is_empty()
+            && let Some(kinds) = extra.kinds_alone() {
                 {
                     let mut state = self.state.borrow_mut();
                     state.fast_done = true;
@@ -1031,7 +1229,6 @@ impl App {
                 self.send(generation, Part::Main, everything::Query::new(kinds, everything::Sort::ModifiedDescending, EXTRA_POOL as u32));
                 return;
             }
-        }
         let count = if extra.is_empty() { count } else { count.max(EXTRA_POOL as u32) };
         let plan = if image_text { None } else { plan::ranked(&terms, filter, &self.scope.borrow(), count) };
         let Some(plan) = plan else {
@@ -1626,7 +1823,7 @@ impl App {
                 let mut all: Vec<&Candidate> = hot_tier.each(state.filter).chain(state.found.iter().filter(accepts))
                     .filter(|candidate| kept.insert(candidate.key()))
                     .collect();
-                all.sort_by(|a, b| b.modified.cmp(&a.modified));
+                all.sort_by_key(|file| std::cmp::Reverse(file.modified));
                 in_order(all)
             } else if state.terms.is_empty() {
                 hot
@@ -1737,6 +1934,10 @@ impl App {
             };
             let limit = self.settings.borrow().ranked_results as usize;
             let results = self.with_extra(results, &state.extra, state.extra_content.as_ref(), limit);
+            // The same contents in several places is one result, the first found ("+3 copies").
+            let keys = self.copy_keys(&results);
+            let (results, found) = fold_with_places(results, keys, |ranked| ranked.candidate.path());
+            *self.found_copies.borrow_mut() = found;
             (results, started.elapsed(), closest, loosely)
         };
         let selected = {
@@ -1761,7 +1962,7 @@ impl App {
     }
 
     /// The color of matched letters: the theme's, lighter on dark and deeper on light so it reads on both.
-    fn accent(&self) -> String {
+    pub(crate) fn accent(&self) -> String {
         let dark = self.ui.upgrade().is_some_and(|ui| ui.global::<Theme>().get_dark());
         crate::themes::current(&self.settings.borrow()).match_color(dark)
     }
@@ -1777,6 +1978,7 @@ impl App {
         // Found by the helper: by what they show (images, videos) or what they mean (the rest).
         let by_helper: HashSet<String> = state.seen.iter().chain(&state.closest).map(Candidate::key).collect();
         let inside = state.image_text || state.only.is_some_and(|only| only.inside);
+        let copies = self.contents.copies();
         let rows: Vec<Row> = state
             .results
             .iter()
@@ -1801,8 +2003,13 @@ impl App {
                     }
                     _ => (None, None),
                 };
+                let others = self.copies_of(&copies, &path).len() as u64;
                 keys.push((key, kind, path));
-                row(candidate, &ranked.highlights, accent, icon, now, twelve, snippet, badge)
+                let mut row = row(candidate, &ranked.highlights, accent, icon, now, twelve, snippet, badge);
+                if others > 0 {
+                    row.copies = if others == 1 { "+1 copy".into() } else { format!("+{others} copies").into() };
+                }
+                row
             })
             .collect();
         drop(images);
@@ -1810,6 +2017,7 @@ impl App {
         replace_rows(&self.rows, rows);
         let visible = state.visible;
         drop(state);
+        self.show_marks();
         self.request_icons(visible.0, visible.1);
     }
 
@@ -1846,6 +2054,11 @@ impl App {
             Some(mut bitmap) => {
                 if request.key.starts_with("preview|") {
                     self.protect(&request.path, &mut bitmap);
+                    self.outline_matches(&request.path, &mut bitmap);
+                } else if request.kind == KindKey::Preview {
+                    // A row's thumbnail: what the index knows decides first.
+                    self.thumb_ready(request, bitmap);
+                    return;
                 }
                 image(&bitmap)
             }
@@ -1876,11 +2089,17 @@ impl App {
             self.preview_image_ready(&request.path, image);
             return;
         }
+        self.keep_icon(&request.key, image);
+    }
+
+    /// Caches a row's icon and shows it in the rows that have it.
+    fn keep_icon(&self, key: &str, image: slint::Image) {
         if self.images.borrow().len() > 3000 {
             self.images.borrow_mut().clear();
+            self.covered_thumbs.borrow_mut().clear();
         }
-        self.images.borrow_mut().insert(request.key.clone(), image.clone());
-        self.place_icon(&request.key, image);
+        self.images.borrow_mut().insert(key.to_string(), image.clone());
+        self.place_icon(key, image);
     }
 
     fn place_icon(&self, key: &str, image: slint::Image) {
@@ -1890,13 +2109,12 @@ impl App {
         }
         let keys = self.row_keys.borrow();
         for (index, (row_key, _, _)) in keys.iter().enumerate() {
-            if row_key == key {
-                if let Some(mut row) = self.rows.row_data(index) {
+            if row_key == key
+                && let Some(mut row) = self.rows.row_data(index) {
                     row.icon = image.clone();
                     row.has_icon = true;
                     self.rows.set_row_data(index, row);
                 }
-            }
         }
     }
 
@@ -1996,6 +2214,13 @@ impl App {
         } else if state.route != Route::Name && state.seen_images == Some(0) {
             (format!("Nothing called \u{201c}{}\u{201d}", state.terms.text),
              "Excavate hasn't looked at what your images show yet. Settings, Activity, says how far it has got.".into())
+        } else if !self.searched.borrow().0.is_empty() {
+            // Filters made from typed words: the message in those words, not their syntax.
+            let (labels, words) = self.searched.borrow().clone();
+            let labels = labels.join(" and ");
+            let title = if words.is_empty() { format!("Nothing with {labels}") }
+                        else { format!("Nothing called \u{201c}{words}\u{201d} with {labels}") };
+            (title, "Click \u{d7} on a filter to drop it, or Backspace in an empty search to turn the last one back into words.".into())
         } else {
             (format!("Nothing called \u{201c}{}\u{201d}", state.terms.text),
              if local { "Check the spelling, try fewer letters, or use search syntax like ext:pdf or dm:today." }
@@ -2004,7 +2229,9 @@ impl App {
         ui.set_empty_title(title.into());
         ui.set_empty_detail(detail.into());
 
-        let (banner, action) = if !self.settings.borrow().setup_done {
+        let (banner, action) = if let Some((_, text)) = &state.undo {
+            (text.clone(), "Undo".to_string())
+        } else if !self.settings.borrow().setup_done {
             ("Excavate isn't reading inside your files yet".to_string(), "Set up".to_string())
         } else if let Some(step) = &state.fixing {
             // (Everything is started again on the way: this, not that it isn't running.)
@@ -2023,14 +2250,23 @@ impl App {
             ("Everything is loading its list of files: some names are missing until it's done".to_string(), String::new())
         } else if matches!(state.health, everything::Health::Behind(_)) && !local {
             ("Everything can't see new files, so they're missing here".to_string(), "Fix".to_string())
+        } else if self.install_offered() {
+            ("Excavate isn't installed yet, so it's not in the Start menu or the Apps list".to_string(), "Install".to_string())
         } else {
             (String::new(), String::new())
         };
-        let warning = self.settings.borrow().setup_done && state.fixing.is_none()
+        let warning = self.settings.borrow().setup_done && state.fixing.is_none() && state.undo.is_none()
             && (!state.everything.available || matches!(state.health, everything::Health::Behind(_)));
+        ui.set_banner_dismiss(if action == "Install" && self.install_offered() { "Not now".into() } else { SharedString::new() });
         ui.set_banner(banner.into());
         ui.set_banner_action(action.into());
         ui.set_banner_warning(warning);
+    }
+
+    /// The popup offers to install this copy (once, until put away).
+    pub fn install_offered(&self) -> bool {
+        let settings = self.settings.borrow();
+        settings.setup_done && !settings.install_offer_closed && crate::install::offered()
     }
 
     /// Whether times read "2:30 PM".
@@ -2051,6 +2287,7 @@ impl App {
     /// The footer's indicator and, with nothing typed, the progress card.
     fn show_reading(&self) {
         let Some(ui) = self.ui.upgrade() else { return };
+        self.check_unread();
         let status = if self.settings.borrow().setup_done { config::status::Status::load(&self.paths) } else { None };
         if let Some(status) = &status {
             crate::setup::check_trial(self, status);
@@ -2121,6 +2358,155 @@ impl App {
         });
     }
 
+    /// Undo offered in the footer for 8 seconds, for `paths` just sent to the Recycle Bin.
+    pub fn offer_undo(&self, paths: Vec<String>, text: String) {
+        self.state.borrow_mut().undo = Some((paths, text));
+        self.update_status();
+        self.undo_timer.start(slint::TimerMode::SingleShot, Duration::from_secs(8), || {
+            with_app(|app| {
+                app.state.borrow_mut().undo = None;
+                app.update_status();
+            });
+        });
+    }
+
+    /// What Undo would bring back now (taken: it's offered once).
+    pub fn take_undo(&self) -> Option<Vec<String>> {
+        let taken = self.state.borrow_mut().undo.take().map(|(paths, _)| paths);
+        self.update_status();
+        taken
+    }
+
+    /// A result renamed: its row shows and acts on the new name straight away (the index has it a moment later).
+    pub fn renamed_in_place(&self, index: usize, name: &str) {
+        if self.all.borrow().is_some() {
+            return;
+        }
+        // Its copies are known under the old name until it's read again (`copies_of`); renamed twice, the first name.
+        let old = self.target(index).map(|target| target.path);
+        if let Some(ranked) = self.state.borrow_mut().results.get_mut(index) {
+            ranked.candidate.name = name.to_string();
+        }
+        if let (Some(old), Some(new)) = (old, self.target(index).map(|target| target.path)) {
+            let mut renamed = self.renamed_from.borrow_mut();
+            let first = renamed.remove(&old.to_lowercase()).unwrap_or(old);
+            renamed.insert(new.to_lowercase(), first);
+        }
+        if let Some((_, _, path)) = self.row_keys.borrow_mut().get_mut(index)
+            && let Some(folder) = std::path::Path::new(path.as_str()).parent() {
+                *path = folder.join(name).display().to_string();
+            }
+        if let Some(mut row) = self.rows.row_data(index) {
+            row.plain_name = format::display_name(name).into();
+            row.name = slint::StyledText::from_plain_text(format::display_name(name));
+            self.rows.set_row_data(index, row);
+        }
+        self.schedule_preview();
+    }
+
+    /// Ctrl+click ("toggle"), Shift+click or Shift+arrows ("range", from where it started) and "clear". `selected` is the
+    /// result selected before (a Ctrl+click on another one keeps it among the marked, as in Explorer).
+    pub fn mark(&self, index: i32, mode: &str, selected: i32) {
+        if self.all.borrow().is_some() {
+            return;
+        }
+        let path_of = |index: i32| (index >= 0).then(|| self.target(index as usize)).flatten().map(|target| target.path);
+        {
+            let mut marked = self.marked.borrow_mut();
+            let mut anchor = self.mark_anchor.borrow_mut();
+            match mode {
+                "toggle" => {
+                    if let Some(path) = path_of(index) {
+                        if marked.is_empty() && index != selected && let Some(before) = path_of(selected) {
+                            marked.push(before);
+                        }
+                        match marked.iter().position(|known| *known == path) {
+                            Some(at) => { marked.remove(at); }
+                            None => marked.push(path.clone()),
+                        }
+                        *anchor = Some(path);
+                    }
+                }
+                "range" => {
+                    if anchor.is_none() {
+                        *anchor = path_of(selected);
+                    }
+                    let count = self.rows.row_count() as i32;
+                    let from = anchor.as_ref().and_then(|anchor| (0..count).find(|&row| path_of(row).as_ref() == Some(anchor))).unwrap_or(selected);
+                    let (low, high) = (from.min(index), from.max(index));
+                    *marked = (low..=high).filter_map(path_of).collect();
+                }
+                _ => {
+                    marked.clear();
+                    *anchor = None;
+                }
+            }
+            // One alone is just the selection.
+            if marked.len() == 1 && mode != "range" {
+                marked.clear();
+            }
+        }
+        self.show_marks();
+    }
+
+    /// The marked results, when there are several.
+    pub fn marked_paths(&self) -> Option<Vec<String>> {
+        let marked = self.marked.borrow();
+        (marked.len() > 1).then(|| marked.clone())
+    }
+
+    fn show_marks(&self) {
+        let marked = self.marked.borrow();
+        let count = self.rows.row_count();
+        let marks: Vec<bool> = if marked.len() > 1 {
+            let rows = self.row_keys.borrow();
+            (0..count).map(|row| rows.get(row).is_some_and(|(_, _, path)| marked.contains(path))).collect()
+        } else {
+            vec![false; count]
+        };
+        self.marks.set_vec(marks);
+        if let Some(ui) = self.ui.upgrade() {
+            ui.set_marked_count(if marked.len() > 1 { marked.len() as i32 } else { 0 });
+        }
+    }
+
+    /// Which row shows this file now, if one does.
+    pub fn row_of(&self, path: &str) -> Option<usize> {
+        self.row_keys.borrow().iter().position(|(_, _, shown)| shown == path)
+    }
+
+    /// A result sent to the Recycle Bin: gone from the list straight away.
+    pub fn removed_in_place(&self, index: usize) {
+        if self.all.borrow().is_some() {
+            return;
+        }
+        let mut state = self.state.borrow_mut();
+        if index < state.results.len() && index < self.rows.row_count() {
+            state.results.remove(index);
+            self.rows.remove(index);
+            // The rows' icon keys and marks move up with them (an icon arriving later goes to its own row).
+            let mut keys = self.row_keys.borrow_mut();
+            if index < keys.len() {
+                keys.remove(index);
+            }
+        }
+        drop(state);
+        self.show_marks();
+        self.schedule_preview();
+    }
+
+    /// The search done again a moment later (a file renamed or deleted: the index has it by then).
+    pub fn search_again_soon(&self) {
+        self.notice_timer.start(slint::TimerMode::SingleShot, Duration::from_millis(400), || {
+            with_app(|app| {
+                if let Some(ui) = app.ui.upgrade() {
+                    let query = ui.get_query().to_string();
+                    app.edited(&query);
+                }
+            });
+        });
+    }
+
     pub fn selection_moved(&self, _index: i32) {
         self.state.borrow_mut().moved = true;
         self.schedule_preview();
@@ -2172,6 +2558,7 @@ impl App {
             kind: kind.into(),
             facts: facts.join("  ·  ").into(),
             path: target.path.clone().into(),
+            copies: also_in(&self.copies_of(&self.contents.copies(), &target.path)).into(),
             // A picture waits for what the index knows (where its secrets are) before it's drawn. Anything else waits for
             // its own preview, a moment: the row's small icon, blown up meanwhile, would flash blurred before it.
             has_image: target.is_folder && placeholder.is_some(),
@@ -2185,17 +2572,32 @@ impl App {
             player: PLAYER_NONE,
             progress: 0.0,
             time: SharedString::new(),
+            office: false,
         });
         *self.preview_marks.borrow_mut() = None;
         let pixels = (PREVIEW_SIZE * self.scale.get()).round() as u32;
         let image_request = Request { key: format!("preview|{}", target.path), path: target.path.clone(), size: pixels, kind: KindKey::Preview };
         let indexed = !target.is_folder && (picture || self.state.borrow().snippets.contains_key(&target.path.to_lowercase())
             || is_text(&target.name) || is_document(&target.name));
+        // The text opened large waits for this file's (`stored_ready`), or closes when it can have none.
+        if ui.get_text_open() && (!indexed || presenting) {
+            ui.invoke_close_text();
+        } else if ui.get_text_open() && self.text_asked.borrow().as_deref() != Some(target.path.as_str()) {
+            // Another file: the last one's text doesn't stay under its name meanwhile.
+            ui.set_text_pieces(ModelRc::default());
+            ui.set_text_matches(0);
+            ui.set_text_match(-1);
+            ui.set_text_why(SharedString::new());
+            ui.set_text_strength(-1.0);
+            ui.set_text_has_words(false);
+        }
         if indexed {
-            // What the index read from it (the words around the match, the text in a picture) and its privacy marks.
+            // What the index read from it (the words around the match, the text in a picture), its privacy marks, and
+            // for a picture whether it's still waiting to be read.
             let path = target.path.clone();
-            self.contents.stored(path.clone(), move |stored| {
-                let _ = slint::invoke_from_event_loop(move || with_app(|app| app.stored_ready(&path, stored)));
+            let expect = self.expect(&path);
+            self.contents.stored(path.clone(), expect, move |stored, waiting| {
+                let _ = slint::invoke_from_event_loop(move || with_app(|app| app.stored_ready(&path, stored, waiting)));
             });
         }
         // A PDF that's in the index waits for its marks too (its first page may show a secret).
@@ -2209,8 +2611,9 @@ impl App {
                                            from: self.moment(&target.path).unwrap_or(0.0), ..Media::default() };
         if video {
             let path = target.path.clone();
-            self.contents.stored(path.clone(), move |stored| {
-                let _ = slint::invoke_from_event_loop(move || with_app(|app| app.video_marked(&path, stored, presenting)));
+            let expect = self.expect(&path);
+            self.contents.stored(path.clone(), expect, move |stored, waiting| {
+                let _ = slint::invoke_from_event_loop(move || with_app(|app| app.video_marked(&path, stored, waiting, presenting)));
             });
         }
         if recording && !presenting {
@@ -2228,6 +2631,19 @@ impl App {
                         }
                     }));
                 }
+            });
+        }
+        // An Office file: its text read here (the index may not have it yet) and checked for secrets before Windows'
+        // own preview of it is shown.
+        if !target.is_folder && is_office(&target.name) && !presenting && target.size.is_none_or(|size| size < 100 << 20)
+            && !self.not_office.borrow().contains(&target.path.to_lowercase()) {
+            let path = target.path.clone();
+            std::thread::spawn(move || {
+                let text = extract::reader_for(&path)
+                    .and_then(|reader| extract::extract(std::path::Path::new(&path), reader).ok())
+                    .map(|extracted| first_lines(&extracted.text, 60))
+                    .unwrap_or_default();
+                let _ = slint::invoke_from_event_loop(move || with_app(|app| app.preview_text_ready(&path, text)));
             });
         }
         if !target.is_folder && is_text(&target.name) && target.size.is_none_or(|size| size < 20 << 20) {
@@ -2263,25 +2679,56 @@ impl App {
         self.playing.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Stops the preview's video and waits (at most `limit`) for its thread to let go of the decoder: ending the
+    /// process while a thread is inside the graphics driver's decoding leaves Windows waiting on it for seconds.
+    pub fn stop_video_and_wait(&self, limit: Duration) -> bool {
+        self.stop_video();
+        let started = Instant::now();
+        while VIDEOS_PLAYING.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+            if started.elapsed() >= limit {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        true
+    }
+
     /// A video's marks are in (or it has none): its poster is asked for and it starts playing, its secrets covered
-    /// unless they're revealed.
-    fn video_marked(&self, path: &str, stored: Option<content::Stored>, presenting: bool) {
+    /// unless they're revealed, and all of it while its text waits to be read. Again once that's read
+    /// (`check_unread`), from where it is.
+    fn video_marked(&self, path: &str, stored: Option<content::Stored>, waiting: bool, presenting: bool) {
         if self.media.borrow().path != path {
             return;
         }
-        let marks = stored.as_ref().map(|stored| Marks::parse(&stored.marks)).unwrap_or_default();
+        let mut marks = stored.as_ref().map(|stored| Marks::parse(&stored.marks)).unwrap_or_default();
+        marks.waiting = waiting;
         let hides = self.hides(path);
+        let again = self.media.borrow().marked;
+        if again {
+            self.stop_video();
+            let at = self.media.borrow().at;
+            self.media.borrow_mut().from = at;
+        }
         {
             let mut media = self.media.borrow_mut();
             media.secrets = if hides { marks.video_boxes.clone() } else { Vec::new() };
+            media.matches = if presenting { Vec::new() } else { video_word_places(&marks.video_lines, &self.state.borrow().terms.words) };
+            media.accent = rgb(&self.accent());
+            media.waiting = hides && waiting;
             media.marked = true;
         }
         *self.preview_marks.borrow_mut() = Some((path.to_string(), marks.clone()));
         if let Some(ui) = self.ui.upgrade() {
             let mut preview = ui.get_preview();
-            if preview.path.as_str() == path && !marks.video_boxes.is_empty() && hides && preview.hidden.is_empty() {
-                preview.hidden = describe_hidden(&marks.kinds).into();
-                preview.can_reveal = !presenting;
+            if preview.path.as_str() == path {
+                if again && preview.hidden.as_str() == NOT_READ {
+                    preview.hidden = SharedString::new();
+                    preview.can_reveal = false;
+                }
+                if hides && preview.hidden.is_empty() && (waiting || !marks.video_boxes.is_empty()) {
+                    preview.hidden = if waiting { NOT_READ.into() } else { describe_hidden(&marks.kinds).into() };
+                    preview.can_reveal = !presenting;
+                }
                 ui.set_preview(preview);
             }
         }
@@ -2347,6 +2794,7 @@ impl App {
             let ended = winsys::sound::play(&path, from, &|| playing.load(Ordering::SeqCst) == turn, &position);
             if let Err(error) = &ended {
                 log(&format!("preview sound: {error}"));
+                media_missing(error);
             }
             let _ = slint::invoke_from_event_loop(move || with_app(|app| {
                 if app.playing.load(Ordering::SeqCst) == turn && app.media.borrow().path == path {
@@ -2400,6 +2848,8 @@ impl App {
         let playing = self.playing.clone();
         let from = self.media.borrow().from;
         let secrets = self.media.borrow().secrets.clone();
+        let (matches, accent) = (self.media.borrow().matches.clone(), self.media.borrow().accent);
+        let waiting = self.media.borrow().waiting;
         self.media.borrow_mut().sound = sound;
         self.media_shown(if sound { PLAYER_SOUND } else { PLAYER_MUTED });
         // Enlarged: the size it's shown at (`enlarged_video_side`), not more, so nothing larger than shown is decoded.
@@ -2411,6 +2861,7 @@ impl App {
         let path = path.to_string();
         let shown = Arc::new(std::sync::atomic::AtomicBool::new(true));
         let _ = std::thread::Builder::new().name("preview video".into()).spawn(move || {
+            let _running = VideoRunning::start();
             // A moment's rest first: arrowing past a video doesn't start it.
             if wait && !sound {
                 std::thread::sleep(Duration::from_millis(250));
@@ -2454,9 +2905,15 @@ impl App {
                     let seconds = frame.seconds;
                     let mut picture = frame.picture;
                     cover_secrets(&mut picture, &secrets, seconds);
+                    outline_moment(&mut picture, &matches, seconds, accent);
                     let mut rgba = Vec::with_capacity(picture.pixels.len() / 3 * 4);
-                    for pixel in picture.pixels.chunks_exact(3) {
+                    for pixel in picture.pixels.as_chunks::<3>().0 {
                         rgba.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]);
+                    }
+                    if waiting {
+                        let mut frame = winsys::icons::Bitmap { width: picture.width, height: picture.height, rgba };
+                        crate::blur::cover(&mut frame);
+                        rgba = frame.rgba;
                     }
                     let buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&rgba, picture.width, picture.height);
                     shown.store(false, Ordering::SeqCst);
@@ -2477,6 +2934,7 @@ impl App {
                     Ok(_) => return,
                     Err(error) => {
                         log(&format!("preview video: {error}"));
+                        media_missing(&error);
                         return;
                     }
                 }
@@ -2509,20 +2967,30 @@ impl App {
     }
 
     /// The index's copy of the file in the preview: its privacy marks, and for a match by contents (or a picture) the
-    /// words read from it.
-    fn stored_ready(&self, path: &str, stored: Option<content::Stored>) {
+    /// words read from it. A picture still waiting to be read is covered whole until it is: then this comes again
+    /// (`check_unread`), and it's drawn with its secrets alone covered.
+    fn stored_ready(&self, path: &str, stored: Option<content::Stored>, waiting: bool) {
         let Some(ui) = self.ui.upgrade() else { return };
         let mut preview = ui.get_preview();
         if preview.path.as_str() != path {
             return;
         }
         let mut marks = stored.as_ref().map(|stored| Marks::parse(&stored.marks)).unwrap_or_default();
+        marks.waiting = waiting;
         let picture = is_picture(path);
-        if !marks.boxes.is_empty() {
+        if !marks.boxes.is_empty() || !marks.lines.is_empty() {
             marks.orientation = winsys::imaging::orientation(path);
         }
+        let again = self.preview_marks.borrow().as_ref().is_some_and(|(marked, _)| marked == path);
         *self.preview_marks.borrow_mut() = Some((path.to_string(), marks.clone()));
-        if marks.similar > 0 {
+        if again {
+            if preview.hidden.as_str() == NOT_READ {
+                preview.hidden = SharedString::new();
+                preview.can_reveal = false;
+            }
+            self.enlarged_asked.borrow_mut().take();
+        }
+        if marks.similar > 0 && !again {
             preview.facts = format!("{}  ·  + {} similar", preview.facts, group(u64::from(marks.similar))).into();
         }
         if picture || is_pdf(path) {
@@ -2530,8 +2998,8 @@ impl App {
             self.request_preview(Request { key: format!("preview|{path}"), path: path.to_string(), size: pixels, kind: KindKey::Preview });
         }
         let content_hit = self.state.borrow().snippets.contains_key(&path.to_lowercase());
-        if let Some(stored) = stored.filter(|stored| !stored.text.trim().is_empty()) {
-            if content_hit || (picture && !preview.has_text) {
+        if let Some(stored) = stored.filter(|stored| !stored.text.trim().is_empty())
+            && (content_hit || (picture && !preview.has_text)) {
                 // The part that matched (secrets in it were replaced by labels when it was indexed).
                 let matching = self.state.borrow().terms.matching;
                 let words = content::snippet::Words::new(&self.state.borrow().terms.words, !matching.whole_word).exactly(matching.case, matching.whole_word);
@@ -2540,25 +3008,282 @@ impl App {
                 preview.has_text = true;
                 preview.text_label = if picture { "Text in this image".into() } else { "Where it matched".into() };
             }
-        }
-        if !marks.kinds.is_empty() && preview.hidden.is_empty() && self.hides(path) {
+        if waiting && preview.hidden.is_empty() && self.hides(path) {
+            preview.hidden = NOT_READ.into();
+            preview.can_reveal = true;
+        } else if !marks.kinds.is_empty() && preview.hidden.is_empty() && self.hides(path) {
             preview.hidden = describe_hidden(&marks.kinds).into();
             // (A PDF's secrets are covered on its first page, or all of it when they have no place there.)
             preview.can_reveal = (picture && !marks.boxes.is_empty()) || is_pdf(path);
         }
+        let expandable = preview.has_text && !preview.text_label.is_empty();
         ui.set_preview(preview);
         self.load_enlarged();
+        if ui.get_text_open() {
+            if expandable { self.load_text() } else { ui.invoke_close_text() }
+        }
+    }
+
+    /// The preview's text opened large, or closed.
+    pub fn text_open_changed(&self, on: bool) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        self.text_request.set(self.text_request.get() + 1);
+        self.text_asked.borrow_mut().take();
+        if on {
+            // Whatever comes in from Everything meanwhile, what's open stays selected.
+            self.state.borrow_mut().moved = true;
+            self.load_text();
+            return;
+        }
+        ui.set_text_pieces(ModelRc::default());
+        ui.set_text_matches(0);
+        ui.set_text_match(-1);
+        ui.set_text_has_words(false);
+    }
+
+    /// Up or down to the next result with text to show (found by its contents, or an image), past the rest.
+    pub fn text_move(&self, by: i32) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let count = ui.get_rows().row_count() as i32;
+        let mut at = ui.get_selected();
+        loop {
+            at += by;
+            if at < 0 || at >= count {
+                return;
+            }
+            let Some(target) = self.target(at as usize) else { return };
+            let found_inside = self.state.borrow().snippets.contains_key(&target.path.to_lowercase());
+            if !target.is_folder && (found_inside || is_picture(&target.name)) {
+                break;
+            }
+        }
+        ui.set_selected(at);
+        ui.invoke_reveal_selected();
+        self.selection_moved(at);
+    }
+
+    /// Asks for all the index keeps of the selected file, and makes the large view of it on a thread (`whole_text`):
+    /// the text is the index's, its secrets already replaced by their labels when it was read.
+    fn load_text(&self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let preview = ui.get_preview();
+        if !ui.get_text_open() || !preview.has_text || preview.text_label.is_empty() {
+            return;
+        }
+        // Nothing of it while presenting, as the preview's images.
+        if self.settings.borrow().blur_when_sharing && winsys::process::presenting() {
+            ui.invoke_close_text();
+            return;
+        }
+        let path = preview.path.to_string();
+        if self.text_asked.borrow().as_deref() == Some(path.as_str()) {
+            return;
+        }
+        *self.text_asked.borrow_mut() = Some(path.clone());
+        let request = self.text_request.get() + 1;
+        self.text_request.set(request);
+        ui.set_text_match(-1);
+        // Why it was found: by what it shows or means (the helper), how strongly, and for a video when.
+        let key = path.to_lowercase();
+        let (why, strength) = {
+            let state = self.state.borrow();
+            let helper = state.seen.iter().chain(&state.closest).find(|candidate| candidate.key() == key).and_then(|candidate| candidate.content);
+            match helper {
+                Some(content) => {
+                    let name = path.rsplit('\\').next().unwrap_or(&path);
+                    let mut why = if is_picture(name) || is_video(name) { "Matched by what it shows".to_string() } else { "Matched by what it means".to_string() };
+                    if let Some(at) = state.seen_at.get(&key) {
+                        why.push_str(&format!("  ·  At {}", format::moment(*at)));
+                    }
+                    // On the content scale the helper's matches are put on (0.3 to 1).
+                    (why, ((content - 0.3) / 0.7).clamp(0.0, 1.0))
+                }
+                None => (String::new(), -1.0),
+            }
+        };
+        ui.set_text_why(why.into());
+        ui.set_text_strength(strength);
+        let words = {
+            let state = self.state.borrow();
+            let matching = state.terms.matching;
+            content::snippet::Words::new(&state.terms.words, !matching.whole_word).exactly(matching.case, matching.whole_word)
+        };
+        let color = self.accent();
+        self.contents.whole(path.clone(), move |parts| {
+            let _ = std::thread::Builder::new().name("whole text".into()).spawn(move || {
+                let started = Instant::now();
+                let view = crate::whole_text::build(&parts, &words, &color);
+                let took = started.elapsed();
+                let _ = slint::invoke_from_event_loop(move || with_app(|app| app.text_ready(request, &path, view, took)));
+            });
+        });
+    }
+
+    fn text_ready(&self, request: u64, path: &str, view: crate::whole_text::View, took: Duration) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        if request != self.text_request.get() || !ui.get_text_open() || ui.get_preview().path.as_str() != path {
+            return;
+        }
+        let started = Instant::now();
+        let pieces: Vec<TextPiece> = view.pieces.iter().map(|piece| TextPiece {
+            text: slint::StyledText::from_markdown(&piece.markdown).unwrap_or_else(|_| slint::StyledText::from_plain_text(&piece.markdown)),
+            plain: piece.plain.as_str().into(),
+            label: piece.label.as_str().into(),
+            time: piece.time.as_str().into(),
+            gap: piece.gap,
+            first: piece.first as i32,
+            matches: piece.matches as i32,
+        }).collect();
+        let accent = self.accent();
+        let listed: Vec<String> = view.words.iter().map(|word| format::styled_plain(word, &[0..word.len()], &accent)).collect();
+        let words = if listed.is_empty() { String::new() } else { format!("Words that matched: {}", listed.join(", ")) };
+        ui.set_text_words(slint::StyledText::from_markdown(&words).unwrap_or_default());
+        ui.set_text_has_words(!listed.is_empty());
+        let count = pieces.len();
+        ui.set_text_pieces(ModelRc::new(VecModel::from(pieces)));
+        ui.set_text_matches(view.matches as i32);
+        // The first match in view (the pieces are laid out first).
+        if view.matches > 0 {
+            ui.set_text_match(0);
+        }
+        log(&format!("whole text: {count} pieces, {} matches, made in {:.1} ms, shown in {:.1} ms", view.matches,
+                     took.as_secs_f64() * 1000.0, started.elapsed().as_secs_f64() * 1000.0));
+    }
+
+    /// What the settings say will be read of this file, to know whether to wait for it (`contents::ToRead`).
+    fn expect(&self, path: &str) -> Expect {
+        let name = path.rsplit('\\').next().unwrap_or(path);
+        ToRead::new(&self.settings.borrow(), &self.paths).expect(path, is_picture(name), is_video(name))
+    }
+
+    /// Each second the popup is open (with the reading indicator): the preview and the rows' thumbnails that wait to be
+    /// read are asked about again, and drawn again once read. A lookup in the catalog each, a few microseconds.
+    fn check_unread(&self) {
+        let waiting = self.preview_marks.borrow().as_ref().filter(|(_, marks)| marks.waiting).map(|(path, _)| path.clone());
+        if let Some(path) = waiting {
+            let expect = self.expect(&path);
+            let video = self.media.borrow().video && self.media.borrow().path == path;
+            let asked = path.clone();
+            self.contents.stored(path, expect, move |stored, waiting| {
+                if waiting {
+                    return;
+                }
+                let _ = slint::invoke_from_event_loop(move || with_app(|app| {
+                    let still = app.preview_marks.borrow().as_ref().is_some_and(|(marked, marks)| marked == &asked && marks.waiting);
+                    if !still {
+                        return;
+                    }
+                    if video {
+                        let presenting = app.settings.borrow().blur_when_sharing && winsys::process::presenting();
+                        app.video_marked(&asked, stored, false, presenting);
+                    } else {
+                        app.stored_ready(&asked, stored, false);
+                    }
+                }));
+            });
+        }
+        let thumbs: Vec<(String, String)> = self.covered_thumbs.borrow().iter().map(|(key, path)| (key.clone(), path.clone())).collect();
+        if thumbs.is_empty() {
+            return;
+        }
+        let to_read = ToRead::new(&self.settings.borrow(), &self.paths);
+        let files: Vec<(String, Expect)> = thumbs.iter().map(|(_, path)| {
+            let name = path.rsplit('\\').next().unwrap_or(path);
+            (path.clone(), to_read.expect(path, is_picture(name), is_video(name)))
+        }).collect();
+        self.contents.covers(files, move |covers| {
+            let read: Vec<String> = thumbs.into_iter().zip(covers).filter(|(_, cover)| !cover.waiting).map(|((key, _), _)| key).collect();
+            if read.is_empty() {
+                return;
+            }
+            let _ = slint::invoke_from_event_loop(move || with_app(|app| app.thumbs_read(read)));
+        });
+    }
+
+    /// Rows' thumbnails whose files have been read since they were drawn covered: asked for again (and covered whole
+    /// still, if they have secrets).
+    fn thumbs_read(&self, keys: Vec<String>) {
+        {
+            let mut covered = self.covered_thumbs.borrow_mut();
+            let mut images = self.images.borrow_mut();
+            for key in &keys {
+                covered.remove(key);
+                images.remove(key);
+            }
+        }
+        let visible = self.state.borrow().visible;
+        self.request_icons(visible.0, visible.1);
+    }
+
+    /// A row's thumbnail is in: covered whole (blocks) when its file has secrets or waits to be read, as the index says,
+    /// before it's ever drawn.
+    fn thumb_ready(&self, request: Request, mut bitmap: winsys::icons::Bitmap) {
+        let name = request.path.rsplit('\\').next().unwrap_or(&request.path).to_string();
+        if !self.settings.borrow().blur_secrets || !(is_picture(&name) || is_video(&name)) {
+            self.keep_icon(&request.key, image(&bitmap));
+            return;
+        }
+        let expect = self.expect(&request.path);
+        self.contents.covers(vec![(request.path.clone(), expect)], move |covers| {
+            let cover = covers.first().copied().unwrap_or_default();
+            if cover.secrets || cover.waiting {
+                crate::blur::cover(&mut bitmap);
+            }
+            let _ = slint::invoke_from_event_loop(move || with_app(|app| app.thumb_covered(request, bitmap, cover)));
+        });
+    }
+
+    fn thumb_covered(&self, request: Request, bitmap: winsys::icons::Bitmap, cover: Cover) {
+        if cover.waiting {
+            let mut covered = self.covered_thumbs.borrow_mut();
+            // Many waiting at once (a long scroll through a folder not read yet): those kept so far are let go from the
+            // cache too, so they're asked about again when they're shown again.
+            if covered.len() >= COVERED_THUMBS {
+                let mut images = self.images.borrow_mut();
+                for (key, _) in covered.drain() {
+                    images.remove(&key);
+                }
+            }
+            covered.insert(request.key.clone(), request.path.clone());
+        }
+        self.keep_icon(&request.key, image(&bitmap));
     }
 
     /// Whether secrets in this file are hidden now (not revealed, and the setting is on).
     fn hides(&self, path: &str) -> bool {
-        self.settings.borrow().blur_secrets && self.revealed.borrow().as_deref().is_none_or(|revealed| !revealed.eq_ignore_ascii_case(path))
+        let settings = self.settings.borrow();
+        settings.blur_secrets && self.revealed.borrow().as_deref().is_none_or(|revealed| !revealed.eq_ignore_ascii_case(path))
+            && !settings.not_secret.iter().any(|cleared| cleared.eq_ignore_ascii_case(path))
     }
 
-    /// Blurs what shouldn't show in a preview picture: everything while presenting, else the lines with secrets.
+    /// Outlines the words searched for where a picture shows them, as its lines were read (`Marks::lines`).
+    fn outline_matches(&self, path: &str, bitmap: &mut winsys::icons::Bitmap) {
+        let Some((regions, size, orientation)) = self.match_regions(path) else { return };
+        let (regions, size) = crate::blur::turned(&regions, size, orientation);
+        crate::blur::outline(bitmap, &regions, size, rgb(&self.accent()));
+    }
+
+    /// The places of the words searched for in this picture (in its own pixels), its size and how to turn it; None when
+    /// there's nothing to outline (no words, no lines kept, presenting).
+    fn match_regions(&self, path: &str) -> Option<(Vec<[i32; 4]>, (u32, u32), u16)> {
+        if self.settings.borrow().blur_when_sharing && winsys::process::presenting() {
+            return None;
+        }
+        let words = self.state.borrow().terms.words.clone();
+        let marks = self.preview_marks.borrow();
+        let (_, marks) = marks.as_ref().filter(|(marked, _)| marked.eq_ignore_ascii_case(path))?;
+        if marks.waiting || marks.lines.is_empty() || marks.width == 0 {
+            return None;
+        }
+        let regions = word_places(&marks.lines, &words);
+        (!regions.is_empty()).then_some((regions, (marks.width, marks.height), marks.orientation))
+    }
+
+    /// Blurs what shouldn't show in a preview picture: everything while presenting or while it waits to be read, else
+    /// the lines with secrets.
     fn protect(&self, path: &str, bitmap: &mut winsys::icons::Bitmap) {
         if self.settings.borrow().blur_when_sharing && winsys::process::presenting() {
-            crate::blur::pixelate(bitmap, &[[0, 0, bitmap.width as i32, bitmap.height as i32]], (bitmap.width, bitmap.height));
+            crate::blur::cover(bitmap);
             return;
         }
         if !self.hides(path) {
@@ -2566,6 +3291,10 @@ impl App {
         }
         let marks = self.preview_marks.borrow();
         if let Some((_, marks)) = marks.as_ref().filter(|(marked, _)| marked.eq_ignore_ascii_case(path)) {
+            if marks.waiting {
+                crate::blur::cover(bitmap);
+                return;
+            }
             if !marks.boxes.is_empty() && marks.width > 0 {
                 let (regions, size) = crate::blur::turned(&marks.boxes, (marks.width, marks.height), marks.orientation);
                 crate::blur::pixelate(bitmap, &regions, size);
@@ -2673,6 +3402,144 @@ impl App {
         }
     }
 
+    /// What tells each result's contents: the catalog's hash (images, once read), else, for small files the same size
+    /// as another result, their contents read (`content_hash`, kept for the next keystroke).
+    fn copy_keys(&self, results: &[Ranked]) -> Vec<Option<u64>> {
+        let copies = self.contents.copies();
+        let mut sizes: HashMap<u64, usize> = HashMap::new();
+        for ranked in results.iter().take(COPY_WINDOW) {
+            let candidate = &ranked.candidate;
+            if let (false, Some(size)) = (candidate.is_folder, candidate.size)
+                && size > 0 && size <= COPY_LARGEST {
+                *sizes.entry(size).or_default() += 1;
+            }
+        }
+        let mut hashes = self.content_hashes.borrow_mut();
+        if hashes.len() > 20_000 {
+            hashes.clear();
+        }
+        // Never read here, on the interface's thread: what isn't known yet is read on a thread of its own, and the
+        // list is shown again once it is (a keystroke over thousands of tiny files stalled typing for seconds).
+        let mut missing: Vec<(String, u64, i64)> = Vec::new();
+        let mut read = 0u64;
+        let keys = results.iter().enumerate().map(|(index, ranked)| {
+            let candidate = &ranked.candidate;
+            let path = candidate.path();
+            if let Some(hash) = copies.hash(&path) {
+                return Some(hash);
+            }
+            if index >= COPY_WINDOW {
+                return None;
+            }
+            let size = candidate.size.filter(|size| !candidate.is_folder && sizes.get(size).is_some_and(|&count| count > 1))?;
+            let key = (path.to_lowercase(), size, candidate.modified.unwrap_or(0));
+            if let Some(known) = hashes.get(&key) {
+                return *known;
+            }
+            if missing.len() < COPY_FILES && read + size <= COPIES_READ {
+                read += size;
+                missing.push((path, size, key.2));
+            }
+            None
+        }).collect();
+        drop(hashes);
+        if !missing.is_empty() && !self.copies_reading.replace(true) {
+            std::thread::spawn(move || {
+                let found: Vec<((String, u64, i64), Option<u64>)> =
+                    missing.into_iter().map(|(path, size, modified)| ((path.to_lowercase(), size, modified), content_hash(&path))).collect();
+                let _ = slint::invoke_from_event_loop(move || with_app(|app| {
+                    app.copies_reading.set(false);
+                    let folds = found.iter().any(|(_, hash)| hash.is_some());
+                    app.content_hashes.borrow_mut().extend(found);
+                    if folds {
+                        app.present();
+                    }
+                }));
+            });
+        }
+        keys
+    }
+
+    /// A result's "+3 copies" clicked: the list of where they are, each with the result's own preview (they're the
+    /// same file), its name and its folder.
+    pub fn open_copies(&self, index: usize) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let Some(target) = self.target(index) else { return };
+        let others = self.copies_of(&self.contents.copies(), &target.path);
+        if others.is_empty() {
+            return;
+        }
+        let icon = self.row_keys.borrow().get(index).and_then(|(key, ..)| self.images.borrow().get(key).cloned());
+        let rows: Vec<CopyRow> = others.iter().map(|path| {
+            let (folder, name) = path.rsplit_once('\\').unwrap_or(("", path));
+            // (A folder of a drive's top shows as "C:\".) Shortened in its middle, as a row's is: the folders closest
+            // to the file are what tell the copies apart.
+            let folder = if folder.ends_with(':') { format!("{folder}\\") } else { format::folder(folder, 64) };
+            let online = std::fs::metadata(path).is_ok_and(|metadata| {
+                use std::os::windows::fs::MetadataExt;
+                metadata.file_attributes() & crate::contents::NOT_ON_THIS_PC != 0
+            });
+            CopyRow {
+                name: format::display_name(name).into(),
+                folder: folder.into(),
+                has_icon: icon.is_some(),
+                icon: icon.clone().unwrap_or_default(),
+                online,
+            }
+        }).collect();
+        let what = if is_picture(&target.name) { "image" } else if is_video(&target.name) { "video" } else { "file" };
+        let title = match others.len() {
+            1 => format!("The same {what} in 1 more place"),
+            count => format!("The same {what} in {count} more places"),
+        };
+        *self.copies_shown.borrow_mut() = others;
+        ui.set_copies_title(title.into());
+        ui.set_copies_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+        ui.set_copies_selected(0);
+        ui.set_copies_open(true);
+    }
+
+    /// One of those copies opened, or shown in its folder.
+    pub fn copy_activated(&self, index: usize, action: &str) {
+        let Some(path) = self.copies_shown.borrow().get(index).cloned() else { return };
+        if let Some(ui) = self.ui.upgrade() {
+            ui.invoke_close_copies();
+        }
+        crate::popup::act_on(self, &Target::of_path(&path), action);
+    }
+
+    /// Where `path`'s copies are: on the whole PC for a read image, else among the results it's shown for.
+    fn copies_of(&self, copies: &crate::contents::Copies, path: &str) -> Vec<String> {
+        let lower = path.to_lowercase();
+        // Renamed here: its copies are still known under the name it had.
+        let old = self.renamed_from.borrow().get(&lower).cloned();
+        let mut others = copies.others(path);
+        if others.is_empty() && let Some(old) = &old {
+            others = copies.others(old);
+        }
+        if others.is_empty() {
+            let found = self.found_copies.borrow();
+            others = found.get(&lower).or_else(|| old.as_ref().and_then(|old| found.get(&old.to_lowercase()))).cloned().unwrap_or_default();
+        }
+        // Not the file itself under either name, and not one renamed or deleted since (each looked at: a short list).
+        let old_lower = old.map(|old| old.to_lowercase());
+        let mut renamed: Vec<String> = Vec::new();
+        for other in others {
+            let other_lower = other.to_lowercase();
+            if other_lower == lower || old_lower.as_deref() == Some(other_lower.as_str()) {
+                continue;
+            }
+            // A copy renamed here: under its new name.
+            let now = self.renamed_from.borrow().iter().find(|(_, was)| was.to_lowercase() == other_lower).map(|(new, _)| new.clone());
+            let other = now.and_then(|new| self.state.borrow().results.iter().map(|ranked| Target::from(&ranked.candidate).path)
+                .find(|shown| shown.to_lowercase() == new)).unwrap_or(other);
+            if std::path::Path::new(&other).exists() && !renamed.iter().any(|known| known.eq_ignore_ascii_case(&other)) {
+                renamed.push(other);
+            }
+        }
+        renamed
+    }
+
     /// Up or down to the next image, past whatever isn't one.
     pub fn enlarged_move(&self, by: i32) {
         let Some(ui) = self.ui.upgrade() else { return };
@@ -2746,11 +3613,15 @@ impl App {
             return;
         }
         let path = target.path;
-        let covered = {
+        let (covered, whole) = {
             let marks = self.preview_marks.borrow();
             let Some((_, marks)) = marks.as_ref().filter(|(marked, _)| marked.eq_ignore_ascii_case(&path)) else { return };
-            (self.hides(&path) && !marks.boxes.is_empty() && marks.width > 0).then(|| (marks.boxes.clone(), (marks.width, marks.height)))
+            let hides = self.hides(&path);
+            ((hides && !marks.waiting && !marks.boxes.is_empty() && marks.width > 0).then(|| (marks.boxes.clone(), (marks.width, marks.height))),
+             hides && marks.waiting)
         };
+        let matches = self.match_regions(&path);
+        let accent = rgb(&self.accent());
         let bounds = self.enlarged_bounds(&ui);
         let asked = (path.clone(), bounds);
         if self.enlarged_asked.borrow().as_ref() == Some(&asked) {
@@ -2774,6 +3645,14 @@ impl App {
                 let (regions, size) = crate::blur::turned(&regions, size, shown.orientation);
                 crate::blur::pixelate(&mut shown.bitmap, &regions, size);
             }
+            // Not read yet: all of it.
+            if whole {
+                crate::blur::cover(&mut shown.bitmap);
+            }
+            if let Some((regions, size, _)) = matches {
+                let (regions, size) = crate::blur::turned(&regions, size, shown.orientation);
+                crate::blur::outline(&mut shown.bitmap, &regions, size, accent);
+            }
             let size = shown.size;
             let bitmap = shown.bitmap;
             let buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&bitmap.rgba, bitmap.width, bitmap.height);
@@ -2787,7 +3666,7 @@ impl App {
     fn enlarged_video_side(&self, ui: &Popup) -> u32 {
         let (width, height) = self.enlarged_bounds(ui);
         let own = self.media.borrow().native.map_or(ENLARGED_VIDEO, |(width, height)| width.max(height));
-        width.max(height).min(own).min(ENLARGED_VIDEO_LARGEST).max(160)
+        width.max(height).min(own).clamp(160, ENLARGED_VIDEO_LARGEST)
     }
 
     /// A PDF's first page, enlarged: rendered at the size it's shown (to fit, or zoomed, up to `ENLARGED_PDF_LARGEST`),
@@ -2866,9 +3745,100 @@ impl App {
         } else {
             text
         };
+        // An Office file with nothing hidden in it: Windows' own preview of it instead of its text (a handler draws the
+        // file as it is, so never one that holds a secret, nor while presenting).
+        let office = preview.hidden.is_empty() && is_office(path) && !self.not_office.borrow().contains(&path.to_lowercase())
+            && winsys::preview_host::handler_for(path).is_some();
+        if office {
+            preview.office = true;
+            preview.has_text = false;
+            ui.set_preview(preview);
+            self.watch_office();
+            return;
+        }
         preview.text = shown.into();
         preview.has_text = true;
         ui.set_preview(preview);
+    }
+
+    /// The pane says where the Office file's window goes: opened there the first time, moved after.
+    pub fn office_area(&self, x: f32, y: f32, width: f32, height: f32, uncovered: bool) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let preview = ui.get_preview();
+        if !preview.office {
+            return;
+        }
+        let scale = self.scale.get();
+        let rect = ((x * scale).round() as i32, (y * scale).round() as i32, (width * scale).round() as i32, (height * scale).round() as i32);
+        let shown = uncovered && self.visible.get() && rect.2 > 40 && rect.3 > 40;
+        self.office_seen.set(Some(Instant::now()));
+        let mut office = self.office.borrow_mut();
+        if office.as_ref().is_some_and(|hosted| !hosted.path.eq_ignore_ascii_case(&preview.path)) {
+            *office = None;
+        }
+        match office.as_mut() {
+            Some(hosted) => hosted.place(rect, shown),
+            None if shown => {
+                // A handler takes about a second to open, on this thread: not for each file arrowed past.
+                let mut asked = self.office_asked.borrow_mut();
+                let rested = match asked.as_ref() {
+                    Some((path, since)) if path.eq_ignore_ascii_case(&preview.path) => since.elapsed() >= Duration::from_millis(250),
+                    _ => {
+                        *asked = Some((preview.path.to_string(), Instant::now()));
+                        false
+                    }
+                };
+                drop(asked);
+                if !rested {
+                    return;
+                }
+                let started = Instant::now();
+                match winsys::preview_host::Hosted::open(self.hwnd.get(), &preview.path, rect) {
+                    Ok(hosted) => {
+                        log(&format!("office preview in {:.0} ms", started.elapsed().as_secs_f64() * 1000.0));
+                        *office = Some(hosted);
+                    }
+                    Err(error) => {
+                        // Its text, as before, when the handler can't.
+                        log(&format!("office preview: {error}"));
+                        drop(office);
+                        let mut preview = preview;
+                        preview.office = false;
+                        ui.set_preview(preview.clone());
+                        let path = preview.path.to_string();
+                        self.office_failed(&path);
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+
+    /// Hides the Office window once the pane stops saying where it goes (another file, the pane closed, the popup
+    /// hidden), and lets it go when another file is shown.
+    fn watch_office(&self) {
+        self.office_timer.start(slint::TimerMode::Repeated, Duration::from_millis(250), || {
+            with_app(|app| {
+                let Some(ui) = app.ui.upgrade() else { return };
+                let preview = ui.get_preview();
+                let stale = app.office_seen.get().is_none_or(|seen| seen.elapsed() > Duration::from_millis(400));
+                let mut office = app.office.borrow_mut();
+                if !preview.office || office.as_ref().is_some_and(|hosted| !hosted.path.eq_ignore_ascii_case(&preview.path)) {
+                    *office = None;
+                    if !preview.office {
+                        app.office_timer.stop();
+                    }
+                } else if (stale || !app.visible.get()) && let Some(hosted) = office.as_mut() {
+                    hosted.place(hosted_rect(hosted), false);
+                }
+            });
+        });
+    }
+
+    /// The handler couldn't show it: its text instead, as for any document.
+    fn office_failed(&self, path: &str) {
+        self.not_office.borrow_mut().insert(path.to_lowercase());
+        self.schedule_preview();
     }
 
     /// Shows what was hidden in the selected file, once Windows Hello says it's the person.
@@ -2915,11 +3885,119 @@ impl App {
     }
 
     pub fn record_open(&self, target: &Target) {
+        self.remember_search();
         let query = self.state.borrow().terms.text.clone();
         let mut history = self.history.borrow_mut();
         history.record(&target.path, &query, now());
         let _ = history.save();
         self.everything.ran(&target.path);
+    }
+
+    /// Why a result came up, in a few plain lines (ⓘ or Ctrl+Shift+I).
+    pub fn why(&self, index: usize) -> Vec<String> {
+        if self.all.borrow().is_some() {
+            return vec!["It's in the full list, in the order you chose".into()];
+        }
+        let state = self.state.borrow();
+        let Some(ranked) = state.results.get(index) else { return Vec::new() };
+        let candidate = &ranked.candidate;
+        let key = candidate.key();
+        let quote = |text: &str| format!("\u{201c}{text}\u{201d}");
+        let mut lines = Vec::new();
+        let mut parts: Vec<String> = Vec::new();
+        for range in &ranked.highlights {
+            if let Some(part) = candidate.name.get(range.clone())
+                && !parts.iter().any(|known| known.eq_ignore_ascii_case(part)) {
+                parts.push(part.to_string());
+            }
+        }
+        if !parts.is_empty() {
+            parts.truncate(3);
+            let quoted: Vec<String> = parts.iter().map(|part| quote(part)).collect();
+            let listed = match quoted.as_slice() {
+                [one] => one.clone(),
+                [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+                [] => String::new(),
+            };
+            lines.push(format!("Its name has {listed}"));
+        }
+        if let Some((snippet, _)) = state.snippets.get(&key) {
+            let text: String = snippet.text.split_whitespace().collect::<Vec<_>>().join(" ");
+            let short: String = if text.chars().count() > 90 { format!("{}\u{2026}", text.chars().take(90).collect::<String>()) } else { text };
+            lines.push(format!("Inside it: {}", quote(&short)));
+        }
+        let visual = is_picture(&candidate.name) || is_video(&candidate.name);
+        if let Some(&at) = state.seen_at.get(&key) {
+            lines.push(format!("It shows what you described, at {}", format::moment(at)));
+        } else if state.seen.iter().chain(&state.closest).any(|found| found.key() == key) {
+            lines.push(if visual { "It shows what you described".into() } else { "It's close in meaning to what you described".into() });
+        }
+        if candidate.opens == 1 {
+            lines.push("You opened it before, so it's ranked higher".into());
+        } else if candidate.opens > 1 {
+            lines.push(format!("You opened it {} times, so it's ranked higher", candidate.opens));
+        }
+        if let Some(modified) = candidate.modified {
+            let age = now() - modified;
+            if (0..86_400).contains(&age) {
+                lines.push("Changed today, so it's ranked higher".into());
+            } else if (0..7 * 86_400).contains(&age) {
+                lines.push("Changed this week, so it's ranked higher".into());
+            }
+        }
+        if lines.is_empty() {
+            lines.push("It fits the search's filters".into());
+        }
+        lines
+    }
+
+    /// What was typed, kept among the recent searches (something was opened from it).
+    fn remember_search(&self) {
+        let typed = self.query_text().trim().to_string();
+        if typed.is_empty() {
+            return;
+        }
+        let mut settings = self.settings.borrow_mut();
+        let recent = &mut settings.recent_searches;
+        recent.retain(|known| !known.eq_ignore_ascii_case(&typed));
+        recent.insert(0, typed);
+        recent.truncate(RECENT_SEARCHES);
+        settings.save(&self.paths);
+        drop(settings);
+        self.show_searches();
+    }
+
+    /// Ctrl+D: the search typed pinned (or unpinned when it already is).
+    pub fn pin_search(&self, text: &str) {
+        let text = text.trim().to_string();
+        if text.is_empty() {
+            return;
+        }
+        let pinned = {
+            let mut settings = self.settings.borrow_mut();
+            let pins = &mut settings.pinned_searches;
+            let was = pins.iter().position(|known| known.eq_ignore_ascii_case(&text));
+            match was {
+                Some(at) => { pins.remove(at); }
+                None => pins.insert(0, text),
+            }
+            settings.save(&self.paths);
+            was.is_none()
+        };
+        self.show_searches();
+        self.notice(if pinned { "Pinned. It's there when the popup opens with nothing typed" } else { "Unpinned" });
+    }
+
+    /// The pinned and recent searches, for the popup with nothing typed (a recent one that's pinned shows once).
+    pub fn show_searches(&self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let settings = self.settings.borrow();
+        let pinned: Vec<SharedString> = settings.pinned_searches.iter().map(SharedString::from).collect();
+        let recent: Vec<SharedString> = settings.recent_searches.iter()
+            .filter(|text| !settings.pinned_searches.iter().any(|pin| pin.eq_ignore_ascii_case(text)))
+            .map(SharedString::from).collect();
+        ui.set_pinned(ModelRc::new(VecModel::from(pinned)));
+        ui.set_recent(ModelRc::new(VecModel::from(recent)));
     }
 
     /// What was typed (with the functions answered here, which the terms leave out).
@@ -3053,12 +4131,11 @@ impl App {
     }
 
     fn leave_all(&self) {
-        if self.all.borrow_mut().take().is_some() {
-            if let Some(ui) = self.ui.upgrade() {
+        if self.all.borrow_mut().take().is_some()
+            && let Some(ui) = self.ui.upgrade() {
                 ui.set_rows(ModelRc::from(self.rows.clone()));
                 ui.set_sort_label("Best match".into());
             }
-        }
     }
 
     pub fn page_ready(&self, generation: u64, result: Result<Vec<Page>, everything::Error>) {
@@ -3110,18 +4187,6 @@ fn on_toggles(matching: Matching) -> String {
     }
 }
 
-fn group(number: u64) -> String {
-    let digits = number.to_string();
-    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
-    for (index, c) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index) % 3 == 0 {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
-}
-
 fn candidate(item: &Item) -> Candidate {
     Candidate {
         content: None,
@@ -3140,6 +4205,130 @@ fn candidate(item: &Item) -> Candidate {
 fn image(bitmap: &winsys::icons::Bitmap) -> slint::Image {
     let buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&bitmap.rgba, bitmap.width, bitmap.height);
     slint::Image::from_rgba8_premultiplied(buffer)
+}
+
+/// Where the words searched for are in a picture's lines: each found word's part of its line, told by its characters
+/// (a line's letters are about evenly spread), with a little room around it. Words of one character are left out.
+fn word_places(lines: &[([i32; 4], String)], words: &[String]) -> Vec<[i32; 4]> {
+    let words: Vec<Vec<char>> = words.iter().map(|word| fold_chars(word)).filter(|word| word.len() > 1).collect();
+    let mut places = Vec::new();
+    for (place, text) in lines {
+        let line = fold_chars(text);
+        let count = line.len().max(1) as f32;
+        let width = (place[2] - place[0]) as f32;
+        for word in &words {
+            let mut at = 0;
+            while at + word.len() <= line.len() {
+                if line[at..at + word.len()] == word[..] {
+                    let start = (at as f32 - 0.3).max(0.0);
+                    let end = ((at + word.len()) as f32 + 0.3).min(count);
+                    let pad = ((place[3] - place[1]) / 6).max(1);
+                    places.push([place[0] + (width * start / count) as i32, place[1] - pad, place[0] + (width * end / count).ceil() as i32, place[3] + pad]);
+                    at += word.len();
+                } else {
+                    at += 1;
+                }
+            }
+        }
+    }
+    places
+}
+
+/// Where and when the words searched for show in a video: each found word's part of its line, as `word_places` tells
+/// it, kept with the line's moments ([from ms, to ms, left, top, right, bottom], ten-thousandths of the frame).
+fn video_word_places(lines: &[([i64; 6], String)], words: &[String]) -> Vec<[i64; 6]> {
+    let mut places = Vec::new();
+    for (place, text) in lines {
+        let line = [([place[2] as i32, place[3] as i32, place[4] as i32, place[5] as i32], text.clone())];
+        for found in word_places(&line, words) {
+            places.push([place[0], place[1], i64::from(found[0]), i64::from(found[1]), i64::from(found[2]), i64::from(found[3])]);
+        }
+    }
+    places
+}
+
+/// Lowercase, accents off, a character at a time (as the search compares).
+fn fold_chars(text: &str) -> Vec<char> {
+    engine::store::fold(text).chars().collect()
+}
+
+/// "#b8651f" as its three channels (the theme's accent; a fallback amber).
+pub(crate) fn rgb(hex: &str) -> [u8; 3] {
+    let hex = hex.trim_start_matches('#');
+    let channel = |at: usize| hex.get(at..at + 2).and_then(|part| u8::from_str_radix(part, 16).ok());
+    match (channel(0), channel(2), channel(4)) {
+        (Some(r), Some(g), Some(b)) => [r, g, b],
+        _ => [0xef, 0x9b, 0x35],
+    }
+}
+
+/// "Also in Desktop, Downloads and Phone backup": the folders an image's other copies are in, by name (the whole path
+/// is a click away, in the folder).
+fn also_in(others: &[String]) -> String {
+    let folders: Vec<String> = others.iter().map(|path| {
+        let folder = path.rsplit_once('\\').map_or("", |(folder, _)| folder);
+        folder.rsplit('\\').next().filter(|name| !name.is_empty() && !name.ends_with(':')).unwrap_or(folder).to_string()
+    }).collect();
+    // More than three, or folders of the same name: how many ("+3 copies" lists where).
+    let distinct: HashSet<String> = folders.iter().map(|folder| folder.to_lowercase()).collect();
+    if folders.len() > 3 || distinct.len() < folders.len() {
+        return format!("Also in {} other places", folders.len());
+    }
+    match folders.as_slice() {
+        [] => String::new(),
+        [one] => format!("Also in {one}"),
+        [rest @ .., last] => format!("Also in {} and {last}", rest.join(", ")),
+    }
+}
+
+/// The items with the first of each contents only (`hash`: None for those without copies, always kept), in order.
+#[cfg(test)]
+fn fold_copies<T>(items: Vec<T>, hash: impl Fn(&T) -> Option<u64>) -> Vec<T> {
+    let keys = items.iter().map(&hash).collect();
+    fold_with_places(items, keys, |_| String::new()).0
+}
+
+/// As `fold_copies`, with each kept item's lowercase path and the paths of the copies folded into it.
+fn fold_with_places<T>(items: Vec<T>, keys: Vec<Option<u64>>, path: impl Fn(&T) -> String) -> (Vec<T>, HashMap<String, Vec<String>>) {
+    let mut first: HashMap<u64, String> = HashMap::new();
+    let mut places: HashMap<String, Vec<String>> = HashMap::new();
+    let mut kept = Vec::with_capacity(items.len());
+    for (item, key) in items.into_iter().zip(keys) {
+        match key {
+            Some(key) => match first.get(&key) {
+                Some(shown) => places.entry(shown.clone()).or_default().push(path(&item)),
+                None => {
+                    first.insert(key, path(&item).to_lowercase());
+                    kept.push(item);
+                }
+            },
+            None => kept.push(item),
+        }
+    }
+    (kept, places)
+}
+
+/// Files up to this size are read to tell whether results are copies of each other (larger ones only by the catalog's
+/// hash, which images have once read), and at most `COPIES_READ` bytes for one list.
+const COPY_LARGEST: u64 = 4 << 20;
+const COPIES_READ: u64 = 32 << 20;
+/// Only the first results are compared, at most `COPY_FILES` files read at a time.
+const COPY_WINDOW: usize = 200;
+const COPY_FILES: usize = 300;
+
+/// What a file's contents hash to, unless it's kept online only (never downloaded for this) or can't be read.
+fn content_hash(path: &str) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    use std::os::windows::fs::MetadataExt;
+    let metadata = std::fs::metadata(path).ok()?;
+    if metadata.file_attributes() & crate::contents::NOT_ON_THIS_PC != 0 {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    // Apart from the catalog's hashes.
+    Some(hasher.finish() ^ 0x636f_7069_6573_0000)
 }
 
 fn row(candidate: &Candidate, highlights: &[std::ops::Range<usize>], accent: &str, icon: Option<slint::Image>, now: i64, twelve: bool,
@@ -3196,6 +4385,7 @@ fn row(candidate: &Candidate, highlights: &[std::ops::Range<usize>], accent: &st
         rtl: snippet.is_some_and(|(snippet, _)| right_to_left(&snippet.text)),
         meta: meta.join("  ·  ").into(),
         badge,
+        copies: SharedString::new(),
         has_icon: icon.is_some(),
         icon: icon.unwrap_or_default(),
     }
@@ -3284,6 +4474,25 @@ pub const PLAYER_SOUND: i32 = 2;
 pub const PLAYER_STOPPED: i32 = 3;
 pub const PLAYER_PLAYING: i32 = 4;
 
+/// Preview video threads running now (`VideoRunning`), for quitting to wait on.
+static VIDEOS_PLAYING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Counts a preview video thread for as long as it runs.
+struct VideoRunning;
+
+impl VideoRunning {
+    fn start() -> VideoRunning {
+        VIDEOS_PLAYING.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        VideoRunning
+    }
+}
+
+impl Drop for VideoRunning {
+    fn drop(&mut self) {
+        VIDEOS_PLAYING.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 /// What's playing in the preview.
 #[derive(Clone, Debug, Default)]
 struct Media {
@@ -3299,11 +4508,29 @@ struct Media {
     sound: bool,
     /// A video's secrets to cover as it plays (`Marks::video_boxes`), when they're hidden.
     secrets: Vec<[i64; 6]>,
+    /// Where and when the words searched for show, to outline as it plays (as `secrets`), and in what color.
+    matches: Vec<[i64; 6]>,
+    accent: [u8; 3],
+    /// Its text not read yet (and hidden): every frame covered whole.
+    waiting: bool,
     /// Its marks are in: it may be drawn.
     marked: bool,
     /// A video's own size in pixels, once known, and the longer side it's decoded at now.
     native: Option<(u32, u32)>,
     side: u32,
+}
+
+/// Outlines the words searched for that show at `seconds` in a playing video's frame (`video_word_places`).
+fn outline_moment(picture: &mut winsys::imaging::Rgb, matches: &[[i64; 6]], seconds: f64, color: [u8; 3]) {
+    let ms = (seconds * 1000.0) as i64;
+    let (width, height) = (picture.width as f32, picture.height as f32);
+    let places: Vec<[f32; 4]> = matches.iter().filter(|place| place[0] <= ms && ms <= place[1] + 250)
+        .map(|place| [place[2] as f32 * width / 10_000.0, place[3] as f32 * height / 10_000.0, place[4] as f32 * width / 10_000.0, place[5] as f32 * height / 10_000.0])
+        .collect();
+    if !places.is_empty() {
+        let (w, h) = (picture.width, picture.height);
+        crate::blur::draw_outline(&mut picture.pixels, w, h, 3, &places, color);
+    }
 }
 
 /// Covers a frame's secrets showing at `seconds` (a video's `Marks::video_boxes`): each box, a little larger, pixelated
@@ -3382,12 +4609,18 @@ fn is_video(name: &str) -> bool {
 }
 
 fn is_picture(name: &str) -> bool {
-    search::filter::extension(name).is_some_and(|extension| extract_pictures().contains(&extension.to_ascii_lowercase().as_str()))
+    search::filter::extension(name).is_some_and(|extension| common::kinds::PICTURES.contains(&extension.to_ascii_lowercase().as_str()))
 }
 
-/// The pictures the indexer reads (see the extract crate's list; kept in step here without depending on it).
-fn extract_pictures() -> &'static [&'static str] {
-    &["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff", "gif", "heic", "heif"]
+/// Word, Excel and PowerPoint files: shown by their own preview handlers when Office has them.
+fn is_office(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    [".docx", ".doc", ".xlsx", ".xlsm", ".xls", ".pptx", ".ppt"].iter().any(|extension| lower.ends_with(extension))
+}
+
+/// Where a hosted preview is now (kept as it is when it's only hidden).
+fn hosted_rect(hosted: &winsys::preview_host::Hosted) -> (i32, i32, i32, i32) {
+    hosted.rect()
 }
 
 fn is_document(name: &str) -> bool {
@@ -3408,6 +4641,7 @@ fn describe_hidden(kinds: &[String]) -> String {
         "private-key" => "a private key",
         "document" => "a passport or ID",
         "seed" => "a recovery phrase",
+        "code" => "a code",
         _ => "a secret",
     }).collect();
     names.dedup();
@@ -3444,7 +4678,7 @@ fn hot_sources(settings: &Settings, history: Vec<(String, u32, i64)>) -> Sources
                 Some((entry.path(), modified))
             })
             .collect();
-        links.sort_by(|a, b| b.1.cmp(&a.1));
+        links.sort_by_key(|link| std::cmp::Reverse(link.1));
         for (link, opened) in links.into_iter().take(200) {
             if let Some(target) = winsys::files::shortcut_target(&link.display().to_string()) {
                 recent.push((target, opened));
@@ -3455,11 +4689,10 @@ fn hot_sources(settings: &Settings, history: Vec<(String, u32, i64)>) -> Sources
         .into_iter()
         .filter_map(winsys::files::known)
         .collect();
-    if let Some(onedrive) = std::env::var_os("OneDrive").map(std::path::PathBuf::from) {
-        if !folders.iter().any(|folder| folder.starts_with(&onedrive)) {
+    if let Some(onedrive) = std::env::var_os("OneDrive").map(std::path::PathBuf::from)
+        && !folders.iter().any(|folder| folder.starts_with(&onedrive)) {
             folders.push(onedrive);
         }
-    }
     // For tests in a sandbox (`EXCAVATE_TEST_FOLDERS`, separated by ;): only those folders, and none of the person's
     // recent files, so a test popup never shows a file of theirs.
     if let Some(only) = std::env::var_os("EXCAVATE_TEST_FOLDERS") {
@@ -3586,6 +4819,60 @@ impl Model for AllModel {
 
     fn model_tracker(&self) -> &dyn ModelTracker {
         &self.notify
+    }
+}
+
+/// A preview that can't play because Windows has no Media Foundation (an N edition without the Media Feature Pack)
+/// says so in the status line, for a moment.
+fn media_missing(error: &str) {
+    if error == winsys::media::MISSING {
+        let _ = slint::invoke_from_event_loop(|| with_app(|app| app.notice("Playing needs Windows' Media Feature Pack")));
+    }
+}
+
+#[cfg(test)]
+mod copies_tests {
+    #[test]
+    fn an_image_in_several_places_is_one_result() {
+        let found = vec![("beach.jpg", Some(7)), ("notes.txt", None), ("IMG_1.jpg", Some(7)), ("other.png", Some(9)), ("todo.txt", None)];
+        let kept: Vec<&str> = super::fold_copies(found, |item| item.1).into_iter().map(|item| item.0).collect();
+        assert_eq!(kept, ["beach.jpg", "notes.txt", "other.png", "todo.txt"]);
+    }
+
+    #[test]
+    fn copies_say_where_the_others_are() {
+        let found = vec![r"C:\A\a.gif", r"C:\B\a.gif", r"C:\C\b.gif", r"C:\D\a.gif"];
+        let keys = vec![Some(1), Some(1), None, Some(1)];
+        let (kept, places) = super::fold_with_places(found, keys, |path| path.to_string());
+        assert_eq!(kept, [r"C:\A\a.gif", r"C:\C\b.gif"]);
+        assert_eq!(places[r"c:\a\a.gif"], [r"C:\B\a.gif", r"C:\D\a.gif"]);
+        assert_eq!(super::also_in(&places[r"c:\a\a.gif"]), "Also in B and D");
+    }
+
+    #[test]
+    fn the_words_searched_for_are_found_along_their_lines() {
+        // "Beach day 2024" over 0..140 px: 14 characters, 10 px each.
+        let lines = vec![([0, 0, 140, 20], "Beach day 2024".to_string()), ([0, 40, 100, 60], "no match here".to_string())];
+        let places = super::word_places(&lines, &["BEACH".to_string(), "a".to_string()]);
+        assert_eq!(places.len(), 1, "{places:?}");
+        let [left, top, right, bottom] = places[0];
+        assert!((0..=2).contains(&left) && (50..=55).contains(&right) && top <= 0 && bottom > 19, "{places:?}");
+        // Accents and case don't matter, and every place a word shows is found.
+        let lines = vec![([0, 0, 100, 10], "Café café".to_string())];
+        assert_eq!(super::word_places(&lines, &["cafe".to_string()]).len(), 2);
+        assert_eq!(super::rgb("#b8651f"), [0xb8, 0x65, 0x1f]);
+    }
+
+    #[test]
+    fn where_the_copies_are_said_plainly() {
+        let others = |paths: &[&str]| super::also_in(&paths.iter().map(|path| path.to_string()).collect::<Vec<_>>());
+        assert_eq!(others(&[]), "");
+        assert_eq!(others(&[r"C:\Users\Pat\Desktop\a.jpg"]), "Also in Desktop");
+        assert_eq!(others(&[r"D:\x\a.jpg", r"E:\Phone backup\b.jpg", r"F:\z\c.jpg"]), "Also in x, Phone backup and z");
+        assert_eq!(others(&[r"D:\a.jpg"]), r"Also in D:");
+        // Folders of the same name, or more than three: how many.
+        assert_eq!(others(&[r"C:\p1\sync_data\a.gif", r"C:\p2\sync_data\a.gif"]), "Also in 2 other places");
+        assert_eq!(others(&[r"C:\a\x.jpg", r"C:\b\x.jpg", r"C:\c\x.jpg", r"C:\d\x.jpg"]), "Also in 4 other places");
     }
 }
 

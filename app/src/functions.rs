@@ -39,32 +39,28 @@ impl Extra {
     /// Whether a file with these facts fits (each None: not known, or not that kind of file, so it doesn't).
     pub fn fits(&self, size: Option<(u32, u32)>, length: Option<f64>, runs: Option<(u32, i64)>) -> bool {
         let within = |value: u64, range: (u64, u64)| value >= range.0 && value <= range.1;
-        if let Some(range) = self.width {
-            if !size.is_some_and(|size| within(u64::from(size.0), range)) {
+        if let Some(range) = self.width
+            && !size.is_some_and(|size| within(u64::from(size.0), range)) {
                 return false;
             }
-        }
-        if let Some(range) = self.height {
-            if !size.is_some_and(|size| within(u64::from(size.1), range)) {
+        if let Some(range) = self.height
+            && !size.is_some_and(|size| within(u64::from(size.1), range)) {
                 return false;
             }
-        }
-        if let Some((from, to)) = self.length {
-            if !length.is_some_and(|length| length >= from && length <= to) {
+        if let Some((from, to)) = self.length
+            && !length.is_some_and(|length| length >= from && length <= to) {
                 return false;
             }
-        }
         if let Some(range) = self.runcount {
             let count = runs.map_or(0, |runs| u64::from(runs.0));
             if !within(count, range) {
                 return false;
             }
         }
-        if let Some((from, to)) = self.daterun {
-            if !runs.is_some_and(|runs| runs.1 >= from && runs.1 <= to) {
+        if let Some((from, to)) = self.daterun
+            && !runs.is_some_and(|runs| runs.1 >= from && runs.1 <= to) {
                 return false;
             }
-        }
         true
     }
 
@@ -145,9 +141,9 @@ fn numbers(value: &str) -> Option<(u64, u64)> {
 
 /// `dimensions:1920x1080`, or `>1920x1080` (each side at least so).
 fn dimensions(value: &str) -> Option<((u64, u64), (u64, u64))> {
-    let (op, sizes) = match value.find(|c: char| c.is_ascii_digit()) {
-        Some(at) => value.split_at(at),
-        None => return None,
+    let (op, sizes) = {
+        let at = value.find(|c: char| c.is_ascii_digit())?;
+        value.split_at(at)
     };
     let (width, height) = sizes.split_once(['x', 'X', '*'])?;
     Some((numbers(&format!("{op}{width}"))?, numbers(&format!("{op}{height}"))?))

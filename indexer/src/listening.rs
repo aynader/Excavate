@@ -165,6 +165,9 @@ pub fn languages() -> String {
 
 // ---- The listener ---------------------------------------------------------------------------------------------------
 
+/// A piece of sound let go of halfway (a pause, a stop): the recording is heard again from its start later, not failed.
+const INTERRUPTED: &str = "interrupted";
+
 /// What it heard in a piece of sound: (from ms, to ms, words).
 struct Heard {
     pieces: Vec<(i64, i64, String)>,
@@ -181,8 +184,8 @@ struct Listener {
     lines: Receiver<String>,
     _job: Option<winsys::process::Job>,
     on_gpu: bool,
-    /// Below normal ("Listen to everything now"), else idle: what it was last set to.
-    hurried: bool,
+    /// Its priority as last set: idle, or higher at a faster speed ("Listen to everything now", `work::process_priority`).
+    priority: winsys::process::Priority,
 }
 
 impl Listener {
@@ -237,7 +240,7 @@ impl Listener {
                 }
             }
         }).map_err(|error| error.to_string())?;
-        let mut listener = Listener { child, input, lines, _job: job, on_gpu: gpu.is_some(), hurried: false };
+        let mut listener = Listener { child, input, lines, _job: job, on_gpu: gpu.is_some(), priority: winsys::process::Priority::Idle };
         // Loading a model takes seconds; a few minutes means something's wrong.
         let ready = listener.answer(Duration::from_secs(180))?;
         if ready.get("ready").and_then(serde_json::Value::as_bool) != Some(true) {
@@ -255,21 +258,45 @@ impl Listener {
     }
 
     fn answer(&mut self, wait: Duration) -> Result<serde_json::Value, String> {
-        match self.lines.recv_timeout(wait) {
-            Ok(line) => serde_json::from_str(&line).map_err(|error| format!("the listener's answer: {error}")),
-            Err(RecvTimeoutError::Timeout) => {
-                let _ = self.child.kill();
-                Err("the listener took too long".into())
+        self.answer_unless(wait, &|| false)
+    }
+
+    /// As `answer`, looking each second at `interrupt` (a pause, a stop): then the listener is ended at once (with the
+    /// model it holds) and `INTERRUPTED` is the answer, so a long piece of sound never keeps it past a pause.
+    fn answer_unless(&mut self, wait: Duration, interrupt: &dyn Fn() -> bool) -> Result<serde_json::Value, String> {
+        let deadline = Instant::now() + wait;
+        loop {
+            let step = deadline.saturating_duration_since(Instant::now()).min(Duration::from_secs(1));
+            match self.lines.recv_timeout(step) {
+                Ok(line) => return serde_json::from_str(&line).map_err(|error| format!("the listener's answer: {error}")),
+                Err(RecvTimeoutError::Timeout) if interrupt() => {
+                    // (Waited for: Windows ends a process a moment after it's asked, and one still ending would be
+                    // taken for running, and handed the next recording.)
+                    let _ = self.child.kill();
+                    let _ = self.child.wait();
+                    return Err(INTERRUPTED.into());
+                }
+                Err(RecvTimeoutError::Timeout) if Instant::now() < deadline => {}
+                Err(RecvTimeoutError::Timeout) => {
+                    let _ = self.child.kill();
+                    let _ = self.child.wait();
+                    return Err("the listener took too long".into());
+                }
+                Err(RecvTimeoutError::Disconnected) => return Err(match self.child.try_wait() {
+                    Ok(Some(status)) => format!("the listener stopped ({status})"),
+                    _ => "the listener stopped".into(),
+                }),
             }
-            Err(RecvTimeoutError::Disconnected) => Err(match self.child.try_wait() {
-                Ok(Some(status)) => format!("the listener stopped ({status})"),
-                _ => "the listener stopped".into(),
-            }),
         }
     }
 
     /// What's said in `samples` (16 kHz mono), `offset_ms` into the recording.
     fn hear(&mut self, samples: &[f32], offset_ms: i64, languages: &str) -> Result<Heard, String> {
+        self.hear_unless(samples, offset_ms, languages, &|| false)
+    }
+
+    /// As `hear`, let go of when `interrupt` says so (`INTERRUPTED`).
+    fn hear_unless(&mut self, samples: &[f32], offset_ms: i64, languages: &str, interrupt: &dyn Fn() -> bool) -> Result<Heard, String> {
         let mut bytes = Vec::with_capacity(samples.len() * 4 + 64);
         bytes.extend_from_slice(format!("LISTEN {} auto {languages}\n", samples.len()).as_bytes());
         for sample in samples {
@@ -279,7 +306,7 @@ impl Listener {
         // On the processor a piece can take a while (Whisper turbo there: a quarter of its length); far longer is stuck.
         let seconds = samples.len() as u64 / u64::from(winsys::audio::RATE);
         let wait = Duration::from_secs(60 + if self.on_gpu { seconds / 4 } else { seconds * 2 });
-        let answer = self.answer(wait)?;
+        let answer = self.answer_unless(wait, interrupt)?;
         if let Some(error) = answer["error"].as_str() {
             return Err(error.to_string());
         }
@@ -362,6 +389,7 @@ pub fn lane(mut context: Context, catalog: Arc<Catalog>, models: PathBuf, mut pl
     let noting = |reason: Option<&str>| status(&|listening| listening.waiting = reason.unwrap_or_default().to_string());
     let mut failures = 0usize;
     let mut upgrade_tried = false;
+    let mut crashes = work::Crashes::default();
     loop {
         if context.control.stopping() {
             break;
@@ -373,7 +401,7 @@ pub fn lane(mut context: Context, catalog: Arc<Catalog>, models: PathBuf, mut pl
             if everything.status().available {
                 let recordings: Vec<(String, u64, i64)> = context.roots.iter()
                     .filter(|root| context.kinds.on(root, "audio"))
-                    .flat_map(|root| crate::scan::list_recordings(root, &context.exclusions, Some(&everything), false))
+                    .flat_map(|root| crate::scan::list_recordings(root, &context.exclusions, Some(&everything), false, &|| context.control.stopping()))
                     .collect();
                 catalog.recordings_add(&recordings);
             }
@@ -435,6 +463,10 @@ pub fn lane(mut context: Context, catalog: Arc<Catalog>, models: PathBuf, mut pl
                 }
             });
             if let Err(error) = result {
+                // Reading starting over: the download goes on, and the next session takes it up (not a failure).
+                if context.control.stopping() {
+                    break;
+                }
                 config::log(&format!("listening, {}: {error}", ear.label()));
                 status(&|listening| listening.model = config::status::Model { state: "failed".into(), name: ear.label().into(), error: error.clone(), ..Default::default() });
                 let wait = [30, 120, 600][failures.min(2)];
@@ -449,9 +481,16 @@ pub fn lane(mut context: Context, catalog: Arc<Catalog>, models: PathBuf, mut pl
         }
         context.shared.wants_load.store(true, Ordering::Relaxed);
         let _busy = work::Busy::new(&context.shared);
+        // Paused by the person: the listener and the model it holds (a gigabyte or more) let go while it lasts. (Paused
+        // for a busy PC, it stays: those pauses are short.)
+        if listener.is_some() && paused_by_person(&context) {
+            listener = None;
+            set_server(&listener);
+        }
         if !work::wait_listening(&context, need, &noting) {
             break;
         }
+        let _item = context.shared.paces.item(crate::pace::Lane::Said);
         // Who heard what: a video's speech is kept apart from recordings.
         let engine = if video { said } else { ear.name() };
         // Gone, changed since it was listed, kept online only, or no longer in what's read: not now.
@@ -476,17 +515,14 @@ pub fn lane(mut context: Context, catalog: Arc<Catalog>, models: PathBuf, mut pl
             }
             status(&|listening| listening.running = true);
             // The first time on this PC: where it hears fastest, on a minute of this file.
-            if context.listen_measure.is_some() && crate::devices::quiet(&context) {
-                if let Some(key) = context.listen_measure.take() {
-                    if let Some(gpu) = measure_devices(&context, &models, &plan, &key, &path) {
-                        if gpu != plan.gpu {
+            if context.listen_measure.is_some() && crate::devices::quiet(&context)
+                && let Some(key) = context.listen_measure.take()
+                    && let Some(gpu) = measure_devices(&context, &models, &plan, &key, &path)
+                        && gpu != plan.gpu {
                             plan.gpu = gpu;
                             let label = plan.device_label();
                             status(&|listening| listening.device = label.into());
                         }
-                    }
-                }
-            }
             match Listener::start(&models, &plan) {
                 Ok(started) => {
                     listener = Some(started);
@@ -507,23 +543,28 @@ pub fn lane(mut context: Context, catalog: Arc<Catalog>, models: PathBuf, mut pl
             set_server(&listener);
         }
         let Some(open) = listener.as_mut() else { continue };
-        // "Listen to everything now": ahead of what's merely in the background (below normal), as "Read everything now"
+        // "Listen to everything now": at normal priority, as "Read everything now"
         // is; else idle. Asked each recording, as it can be switched while the listener runs.
-        let hurry = context.listen_gate.all();
-        if hurry != open.hurried && winsys::process::hurry_process(open.child.id(), hurry) {
-            open.hurried = hurry;
+        let priority = work::process_priority(context.shared.speed(&context.listen_gate));
+        if priority != open.priority && winsys::process::set_process_priority(open.child.id(), priority) {
+            open.priority = priority;
         }
         status(&|listening| listening.current = path.clone());
+        // How far into it, for Activity: seconds heard of how long it is (asked of Windows without decoding it).
+        let length = winsys::video::length(&path).map_or(0, |seconds| seconds.round() as u64);
+        context.shared.paces.progress(0, length, "seconds");
         let started = Instant::now();
         let (mut pieces, mut failed, mut stopped, mut skipped) = (Vec::new(), None, false, false);
         let mut buffer: Vec<f32> = Vec::with_capacity(PIECE_SECONDS * winsys::audio::RATE as usize);
         let mut offset_ms = 0i64;
         let piece_len = PIECE_SECONDS * winsys::audio::RATE as usize;
+        let interrupt = || context.control.stopping() || !context.listen_gate.open() || paused_by_person(&context);
         let mut hear = |buffer: &mut Vec<f32>, offset_ms: &mut i64, open: &mut Listener| -> Result<(), String> {
-            let heard = open.hear(buffer, *offset_ms, &languages)?;
+            let heard = open.hear_unless(buffer, *offset_ms, &languages, &interrupt)?;
             pieces.extend(heard.pieces);
             *offset_ms += (buffer.len() as i64 * 1000) / i64::from(winsys::audio::RATE);
             buffer.clear();
+            context.shared.paces.progress((*offset_ms / 1000) as u64, length, "seconds");
             Ok(())
         };
         let decoded = winsys::audio::samples(&path, &mut |samples| {
@@ -555,6 +596,9 @@ pub fn lane(mut context: Context, catalog: Arc<Catalog>, models: PathBuf, mut pl
             catalog.seen_set(&path, engine, modified, work::now(), false);
             catalog.skipped_add(&path, "what's said");
         }
+        if failed.as_deref() == Some(INTERRUPTED) {
+            stopped = true;
+        }
         let result = match (decoded, failed) {
             _ if stopped || skipped => None,
             // A video with no soundtrack: nothing to hear, at once (its picture is never decoded).
@@ -562,14 +606,18 @@ pub fn lane(mut context: Context, catalog: Arc<Catalog>, models: PathBuf, mut pl
             (Err(error), _) | (_, Some(error)) => Some(Err(error)),
             (Ok(seconds), None) => Some(if buffer.is_empty() { Ok(seconds) } else { hear(&mut buffer, &mut offset_ms, open).map(|()| seconds) }),
         };
+        // Let go of in its last piece: heard again later, as above.
+        let result = result.filter(|result| !matches!(result, Err(error) if error == INTERRUPTED));
         match result {
             None => {}
             Some(Ok(seconds)) => {
                 let took = started.elapsed().as_secs_f64();
-                // Secrets covered piece by piece, so where each piece starts stays true.
+                // Secrets covered piece by piece, so where each piece starts stays true (a secret said across two
+                // pieces is found in them joined: `privacy::find_in_pieces`).
                 let mut secrets = Vec::new();
-                let pieces: Vec<(i64, i64, String)> = pieces.into_iter().map(|(from, to, text)| {
-                    let (text, found) = work::private(&text);
+                let found = privacy::find_in_pieces(&pieces.iter().map(|(_, _, text)| text.as_str()).collect::<Vec<_>>());
+                let pieces: Vec<(i64, i64, String)> = pieces.into_iter().zip(found).map(|((from, to, text), found)| {
+                    let text = privacy::redact(&text, &found);
                     secrets.extend(found);
                     (from, to, text)
                 }).collect();
@@ -611,13 +659,26 @@ pub fn lane(mut context: Context, catalog: Arc<Catalog>, models: PathBuf, mut pl
             }
             Some(Err(error)) => {
                 config::log(&format!("listening on {path}: {error}"));
-                catalog.seen_set(&path, engine, modified, work::now(), false);
+                // The listener stopped on it: started again for it once before it counts as the file's doing.
+                if open.running() || crashes.blame(&path) {
+                    catalog.seen_set(&path, engine, modified, work::now(), false);
+                }
                 // (A listener that stopped is started again for the next one.)
             }
+        }
+        // Ended (let go of for a pause, or stopped): let go of here, so the next recording starts a new one.
+        if listener.as_mut().is_some_and(|listener| !listener.running()) {
+            listener = None;
+            set_server(&listener);
         }
         idle_since = Instant::now();
     }
     set_server(&None);
+}
+
+/// Paused by the person: everything (the tray, Activity), or listening alone (Activity's own pause for it).
+fn paused_by_person(context: &Context) -> bool {
+    context.shared.paused().is_some() || crate::pace::kind_of_thread().is_some_and(|kind| context.shared.kind_paused(kind))
 }
 
 // ---- Measuring ------------------------------------------------------------------------------------------------------

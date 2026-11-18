@@ -2,7 +2,8 @@
 //! the network's password as a QR code, which OCR can't read and a phone can. A code is found by its three finder
 //! patterns (the squares at its corners: dark, light, dark three times as wide, light, dark, 1:1:3:1:1 across and down),
 //! three of a size at a right angle; the code is the square they make, with a margin. What it says isn't read (that
-//! would take a decoder); `work.rs` covers the codes of images whose text is about Wi-Fi (`privacy::about_wifi`).
+//! would take a decoder); `work.rs` covers the codes of images whose text is about Wi-Fi, an authenticator, a wallet,
+//! paying or signing in with a phone (`privacy::qr_is_secret`).
 
 /// The codes in an RGB image (`width` × `height`, 3 bytes a pixel), each [left, top, right, bottom] in its pixels.
 pub fn find(width: u32, height: u32, pixels: &[u8]) -> Vec<[f32; 4]> {
@@ -34,7 +35,7 @@ pub fn find(width: u32, height: u32, pixels: &[u8]) -> Vec<[f32; 4]> {
 /// Dark pixels: darker than the average around them (a window an eighth of the image wide), so shade and glare on a
 /// photographed sticker don't matter.
 fn binarize(w: usize, h: usize, pixels: &[u8]) -> Vec<bool> {
-    let gray: Vec<u32> = pixels.chunks_exact(3).take(w * h).map(|p| (p[0] as u32 * 30 + p[1] as u32 * 59 + p[2] as u32 * 11) / 100).collect();
+    let gray: Vec<u32> = pixels.as_chunks::<3>().0.iter().take(w * h).map(|p| (p[0] as u32 * 30 + p[1] as u32 * 59 + p[2] as u32 * 11) / 100).collect();
     // Sums over rectangles from the integral image.
     let mut integral = vec![0u64; (w + 1) * (h + 1)];
     for y in 0..h {
@@ -140,8 +141,11 @@ fn codes(finders: &[(f32, f32, f32)], w: f32, h: f32) -> Vec<[f32; 4]> {
                     (xs.iter().copied().fold(0.0, f32::max) + margin).min(w),
                     (ys.iter().copied().fold(0.0, f32::max) + margin).min(h),
                 ];
-                if !found.iter().any(|kept| overlap(kept, &square)) {
-                    found.push(square);
+                // Overlapping squares are one code (a code's own modules can look like a finder, and pair with two
+                // of the real ones): what both cover is covered, rather than the first alone.
+                match found.iter_mut().find(|kept| overlap(kept, &square)) {
+                    Some(kept) => *kept = [kept[0].min(square[0]), kept[1].min(square[1]), kept[2].max(square[2]), kept[3].max(square[3])],
+                    None => found.push(square),
                 }
             }
         }

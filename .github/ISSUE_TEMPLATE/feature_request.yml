@@ -1,0 +1,21 @@
+name: Feature request
+description: An idea for Excavate.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What you're trying to do
+      description: The problem, in your own words, before any solution. What do you search for, and where does Excavate fall short?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: How you'd like it to work, if you have an idea.
+  - type: textarea
+    id: instead
+    attributes:
+      label: What you do today
+      description: Another tool, a workaround, or nothing.

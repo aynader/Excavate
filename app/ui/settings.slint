@@ -3,7 +3,7 @@
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { Glyph, Keycap, Button, Link, Switch, Check, SettingRow, Segmented, Tag, Field, Reveal, Bar, Skeleton, Menu, MenuRow } from "widgets.slint";
+import { Glyph, Keycap, Button, ShieldButton, Link, Switch, Check, SettingRow, Segmented, Tag, Field, Reveal, Bar, Skeleton, Menu, MenuRow } from "widgets.slint";
 import { WelcomeSearch, WelcomeInside, WelcomeImages, PrivacyDemo, Clock, SceneLine, SceneBadge, DemoRow } from "demos.slint";
 export { DemoRow }
 
@@ -25,6 +25,8 @@ export struct FolderItem {
     kinds: [bool],
     kinds-anywhere: [bool],
     kind-tips: [string],
+    // It isn't there (deleted, moved, its drive unplugged): `detail` says "Folder not found".
+    missing: bool,
 }
 
 /// The kinds a folder can leave out, in order: their icons, and what each says on hover.
@@ -190,22 +192,114 @@ export struct StageRow {
 }
 
 
-/// What's being read right now.
-export struct NowRow {
-    // "First read · PP-OCRv6 small · Processor · 430 MB".
-    what: string,
-    file: string,
-    // The whole path, for "Skip".
-    path: string,
-    // Whether it can be skipped: work long enough on one file to (a video's text or frames, what's said).
-    skip: bool,
-}
-
 /// A file that couldn't be read.
 export struct ProblemRow {
     name: string,
     path: string,
     why: string,
+}
+
+/// Activity's header: how reading is going as a whole.
+/// A bar of Activity's Files read card: an hour, a day or a month.
+export struct ReadBar {
+    share: float,
+    label: string,
+    name: string,
+    read: string,
+    seen: string,
+}
+
+/// A choice of the Files read card's menu (`files_read::Span`).
+export struct ReadSpan {
+    choice: string,
+    kind: string,
+    big: string,
+    when: string,
+    total: string,
+    busiest: string,
+    unit: string,
+    seen: string,
+    average: float,
+    bars: [ReadBar],
+}
+
+export struct ActivityHeader {
+    // "Reading documents and images", and "2 h 50 – 3 h 30 left" (or nothing).
+    title: string,
+    left: string,
+    // "30,405 of 145,823 files · 418 files a minute · last finished 0 s ago".
+    counts: string,
+    // The heartbeat: 0 still (grey), 1 alive, 2 quiet (amber); it pulses as `last-finished` changes.
+    beat: int,
+    last-finished: int,
+    // 0 to 1, below 0 with no measure yet.
+    progress: float,
+    // "Longest: documents and code (about 100,000 left). Using 24 of 32 processor threads".
+    longest: string,
+    // Reading has work: the speed control shows.
+    active: bool,
+}
+
+/// One line of Settings → Privacy's "Found and hidden": a kind of secret, and in how many files.
+export struct PrivacyCount {
+    name: string,
+    count: string,
+    // The kind's own name ("password"), for the viewer.
+    kind: string,
+}
+
+/// A problem card on Activity (activity.rs: `Fix`): what's wrong, and up to two buttons (an empty label: none).
+export struct FixCard {
+    title: string,
+    line: string,
+    first-label: string,
+    first-id: string,
+    second-label: string,
+    second-id: string,
+}
+
+/// A kind of reading on Activity (activity.rs: `Kind`).
+export struct KindRow {
+    id: string,
+    // What its pause button pauses.
+    pause: string,
+    name: string,
+    // 0 working, 1 slow, 2 done, 3 waiting, 4 paused.
+    state: int,
+    chip: string,
+    // "27,807 of 127,775", and its time left ("2 h 50 – 3 h 30").
+    count: string,
+    left: string,
+    progress: float,
+    // Its pace lately: a path's commands (viewbox 90 by 14).
+    spark: string,
+    // What it's on now, or why it waits.
+    line: string,
+    // The file Skip lets go (empty: no Skip).
+    skip: string,
+    can-pause: bool,
+}
+
+/// An item that hasn't moved for three minutes.
+export struct StuckCard {
+    shown: bool,
+    text: string,
+    path: string,
+    can-skip: bool,
+    /// A kind with work that hasn't finished anything for a while: "Restart reading" instead of Skip.
+    can-restart: bool,
+}
+
+/// A group of what couldn't be read: why, how many, what can be done, and its latest files.
+export struct ProblemGroup {
+    why: string,
+    label: string,
+    count: string,
+    action: string,
+    asked: bool,
+    files: [ProblemRow],
+    // "and 120 more".
+    more: string,
 }
 
 component StepDot inherits Rectangle {
@@ -740,7 +834,7 @@ component FolderRow inherits Rectangle {
                         stroke: Theme.ok;
                     }
                 }
-                Text { text: root.folder.detail; font-size: 11.5px; color: Theme.text-2; horizontal-alignment: right; vertical-alignment: center; horizontal-stretch: 0; }
+                Text { text: root.folder.detail; font-size: 11.5px; color: root.folder.missing ? Theme.warning : Theme.text-2; horizontal-alignment: right; vertical-alignment: center; horizontal-stretch: 0; }
                 if root.folder.progress >= 0 && root.folder.on: Rectangle {
                     width: 100px;
                     horizontal-stretch: 0;
@@ -1828,12 +1922,22 @@ component VideoSection inherits VerticalLayout {
 component PrivacySection inherits VerticalLayout {
     in property <bool> blur-secrets;
     in property <bool> blur-sharing;
+    // What was found and hidden, by kind (never the values); counted when Settings opens.
+    in property <[PrivacyCount]> found;
+    in property <bool> found-ready;
+    in property <bool> check-asked;
+    callback check-again();
+    // A kind clicked: what was found of it, after Windows Hello.
+    callback kind-clicked(string);
     in property <length> available-width;
     // What's left of the page for the demo.
     in property <length> available-height;
     callback blur-secrets-toggled(bool);
     callback blur-sharing-toggled(bool);
     callback learn-more();
+    // The recent searches the popup shows with nothing typed (how many), and clearing them.
+    in property <int> recent-searches;
+    callback recent-cleared();
     property <float> k: clamp(min(root.available-width / 640px, (root.available-height - 250px) / 250px), 0.85, 1.8);
     spacing: 10px;
     Reveal {
@@ -1899,6 +2003,60 @@ component PrivacySection inherits VerticalLayout {
             title: "Hide previews while presenting";
             detail: "During slide shows and in Windows' presentation mode, previews show no images or text.";
             Switch { on: root.blur-sharing; toggled(on) => { root.blur-sharing-toggled(on); } }
+        }
+    }
+    Reveal {
+        order: 4;
+        SettingRow {
+            title: "Recent searches";
+            detail: root.recent-searches == 0
+                ? "None kept. The popup shows the last few you opened something from when nothing is typed."
+                : "The popup shows the last " + root.recent-searches + " you opened something from when nothing is typed. Pinned ones stay.";
+            Button { label: "Clear"; enabled: root.recent-searches > 0; clicked => { root.recent-cleared(); } }
+        }
+    }
+    if root.found-ready: Reveal {
+        order: 5;
+        Rectangle {
+            border-radius: Theme.radius;
+            background: Theme.raised;
+            border-width: 1px;
+            border-color: Theme.divider;
+            VerticalLayout {
+                padding: 16px;
+                padding-top: 12px;
+                spacing: 0px;
+                HorizontalLayout {
+                    padding-bottom: 6px;
+                    Text { text: "Found and hidden"; font-size: 13.5px; font-weight: 600; color: Theme.text; vertical-alignment: center; horizontal-stretch: 1; }
+                    if !root.check-asked: Link { text: "Check everything again"; vertical-alignment: center; clicked => { root.check-again(); } }
+                    if root.check-asked: Text { text: "Checking. Files with something new are read again."; font-size: 12px; color: Theme.text-2; vertical-alignment: center; }
+                }
+                if root.found.length == 0: Text {
+                    text: "Nothing sensitive found so far.";
+                    font-size: 12.5px;
+                    color: Theme.text-2;
+                }
+                for row[index] in root.found: Rectangle {
+                    height: 36px;
+                    background: row-touch.has-hover ? Theme.hover : transparent;
+                    accessible-role: button;
+                    accessible-label: row.name + ", " + row.count;
+                    accessible-action-default => { root.kind-clicked(row.kind); }
+                    if index > 0: Rectangle { y: 0; height: 1px; background: Theme.divider; }
+                    row-touch := TouchArea { mouse-cursor: pointer; clicked => { root.kind-clicked(row.kind); } }
+                    HorizontalLayout {
+                        padding-left: 4px;
+                        spacing: 10px;
+                        Text { text: row.name; font-size: 13px; color: Theme.text; vertical-alignment: center; horizontal-stretch: 1; }
+                        Text { text: row.count; font-size: 13px; color: Theme.text-2; vertical-alignment: center; }
+                        VerticalLayout {
+                            alignment: center;
+                            Glyph { width: 12px; height: 12px; commands: "M9 6l6 6l-6 6"; stroke: Theme.text-2; }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -2226,6 +2384,15 @@ component GeneralSection inherits VerticalLayout {
     in property <int> preview-size;
     in property <bool> typed-toggles;
     in property <bool> own-index;
+    // Excavate Bedrock, the helper: "missing", "installing", "ready", "failed"; the NTFS drives it reads.
+    in property <string> helper-state;
+    in property <int> helper-drives;
+    in property <string> helper-error;
+    callback helper-allow();
+    callback helper-remove();
+    // Drives whose record of changes "Fix this" made far larger than Windows' own ("C:", "C: and D:").
+    in property <string> journals-large;
+    callback journals-to-default();
     in property <int> theme;
     in property <string> theme-name;
     in property <[ThemeTile]> theme-tiles;
@@ -2289,6 +2456,21 @@ component GeneralSection inherits VerticalLayout {
             selected: root.own-index ? 1 : 0;
             chosen(index) => { if ((index == 1) != root.own-index) { root.own-index-toggled(index == 1); } }
         }
+    }
+    if root.own-index: SettingRow {
+        title: "Excavate Bedrock";
+        detail: root.helper-state == "ready"
+            ? "Ready. Every folder on " + (root.helper-drives == 1 ? "your drive" : root.helper-drives + " drives") + ", read in seconds."
+            : root.helper-state == "installing" ? "Waiting for Windows' prompt…"
+            : root.helper-state == "failed" && root.helper-error != "" ? root.helper-error
+            : "Not installed. Bedrock lists your folders itself.";
+        if root.helper-state == "ready": Button { label: "Remove the helper"; clicked => { root.helper-remove(); } }
+        if root.helper-state == "missing" || root.helper-state == "failed": ShieldButton { label: "Allow"; clicked => { root.helper-allow(); } }
+    }
+    if root.journals-large != "": SettingRow {
+        title: "Record of changes on " + root.journals-large;
+        detail: "It was made 1 GB so Bedrock catches up after Excavate was closed a long while. Windows keeps 32 MB on its own.";
+        ShieldButton { label: "Back to Windows' size"; clicked => { root.journals-to-default(); } }
     }
     SettingRow {
         title: "Graphics card";
@@ -2462,6 +2644,8 @@ component AboutSection inherits VerticalLayout {
     callback open-log();
     callback open-settings-file();
     callback open-index-folder();
+    // For a bug report: this PC, the settings and the log's last lines, without a path in them, on the clipboard.
+    callback copy-diagnostics() -> bool;
     callback auto-update-toggled(bool);
     callback update-action-clicked();
     spacing: 14px;
@@ -2529,216 +2713,358 @@ component AboutSection inherits VerticalLayout {
         alignment: start;
         Link { text: "Open the log"; clicked => { root.open-log(); } }
         Link { text: "Open settings.json"; clicked => { root.open-settings-file(); } }
+        // "Copied" for a moment once it's on the clipboard, as the search window says it.
+        Link {
+            text: copied-timer.running ? "Copied" : "Copy diagnostics";
+            clicked => {
+                if (root.copy-diagnostics()) { copied-timer.running = true; }
+            }
+        }
+    }
+    copied-timer := Timer {
+        interval: 1600ms;
+        running: false;
+        triggered => { self.running = false; }
     }
 }
 
-/// A stage's state, at a glance.
-component StageMark inherits Rectangle {
+/// Activity's chips and buttons, a size smaller than the window's own.
+component SmallButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> enabled: true;
+    callback clicked();
+    height: 26px;
+    width: max(56px, label-text.preferred-width + 22px);
+    border-radius: 6px;
+    opacity: root.enabled ? 1 : 0.55;
+    background: touch.pressed ? Theme.selected : touch.has-hover ? Theme.hover : Theme.raised;
+    border-width: 1px;
+    border-color: Theme.stroke;
+    animate background { duration: Theme.quick; }
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { if (root.enabled) { root.clicked(); } }
+    label-text := Text { text: root.label; font-size: 12px; color: Theme.text; }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// A kind's state at a glance: 0 working, 1 slow, 2 done, 3 waiting, 4 paused.
+component StateChip inherits Rectangle {
+    in property <string> label;
     in property <int> state;
+    height: 20px;
+    width: chip-text.preferred-width + 16px;
+    border-radius: 10px;
+    background: root.state == 0 ? Theme.accent-soft : root.state == 1 ? Theme.warning.with-alpha(0.16) : root.state == 2 ? Theme.ok.with-alpha(0.16) : Theme.hover;
+    chip-text := Text {
+        text: root.label;
+        font-size: 11px;
+        color: root.state == 0 ? Theme.accent : root.state == 1 ? Theme.warning : root.state == 2 ? Theme.ok : Theme.text-2;
+    }
+}
+
+/// A kind's pause, or its resume.
+component KindPause inherits Rectangle {
+    in property <bool> paused;
+    in property <bool> enabled: true;
+    // "Text in images": its accessible name says which ("Pause Text in images").
+    in property <string> what;
+    callback clicked();
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    opacity: root.enabled ? 1 : 0.4;
+    background: touch.pressed ? Theme.selected : touch.has-hover && root.enabled ? Theme.hover : transparent;
+    border-width: 1px;
+    border-color: Theme.stroke;
+    accessible-role: button;
+    accessible-label: (root.paused ? "Resume " : "Pause ") + root.what;
+    accessible-action-default => { if (root.enabled) { root.clicked(); } }
+    Glyph {
+        width: 14px;
+        height: 14px;
+        commands: root.paused ? "M8 5l11 7l-11 7z" : "M9 5v14 M15 5v14";
+        stroke: Theme.text-2;
+        stroke-width: 2px;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// The heartbeat: it pulses each time an item is finished, and turns amber when nothing has finished for a while.
+component Heartbeat inherits Rectangle {
+    // 0 still (grey), 1 alive, 2 quiet (amber).
+    in property <int> beat;
+    // When an item was last finished: a change is a beat.
+    in property <int> last;
+    property <bool> big;
     width: 16px;
     height: 16px;
-    if root.state == 0: Rectangle { x: 3px; y: 3px; width: 10px; height: 10px; border-radius: 5px; border-width: 1.5px; border-color: Theme.text-3; }
-    if root.state == 1: Rectangle { x: 3px; y: 3px; width: 10px; height: 10px; border-radius: 5px; background: Theme.accent; }
-    if root.state == 2: Rectangle {
-        Rectangle { x: 4.5px; y: 3px; width: 2.5px; height: 10px; border-radius: 1px; background: Theme.text-2; }
-        Rectangle { x: 9px; y: 3px; width: 2.5px; height: 10px; border-radius: 1px; background: Theme.text-2; }
+    Rectangle {
+        width: root.big ? 15px : 8px;
+        height: self.width;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        border-radius: self.width / 2;
+        background: root.beat == 2 ? Theme.warning : root.beat == 1 ? Theme.accent : Theme.text-3;
+        opacity: root.big ? 0.7 : 1;
+        animate width, opacity { duration: root.big ? 0ms : 900ms; easing: ease-out; }
     }
-    if root.state == 3: Glyph { commands: "M5 12l5 5l9-10"; stroke-width: 2.4px; stroke: Theme.ok; }
-}
-
-/// One half of a split stage: its name and note, its count and bar.
-component StagePartRow inherits HorizontalLayout {
-    in property <string> name;
-    in property <int> state;
-    in property <string> count;
-    in property <string> note;
-    in property <float> progress;
-    spacing: 12px;
-    VerticalLayout {
-        alignment: center;
-        horizontal-stretch: 0;
-        StageMark { state: root.state; }
-    }
-    VerticalLayout {
-        alignment: center;
-        spacing: 2px;
-        horizontal-stretch: 1;
-        Text { text: root.name; font-size: 13px; color: root.state == 0 ? Theme.text-3 : Theme.text; }
-        if root.note != "": Text { text: root.note; font-size: 12px; color: Theme.text-2; wrap: word-wrap; }
-    }
-    VerticalLayout {
-        alignment: center;
-        spacing: 4px;
-        horizontal-stretch: 0;
-        Text { text: root.count; font-size: 12px; color: Theme.text-2; horizontal-alignment: right; }
-        if root.progress >= 0: Bar { width: 140px; height: 3px; progress: root.progress; }
-    }
-}
-
-component StageCard inherits Rectangle {
-    in property <StageRow> stage;
-    // A split stage's own state: going if any part is, waiting if any waits, done when all are.
-    property <int> third-state: root.stage.third ? root.stage.extra.state : root.stage.shown.state;
-    property <int> overall: root.stage.state == 1 || root.stage.shown.state == 1 || root.third-state == 1 ? 1
-        : root.stage.state == 2 || root.stage.shown.state == 2 || root.third-state == 2 ? 2
-        : root.stage.state == 3 && root.stage.shown.state == 3 && root.third-state == 3 ? 3 : 0;
-    // (Its halves are conditional: their height is passed up by hand.)
-    min-height: max(54px, lay.min-height);
-    border-radius: Theme.radius;
-    background: Theme.raised;
-    border-width: 1px;
-    border-color: Theme.divider;
-    lay := VerticalLayout {
-        if root.stage.split: VerticalLayout {
-            padding-left: 16px;
-            padding-right: 16px;
-            padding-top: 10px;
-            padding-bottom: 10px;
-            spacing: 8px;
-            HorizontalLayout {
-                spacing: 12px;
-                VerticalLayout {
-                    alignment: center;
-                    horizontal-stretch: 0;
-                    StageMark { state: root.overall; }
-                }
-                Text { text: root.stage.name; font-size: 13.5px; font-weight: root.overall == 1 ? 600 : 400; color: root.overall == 0 ? Theme.text-3 : Theme.text; vertical-alignment: center; }
-            }
-            Rectangle { height: 1px; background: Theme.divider; }
-            StagePartRow {
-                padding-left: 28px;
-                name: root.stage.part;
-                state: root.stage.state;
-                count: root.stage.count;
-                note: root.stage.note;
-                progress: root.stage.progress;
-            }
-            StagePartRow {
-                padding-left: 28px;
-                name: root.stage.shown-part != "" ? root.stage.shown-part : "What they show";
-                state: root.stage.shown.state;
-                count: root.stage.shown.count;
-                note: root.stage.shown.note;
-                progress: root.stage.shown.progress;
-            }
-            if root.stage.third: StagePartRow {
-                padding-left: 28px;
-                name: root.stage.third-part;
-                state: root.stage.extra.state;
-                count: root.stage.extra.count;
-                note: root.stage.extra.note;
-                progress: root.stage.extra.progress;
-            }
+    changed last => {
+        if (root.beat == 1 && Theme.animate) {
+            root.big = true;
+            shrink.running = true;
         }
-        if !root.stage.split: HorizontalLayout {
-            padding-left: 16px;
-            padding-right: 16px;
-            padding-top: 9px;
-            padding-bottom: 9px;
-            spacing: 12px;
-            VerticalLayout {
-                alignment: center;
-                horizontal-stretch: 0;
-                StageMark { state: root.stage.state; }
-            }
-            VerticalLayout {
-                alignment: center;
-                spacing: 2px;
-                horizontal-stretch: 1;
-                Text { text: root.stage.name; font-size: 13.5px; font-weight: root.stage.state == 1 ? 600 : 400; color: root.stage.state == 0 ? Theme.text-3 : Theme.text; }
-                if root.stage.note != "": Text { text: root.stage.note; font-size: 12px; color: Theme.text-2; wrap: word-wrap; }
-            }
-            VerticalLayout {
-                alignment: center;
-                spacing: 4px;
-                horizontal-stretch: 0;
-                Text { text: root.stage.count; font-size: 12px; color: Theme.text-2; horizontal-alignment: right; }
-                if root.stage.progress >= 0: Bar { width: 140px; height: 3px; progress: root.stage.progress; }
-            }
+    }
+    shrink := Timer {
+        interval: 40ms;
+        running: false;
+        triggered => {
+            root.big = false;
+            self.running = false;
         }
     }
 }
 
-/// The last step of onboarding: reading has started, and it shows how far along it is.
-component ProgressPage inherits VerticalLayout {
-    in property <[FolderItem]> folders;
-    in property <string> summary;
-    in property <string> left;
-    in property <float> progress;
-    in property <string> current;
-    in property <string> model;
-    in property <float> model-progress;
-    in property <string> hotkey;
-    // Images, split into their text and what they show, when both are read; and videos, when there are any.
-    in property <StageRow> images;
-    in property <StageRow> videos;
-    spacing: 16px;
-    Heading { title: "Reading your files"; }
-    Reveal {
-        order: 1;
-        Rectangle {
-            border-radius: Theme.radius;
-            background: Theme.raised;
-            border-width: 1px;
-            border-color: Theme.divider;
-            VerticalLayout {
-                padding: 18px;
-                spacing: 10px;
-                HorizontalLayout {
-                    spacing: 12px;
-                    Text { text: root.summary; font-size: 15px; font-weight: 600; color: Theme.text; horizontal-stretch: 1; overflow: elide; }
-                    Text { text: root.left; font-size: 13px; color: Theme.text-2; horizontal-stretch: 0; vertical-alignment: center; }
-                }
-                Bar { progress: root.progress; }
-                if root.model != "": Text { text: root.model; font-size: 12.5px; color: Theme.text-2; overflow: elide; }
-                if root.model != "": Bar { progress: root.model-progress; }
-                if root.current != "": Text { text: root.current; font-size: 12px; color: Theme.text-3; overflow: elide; }
+/// The speed control: four stops, Gentle, Normal, Fast and Full. It moves as it's dragged; the stop it's let go on is
+/// chosen.
+component SpeedSlider inherits Rectangle {
+    in property <int> value;
+    callback chosen(int);
+    property <int> dragged;
+    property <bool> dragging;
+    property <int> shown: root.dragging ? root.dragged : root.value;
+    property <length> knob: 14px;
+    property <length> span: root.width - root.knob;
+    property <[string]> names: ["Gentle", "Normal", "Fast", "Full"];
+    width: 132px;
+    height: 22px;
+    accessible-role: slider;
+    accessible-label: "Speed";
+    accessible-value: root.names[root.shown];
+    accessible-value-minimum: 0;
+    accessible-value-maximum: 3;
+    pure function stop-at(at: length) -> int {
+        return Math.clamp(Math.round((at - root.knob / 2) / root.span * 3), 0, 3);
+    }
+    Rectangle {
+        x: root.knob / 2;
+        y: (root.height - self.height) / 2;
+        width: root.span;
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.divider;
+    }
+    Rectangle {
+        x: root.knob / 2;
+        y: (root.height - self.height) / 2;
+        width: root.span * root.shown / 3;
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.accent;
+        animate width { duration: Theme.animate ? 120ms : 0ms; }
+    }
+    for stop in 4: Rectangle {
+        x: root.knob / 2 + root.span * stop / 3 - 2px;
+        y: (root.height - self.height) / 2;
+        width: 4px;
+        height: 4px;
+        border-radius: 2px;
+        background: stop <= root.shown ? Theme.accent : Theme.stroke-strong;
+    }
+    Rectangle {
+        x: root.span * root.shown / 3;
+        y: (root.height - self.height) / 2;
+        width: root.knob;
+        height: root.knob;
+        border-radius: root.knob / 2;
+        background: Theme.popover;
+        border-width: 2px;
+        border-color: Theme.accent;
+        animate x { duration: Theme.animate ? 120ms : 0ms; }
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                root.dragged = root.stop-at(self.mouse-x);
+                root.dragging = true;
+            }
+            if (event.kind == PointerEventKind.up && root.dragging) {
+                root.dragging = false;
+                root.chosen(root.stop-at(self.mouse-x));
             }
         }
-    }
-    if root.images.split: Reveal {
-        order: 2;
-        StageCard { stage: root.images; }
-    }
-    if root.videos.name != "": Reveal {
-        order: 2;
-        StageCard { stage: root.videos; }
-    }
-    Reveal {
-        order: 2;
-        VerticalLayout {
-            spacing: 10px;
-            for folder in root.folders: FolderRow { folder: folder; progress-only: true; }
+        moved => {
+            if (self.pressed) { root.dragged = root.stop-at(self.mouse-x); }
         }
     }
-    Reveal {
-        order: 3;
+}
+
+/// One kind of reading: its state and pause, how far it's come and how long it has left, its pace lately, and what
+/// it's on now.
+component KindView inherits VerticalLayout {
+    in property <KindRow> kind;
+    callback pause-clicked();
+    callback skip-clicked();
+    padding-top: 10px;
+    padding-bottom: 10px;
+    spacing: 6px;
+    HorizontalLayout {
+        spacing: 10px;
         Text {
-            text: "You can close this window. Reading goes on in the background, and " + root.hotkey + " works right away.";
-            font-size: 13px;
-            color: Theme.text-2;
-            wrap: word-wrap;
+            text: root.kind.name;
+            font-size: 13.5px;
+            color: root.kind.state == 2 ? Theme.text-2 : Theme.text;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
         }
+        if root.kind.spark != "": VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            Path {
+                width: 60px;
+                height: 14px;
+                viewbox-width: 90;
+                viewbox-height: 14;
+                commands: root.kind.spark;
+                fill: Theme.accent;
+                opacity: 0.7;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            StateChip { label: root.kind.chip; state: root.kind.state; }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            KindPause {
+                // (A row that's only a note, as without the Media Feature Pack, has nothing to pause.)
+                visible: root.kind.pause != "";
+                paused: root.kind.state == 4;
+                enabled: root.kind.can-pause;
+                what: root.kind.name;
+                clicked => { root.pause-clicked(); }
+            }
+        }
+    }
+    if root.kind.state != 2 && root.kind.progress >= 0: HorizontalLayout {
+        spacing: 12px;
+        Rectangle {
+            horizontal-stretch: 1;
+            Bar { y: (parent.height - self.height) / 2; width: parent.width; height: 4px; progress: root.kind.progress; }
+        }
+        Text {
+            text: root.kind.count + (root.kind.left != "" ? " · " + root.kind.left : "");
+            font-size: 12px;
+            color: Theme.text-2;
+            horizontal-alignment: right;
+            horizontal-stretch: 0;
+            min-width: 190px;
+        }
+    }
+    if root.kind.state == 2 || (root.kind.progress < 0 && root.kind.count != ""): Text { text: root.kind.count; font-size: 12px; color: Theme.text-2; }
+    if root.kind.line != "" || root.kind.skip != "": HorizontalLayout {
+        spacing: 8px;
+        if root.kind.state == 1: VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            Glyph {
+                width: 14px;
+                height: 14px;
+                commands: "M5 22h14 M5 2h14 M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22 M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2";
+                stroke: Theme.warning;
+            }
+        }
+        Text {
+            text: root.kind.line;
+            font-size: 12px;
+            color: Theme.text-2;
+            overflow: elide;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        if root.kind.skip != "": SmallButton { label: "Skip"; clicked => { root.skip-clicked(); } }
     }
 }
 
-/// How reading is going, in detail: a page of its own, filled only while it's open.
+/// A group of what couldn't be read: its count and its action, and its latest files under it when it's opened.
+component ProblemGroupView inherits VerticalLayout {
+    in property <ProblemGroup> group;
+    callback action();
+    callback show-in-folder(string);
+    property <bool> open;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    spacing: 2px;
+    HorizontalLayout {
+        spacing: 10px;
+        min-height: 30px;
+        Rectangle {
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                Glyph {
+                    width: 14px;
+                    height: 14px;
+                    y: (parent.height - self.height) / 2;
+                    commands: root.open ? "M6 9l6 6l6-6" : "M9 6l6 6l-6 6";
+                    stroke: Theme.text-2;
+                }
+                Text { text: root.group.label + " · " + root.group.count; font-size: 13px; color: Theme.text; vertical-alignment: center; overflow: elide; }
+            }
+            TouchArea { mouse-cursor: pointer; clicked => { root.open = !root.open; } }
+        }
+        if root.group.action != "": VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            SmallButton { label: root.group.action; enabled: !root.group.asked; clicked => { root.action(); } }
+        }
+    }
+    if root.open: VerticalLayout {
+        padding-left: 22px;
+        spacing: 2px;
+        for file in root.group.files: HorizontalLayout {
+            spacing: 12px;
+            min-height: 34px;
+            VerticalLayout {
+                alignment: center;
+                spacing: 1px;
+                horizontal-stretch: 1;
+                Text { text: file.name; font-size: 12.5px; color: Theme.text; overflow: elide; }
+                Text { text: file.why; font-size: 11.5px; color: Theme.text-3; overflow: elide; }
+            }
+            Link { text: "Show in folder"; font-size: 12px; horizontal-stretch: 0; vertical-alignment: center; clicked => { root.show-in-folder(file.path); } }
+        }
+        if root.group.more != "": Text { text: root.group.more; font-size: 11.5px; color: Theme.text-3; }
+    }
+}
+
+/// How reading is going, in detail: a page of its own. What it shows is built off the UI thread and applied as it
+/// changes (activity.rs): the header, a row for each kind, an item that's stuck, and what couldn't be read.
 component ActivityPage inherits VerticalLayout {
-    in property <string> summary;
-    in property <string> left;
-    in property <float> progress;
+    in property <ActivityHeader> header;
+    // The speed control's stop (0 Gentle, 1 Normal, 2 Fast, 3 Full).
+    in property <int> speed: 1;
     in property <string> pause-label;
     in property <bool> paused;
     in property <[MenuRow]> pause-rows;
-    // "Full speed": without waiting for quiet moments, until everything's read (or back to normal).
-    in property <bool> full-speed;
-    in property <bool> full-speed-shown;
-    callback full-speed-clicked();
-    in property <[StageRow]> stages;
-    in property <[NowRow]> now;
-    in property <[FolderItem]> folders;
+    in property <[KindRow]> kinds;
+    in property <StuckCard> stuck;
     in property <string> problems-title;
-    in property <[ProblemRow]> problems;
+    in property <string> problems-summary;
+    in property <[ProblemGroup]> problem-groups;
+    in property <[FolderItem]> folders;
     // Bedrock's card: a drive listed whole again, now or last; "Fix this" offers a larger
     // record of changes on it.
     in property <bool> bedrock-shown;
@@ -2748,13 +3074,52 @@ component ActivityPage inherits VerticalLayout {
     in property <string> bedrock-count;
     in property <bool> bedrock-fix;
     callback bedrock-fix-clicked();
+    // Files read: today, the past week, month and year, and today's by kind. The choice and the bar picked are its own.
+    in property <[ReadSpan]> read-spans;
+    in property <string> today-parts;
+    in-out property <int> read-span: 1;
+    in-out property <int> read-bar: -1;
+    // Problem cards, each with its fix.
+    in property <[FixCard]> fixes;
+    callback fix-action(string);
     // Whether there's a choice to make: paused, it resumes at once.
     callback pause-clicked() -> bool;
     callback pause-chosen(int);
+    callback speed-chosen(int);
+    callback kind-pause(string);
     callback show-in-folder(string);
     callback skip-clicked(string);
+    callback stuck-left();
+    callback restart-reading();
+    callback problem-action(string);
+    property <bool> problems-open;
     spacing: 18px;
     Heading { title: "Activity"; }
+    for fix in root.fixes: Rectangle {
+        border-radius: Theme.radius;
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: Theme.accent;
+        HorizontalLayout {
+            padding: 14px;
+            spacing: 12px;
+            VerticalLayout {
+                alignment: center;
+                spacing: 3px;
+                horizontal-stretch: 1;
+                Text { text: fix.title; font-size: 13.5px; font-weight: 600; color: Theme.text; wrap: word-wrap; }
+                Text { text: fix.line; font-size: 12px; color: Theme.text-2; wrap: word-wrap; }
+            }
+            if fix.second-label != "": VerticalLayout {
+                alignment: center;
+                SmallButton { label: fix.second-label; clicked => { root.fix-action(fix.second-id); } }
+            }
+            if fix.first-label != "": VerticalLayout {
+                alignment: center;
+                SmallButton { label: fix.first-label; clicked => { root.fix-action(fix.first-id); } }
+            }
+        }
+    }
     if root.bedrock-shown: Rectangle {
         border-radius: Theme.radius;
         background: Theme.raised;
@@ -2792,155 +3157,417 @@ component ActivityPage inherits VerticalLayout {
             if root.bedrock-count != "": Text { text: root.bedrock-count; font-size: 12px; color: Theme.text-3; }
         }
     }
-    Reveal {
-        order: 1;
-        Rectangle {
-            border-radius: Theme.radius;
-            background: Theme.raised;
-            border-width: 1px;
-            border-color: Theme.divider;
-            VerticalLayout {
-                padding: 18px;
-                spacing: 10px;
-                HorizontalLayout {
-                    spacing: 14px;
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: 2px;
-                        horizontal-stretch: 1;
-                        Text { text: root.summary; font-size: 15px; font-weight: 600; color: Theme.text; wrap: word-wrap; }
-                        if root.left != "": Text { text: root.left; font-size: 12.5px; color: Theme.text-2; }
-                    }
-                    VerticalLayout {
-                        alignment: center;
-                        horizontal-stretch: 0;
-                        Button {
-                            label: root.pause-label;
-                            chevron: !root.paused;
-                            clicked => {
-                                if (root.pause-clicked()) { pause-menu.open(); }
-                            }
-                            pause-menu := Menu {
-                                rows: root.pause-rows;
-                                from-right: true;
-                                menu-width: 270px;
-                                chosen(index) => { root.pause-chosen(index); }
-                            }
-                        }
-                    }
+    // How it's going: the heartbeat, the time left, the speed, Pause all.
+    Rectangle {
+        border-radius: Theme.radius;
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: Theme.divider;
+        VerticalLayout {
+            padding: 18px;
+            spacing: 10px;
+            HorizontalLayout {
+                spacing: 14px;
+                VerticalLayout {
+                    alignment: start;
+                    padding-top: 3px;
+                    horizontal-stretch: 0;
+                    Heartbeat { beat: root.header.beat; last: root.header.last-finished; }
                 }
-                // With how far it's come in numbers.
-                HorizontalLayout {
-                    spacing: 12px;
-                    Bar { progress: root.progress; y: (parent.height - self.height) / 2; horizontal-stretch: 1; }
-                    if root.progress >= 0: Text {
-                        text: Math.floor(root.progress * 100) + "%";
-                        font-size: 12.5px;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 3px;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: root.header.title + (root.header.left != "" ? " · " + root.header.left : "");
+                        font-size: 15px;
+                        font-weight: 600;
+                        color: Theme.text;
+                        wrap: word-wrap;
+                    }
+                    if root.header.counts != "": Text { text: root.header.counts; font-size: 12.5px; color: Theme.text-2; wrap: word-wrap; }
+                }
+                if root.header.active: VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    horizontal-stretch: 0;
+                    Text {
+                        text: ["Gentle", "Normal", "Fast", "Full"][root.speed] + " ›";
+                        font-size: 12px;
                         color: Theme.text-2;
-                        vertical-alignment: center;
-                        horizontal-stretch: 0;
+                        horizontal-alignment: right;
                     }
+                    SpeedSlider { value: root.speed; chosen(stop) => { root.speed-chosen(stop); } }
                 }
-                // Full speed: a switch, so its state shows at a glance, and what it does under its name.
-                if root.full-speed-shown: Rectangle { height: 1px; background: Theme.divider; }
-                if root.full-speed-shown: HorizontalLayout {
-                    spacing: 14px;
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: 2px;
-                        horizontal-stretch: 1;
-                        Text { text: "Full speed"; font-size: 13px; font-weight: 600; color: Theme.text; }
-                        Text {
-                            text: root.full-speed
-                                ? "Reading flat out, even while you use the PC. It goes back to normal once everything's read."
-                                : "Use the processor and graphics card fully, without waiting for quiet moments, until everything's read.";
-                            font-size: 12px;
-                            color: Theme.text-2;
-                            wrap: word-wrap;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 0;
+                    Button {
+                        label: root.pause-label;
+                        chevron: !root.paused;
+                        clicked => {
+                            if (root.pause-clicked()) { pause-menu.open(); }
+                        }
+                        pause-menu := Menu {
+                            rows: root.pause-rows;
+                            from-right: true;
+                            menu-width: 270px;
+                            chosen(index) => { root.pause-chosen(index); }
                         }
                     }
-                    VerticalLayout {
-                        alignment: center;
-                        horizontal-stretch: 0;
-                        Switch { on: root.full-speed; toggled(on) => { root.full-speed-clicked(); } }
-                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 12px;
+                Bar { progress: root.header.progress; y: (parent.height - self.height) / 2; horizontal-stretch: 1; }
+                if root.header.progress >= 0: Text {
+                    text: Math.floor(root.header.progress * 100) + "%";
+                    font-size: 12.5px;
+                    color: Theme.text-2;
+                    vertical-alignment: center;
+                    horizontal-stretch: 0;
+                }
+            }
+            if root.header.longest != "": Text { text: root.header.longest; font-size: 12px; color: Theme.text-2; wrap: word-wrap; }
+        }
+    }
+    // Each kind of reading.
+    if root.kinds.length > 0: Rectangle {
+        border-radius: Theme.radius;
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: Theme.divider;
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 12px;
+            padding-top: 2px;
+            padding-bottom: 2px;
+            for kind[index] in root.kinds: VerticalLayout {
+                if index > 0: Rectangle { height: 1px; background: Theme.divider; }
+                KindView {
+                    kind: kind;
+                    pause-clicked => { root.kind-pause(kind.pause); }
+                    skip-clicked => { root.skip-clicked(kind.skip); }
                 }
             }
         }
     }
-    Reveal {
-        order: 2;
-        VerticalLayout {
-            spacing: 8px;
-            Subheader { text: "Stages"; }
-            for stage in root.stages: StageCard { stage: stage; }
+    // An item that hasn't moved for three minutes.
+    if root.stuck.shown: Rectangle {
+        border-radius: Theme.radius;
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: Theme.warning.with-alpha(0.6);
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 12px;
+            padding-top: 12px;
+            padding-bottom: 12px;
+            spacing: 10px;
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                Glyph {
+                    width: 18px;
+                    height: 18px;
+                    commands: "M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z M12 9v4 M12 17h.01";
+                    stroke: Theme.warning;
+                }
+            }
+            Text { text: root.stuck.text; font-size: 13px; color: Theme.text; wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
+            if root.stuck.can-skip: VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                SmallButton { label: "Skip"; clicked => { root.skip-clicked(root.stuck.path); } }
+            }
+            if root.stuck.can-restart: VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                SmallButton { label: "Restart reading"; clicked => { root.restart-reading(); } }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                SmallButton { label: "Leave it"; clicked => { root.stuck-left(); } }
+            }
         }
     }
-    if root.now.length > 0: Reveal {
-        order: 3;
+    // What couldn't be read, by why, each with what can be done.
+    if root.problem-groups.length > 0: Rectangle {
+        border-radius: Theme.radius;
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: Theme.divider;
         VerticalLayout {
-            spacing: 8px;
-            Subheader { text: "Right now"; }
-            for row in root.now: Rectangle {
-                min-height: 54px;
-                border-radius: Theme.radius;
-                background: Theme.raised;
-                border-width: 1px;
-                border-color: Theme.divider;
+            padding-left: 16px;
+            padding-right: 12px;
+            padding-top: 4px;
+            padding-bottom: 6px;
+            Rectangle {
+                min-height: 38px;
                 HorizontalLayout {
-                    padding-left: 16px;
-                    padding-right: 12px;
-                    spacing: 12px;
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: 2px;
-                        horizontal-stretch: 1;
-                        Text { text: row.what; font-size: 13px; color: Theme.text; overflow: elide; }
-                        if row.file != "": Text { text: row.file; font-size: 12px; color: Theme.text-2; overflow: elide; }
+                    spacing: 10px;
+                    Text { text: root.problems-title; font-size: 13.5px; font-weight: 600; color: Theme.text; vertical-alignment: center; horizontal-stretch: 1; }
+                    Glyph {
+                        width: 14px;
+                        height: 14px;
+                        y: (parent.height - self.height) / 2;
+                        commands: root.problems-open ? "M6 15l6-6l6 6" : "M6 9l6 6l6-6";
+                        stroke: Theme.text-2;
                     }
-                    // Lets this file go: it's listed under "Couldn't be read", and not read again until it changes.
-                    if row.skip: VerticalLayout {
-                        alignment: center;
-                        horizontal-stretch: 0;
-                        Button { label: "Skip"; clicked => { root.skip-clicked(row.path); } }
+                }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    accessible-role: button;
+                    accessible-label: root.problems-title;
+                    accessible-action-default => { root.problems-open = !root.problems-open; }
+                    clicked => { root.problems-open = !root.problems-open; }
+                }
+            }
+            if !root.problems-open: Text { text: root.problems-summary; font-size: 12px; color: Theme.text-2; wrap: word-wrap; }
+            if root.problems-open: VerticalLayout {
+                for group[index] in root.problem-groups: VerticalLayout {
+                    if index > 0: Rectangle { height: 1px; background: Theme.divider; }
+                    ProblemGroupView {
+                        group: group;
+                        action => { root.problem-action(group.why); }
+                        show-in-folder(path) => { root.show-in-folder(path); }
                     }
                 }
             }
         }
     }
-    if root.folders.length > 0: Reveal {
-        order: 4;
+    if root.read-spans.length > 0: read-card := Rectangle {
+        border-radius: Theme.radius;
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: Theme.divider;
+        property <ReadSpan> shown: root.read-spans[root.read-span];
+        property <bool> picked: root.read-bar >= 0 && root.read-bar < self.shown.bars.length;
+        property <ReadBar> chosen: self.picked ? self.shown.bars[root.read-bar] : { };
         VerticalLayout {
-            spacing: 8px;
-            Subheader { text: "By folder"; }
-            for folder in root.folders: FolderRow { folder: folder; progress-only: true; }
-        }
-    }
-    if root.problems.length > 0: Reveal {
-        order: 5;
-        VerticalLayout {
-            spacing: 8px;
-            Subheader { text: root.problems-title; }
-            for problem in root.problems: Rectangle {
-                min-height: 50px;
-                border-radius: Theme.radius;
-                background: Theme.raised;
-                border-width: 1px;
-                border-color: Theme.divider;
+            padding: 16px;
+            padding-top: 12px;
+            spacing: 10px;
+            HorizontalLayout {
+                Text { text: "Files read"; font-size: 13.5px; font-weight: 600; color: Theme.text; horizontal-stretch: 1; vertical-alignment: center; }
+                Button {
+                    label: read-card.shown.choice;
+                    chevron: true;
+                    clicked => { span-menu.open(); }
+                    span-menu := Menu {
+                        rows: [
+                            { label: "Today", checked: root.read-span == 0 },
+                            { label: "Past week", checked: root.read-span == 1 },
+                            { label: "Past month", checked: root.read-span == 2 },
+                            { label: "Past year", checked: root.read-span == 3 },
+                        ];
+                        checks: true;
+                        from-right: true;
+                        menu-width: 180px;
+                        chosen(index) => {
+                            root.read-span = index;
+                            root.read-bar = -1;
+                        }
+                    }
+                }
+            }
+            VerticalLayout {
+                spacing: 1px;
+                Text { text: read-card.picked ? "Files read" : read-card.shown.kind; font-size: 12px; color: Theme.text-2; }
+                Text { text: read-card.picked ? read-card.chosen.read : read-card.shown.big; font-size: 28px; font-weight: 600; color: Theme.text; font-family: Theme.display-font; }
+                Text { text: read-card.picked ? read-card.chosen.name : read-card.shown.when; font-size: 12px; color: Theme.text-3; }
+            }
+            Rectangle {
+                height: 96px;
                 HorizontalLayout {
-                    padding-left: 16px;
-                    padding-right: 16px;
-                    spacing: 14px;
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: 2px;
+                    spacing: read-card.shown.bars.length > 20 ? 2px : 5px;
+                    for mark[index] in read-card.shown.bars: Rectangle {
                         horizontal-stretch: 1;
-                        Text { text: problem.name; font-size: 13px; color: Theme.text; overflow: elide; }
-                        Text { text: problem.why; font-size: 12px; color: Theme.text-2; overflow: elide; }
+                        Rectangle {
+                            width: min(parent.width, 26px);
+                            x: (parent.width - self.width) / 2;
+                            y: parent.height - self.height;
+                            height: mark.share > 0 ? max(3px, parent.height * mark.share) : 2px;
+                            border-radius: min(3px, self.width / 2);
+                            background: mark.share <= 0 ? Theme.divider : !read-card.picked || root.read-bar == index ? Theme.accent : Theme.accent-soft;
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.read-bar = root.read-bar == index ? -1 : index; }
+                        }
                     }
-                    Link { text: "Show in folder"; horizontal-stretch: 0; vertical-alignment: center; clicked => { root.show-in-folder(problem.path); } }
+                }
+                // The average, across.
+                if read-card.shown.average >= 0 && !read-card.picked: Rectangle {
+                    y: parent.height * (1 - read-card.shown.average) - 0.5px;
+                    height: 1px;
+                    background: Theme.text-3;
+                    // (Above the line, or under it when the line is near the top.)
+                    Text { x: 0px; y: read-card.shown.average > 0.8 ? 3px : -14px; text: "Average"; font-size: 10.5px; color: Theme.text-3; }
+                }
+                if read-card.shown.total == "0": Text {
+                    text: root.read-span == 0 ? "Nothing read yet today" : "Nothing read in this time";
+                    font-size: 12px;
+                    color: Theme.text-3;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
                 }
             }
+            HorizontalLayout {
+                height: 14px;
+                spacing: read-card.shown.bars.length > 20 ? 2px : 5px;
+                for tick in read-card.shown.bars: Rectangle {
+                    horizontal-stretch: 1;
+                    Text {
+                        x: read-card.shown.bars.length > 20 ? 0px : (parent.width - self.width) / 2;
+                        width: 60px;
+                        text: tick.label;
+                        font-size: 10.5px;
+                        color: Theme.text-3;
+                        horizontal-alignment: read-card.shown.bars.length > 20 ? left : center;
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                for tile in [
+                    { name: "Total", value: read-card.shown.total },
+                    { name: "Busiest " + read-card.shown.unit, value: read-card.shown.busiest },
+                    { name: "Seen or heard", value: read-card.shown.seen },
+                ]: Rectangle {
+                    horizontal-stretch: 1;
+                    border-radius: 8px;
+                    background: Theme.field;
+                    VerticalLayout {
+                        padding: 8px;
+                        padding-left: 10px;
+                        spacing: 1px;
+                        Text { text: tile.name; font-size: 11.5px; color: Theme.text-2; }
+                        Text { text: tile.value; font-size: 15px; font-weight: 600; color: Theme.text; }
+                    }
+                }
+            }
+            if root.read-span == 0 && root.today-parts != "": Text { text: root.today-parts; font-size: 12px; color: Theme.text-2; wrap: word-wrap; }
+        }
+    }
+    if root.folders.length > 0: VerticalLayout {
+        spacing: 8px;
+        Subheader { text: "By folder"; }
+        for folder in root.folders: FolderRow { folder: folder; progress-only: true; }
+    }
+}
+
+// Excavate Bedrock, the helper: on the Indexers step, its consent card (Allow with Windows' shield, or Not now); in
+// Settings, its row. state: "missing", "installing", "ready", "failed".
+component HelperPoint inherits HorizontalLayout {
+    in property <string> text;
+    spacing: 8px;
+    Glyph {
+        width: 14px;
+        height: 14px;
+        y: 2px;
+        commands: "M5 12l4 4l10-10";
+        stroke: Theme.accent;
+    }
+    Text { text: root.text; font-size: 12.5px; color: Theme.text-2; wrap: word-wrap; horizontal-stretch: 1; }
+}
+
+component HelperCard inherits Rectangle {
+    in property <string> state;
+    in property <string> error;
+    in property <bool> declined;
+    callback allow();
+    callback not-now();
+    border-radius: 12px;
+    background: Theme.raised;
+    border-width: 1px;
+    border-color: Theme.divider;
+    min-height: lay.min-height;
+    // Layouts give wrapped text one line's height: each is measured at the width it has, off-layout.
+    property <string> title: root.state == "ready" ? "Excavate Bedrock reads your drives' file tables" : "Let Excavate Bedrock read your drives' file tables";
+    property <string> intro: "A small helper lists every folder in about 10 seconds instead of minutes, and keeps up with every change, even in folders Windows keeps to itself.";
+    property <string> allowed: "Allowed. Every folder is listed in seconds. Remove it any time in Settings.";
+    title-measure := Text { visible: false; width: root.width - 32px - 27px; text: root.title; font-size: 14px; font-weight: 600; wrap: word-wrap; }
+    intro-measure := Text { visible: false; width: root.width - 32px; text: root.intro; font-size: 12.5px; wrap: word-wrap; }
+    allowed-measure := Text { visible: false; width: root.width - 32px; text: root.allowed; font-size: 12.5px; wrap: word-wrap; }
+    error-measure := Text { visible: false; width: root.width - 32px; text: root.error; font-size: 12px; wrap: word-wrap; }
+    lay := VerticalLayout {
+        padding: 16px;
+        padding-top: 14px;
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 9px;
+            Glyph {
+                width: 18px;
+                height: 18px;
+                y: 1px;
+                commands: "M12 3l7 3v5c0 4.6-3 8.3-7 10c-4-1.7-7-5.4-7-10V6z";
+                stroke: Theme.accent;
+            }
+            Text {
+                text: root.title;
+                min-height: title-measure.preferred-height;
+                font-size: 14px;
+                font-weight: 600;
+                color: Theme.text;
+                wrap: word-wrap;
+                horizontal-stretch: 1;
+            }
+        }
+        if root.state != "ready" && !root.declined: VerticalLayout {
+            spacing: 10px;
+            Text {
+                text: root.intro;
+                min-height: intro-measure.preferred-height;
+                font-size: 12.5px;
+                color: Theme.text-2;
+                wrap: word-wrap;
+            }
+            VerticalLayout {
+                spacing: 5px;
+                HelperPoint { text: "It needs one administrator prompt, once"; }
+                HelperPoint { text: "It passes on names, sizes and dates, never what's inside a file"; }
+                HelperPoint { text: "Other accounts' files stay out"; }
+                HelperPoint { text: "Remove it any time in Settings"; }
+            }
+        }
+        if root.state == "ready": Text {
+            text: root.allowed;
+            min-height: allowed-measure.preferred-height;
+            font-size: 12.5px;
+            color: Theme.text-2;
+            wrap: word-wrap;
+        }
+        if root.state == "failed" && root.error != "": Text {
+            text: root.error;
+            min-height: error-measure.preferred-height;
+            font-size: 12px;
+            color: Theme.bad;
+            wrap: word-wrap;
+        }
+        if root.state == "installing": Text {
+            text: "Waiting for Windows' prompt…";
+            font-size: 12.5px;
+            color: Theme.text-2;
+        }
+        if (root.state == "missing" || root.state == "failed") && !root.declined: HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            ShieldButton { label: root.state == "failed" ? "Try again" : "Allow"; clicked => { root.allow(); } }
+            Button { label: "Not now"; clicked => { root.not-now(); } }
+        }
+        if (root.state == "missing" || root.state == "failed") && root.declined: HorizontalLayout {
+            spacing: 10px;
+            Text { text: "Without it, Bedrock lists your folders itself."; font-size: 12.5px; color: Theme.text-2; wrap: word-wrap; vertical-alignment: center; }
+            Link { text: "Allow"; vertical-alignment: center; clicked => { root.allow(); } }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        if (root.state == "missing" || root.state == "failed") && !root.declined: Text {
+            text: "Without it, Bedrock lists your folders itself";
+            font-size: 12px;
+            color: Theme.text-3;
+            wrap: word-wrap;
         }
     }
 }
@@ -3000,7 +3627,7 @@ component IndexerBars inherits VerticalLayout {
     property <float> grown: 0;
     init => { self.grown = 1; }
     animate grown { duration: Theme.animate ? 900ms : 0ms; easing: ease-out; }
-    spacing: 12px;
+    spacing: 10px;
     HorizontalLayout {
         spacing: 16px;
         alignment: start;
@@ -3024,7 +3651,7 @@ component IndexerBars inherits VerticalLayout {
             horizontal-stretch: 1;
             // (Room is left at the end of the longer bar for its figure: 64 px.)
             Rectangle {
-                height: 15px;
+                height: 13px;
                 ours-bar := Rectangle {
                     x: 0;
                     y: (parent.height - self.height) / 2;
@@ -3043,7 +3670,7 @@ component IndexerBars inherits VerticalLayout {
                 }
             }
             Rectangle {
-                height: 15px;
+                height: 13px;
                 theirs-bar := Rectangle {
                     x: 0;
                     y: (parent.height - self.height) / 2;
@@ -3135,6 +3762,182 @@ component AdminAsk inherits Rectangle {
     }
 }
 
+/// Settings → Privacy's viewer, a file it lists: its name, where it is, and a note ("2 found", "page 4").
+export struct FoundFile {
+    name: string,
+    place: string,
+    note: string,
+}
+
+/// A line of a document around a secret it holds: the words before, the value (or dots), the words after.
+export struct FoundLine {
+    before: string,
+    value: string,
+    after: string,
+}
+
+/// What was found of one kind, after Windows Hello: the files on the left, the one chosen on the right with its secrets
+/// outlined, their values hidden until Show. It closes itself when `left` runs out (found.rs).
+component FoundViewer inherits Rectangle {
+    in property <string> title;
+    in property <string> left;
+    in property <[FoundFile]> files;
+    in property <int> selected;
+    in property <bool> loading;
+    in property <bool> has-image;
+    in property <image> image;
+    in property <[FoundLine]> lines;
+    in property <string> note;
+    in property <bool> shown;
+    in property <string> dismiss;
+    callback pick(int);
+    callback show-toggled();
+    callback open-file();
+    callback show-folder();
+    callback dismissed();
+    callback closed();
+    background: #00000088;
+    TouchArea {}
+    FocusScope {
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if (event.text == Key.Escape) { root.closed(); return accept; }
+            if (event.text == Key.DownArrow && root.selected < root.files.length - 1) { root.pick(root.selected + 1); return accept; }
+            if (event.text == Key.UpArrow && root.selected > 0) { root.pick(root.selected - 1); return accept; }
+            accept
+        }
+    }
+    Rectangle {
+        width: min(860px, root.width - 48px);
+        height: min(560px, root.height - 48px);
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        border-radius: 14px;
+        background: Theme.popover;
+        border-width: 1px;
+        border-color: Theme.stroke-strong;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: #00000055;
+        clip: true;
+        VerticalLayout {
+            HorizontalLayout {
+                height: 52px;
+                padding-left: 20px;
+                padding-right: 12px;
+                spacing: 12px;
+                Text { text: root.title; font-size: 15px; font-weight: 600; color: Theme.text; vertical-alignment: center; horizontal-stretch: 1; }
+                Text { text: "Hides again in " + root.left; font-size: 12px; color: Theme.text-2; vertical-alignment: center; }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 32px;
+                        height: 32px;
+                        border-radius: 7px;
+                        background: close-touch.has-hover ? Theme.hover : transparent;
+                        accessible-role: button;
+                        accessible-label: "Close";
+                        accessible-action-default => { root.closed(); }
+                        Glyph { width: 14px; height: 14px; commands: "M6 6l12 12 M18 6l-12 12"; stroke: Theme.text-2; }
+                        close-touch := TouchArea { mouse-cursor: pointer; clicked => { root.closed(); } }
+                    }
+                }
+            }
+            Rectangle { height: 1px; background: Theme.divider; }
+            HorizontalLayout {
+                vertical-stretch: 1;
+                Rectangle {
+                    width: 250px;
+                    Flickable {
+                        content-height: list.preferred-height;
+                        list := VerticalLayout {
+                            padding: 8px;
+                            spacing: 2px;
+                            alignment: start;
+                            for file[index] in root.files: Rectangle {
+                                height: 50px;
+                                border-radius: 8px;
+                                background: index == root.selected ? Theme.selected : file-touch.has-hover ? Theme.hover : transparent;
+                                accessible-role: button;
+                                accessible-label: file.name;
+                                accessible-action-default => { root.pick(index); }
+                                file-touch := TouchArea { mouse-cursor: pointer; clicked => { root.pick(index); } }
+                                VerticalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    alignment: center;
+                                    Text { text: file.name; font-size: 13px; color: Theme.text; overflow: elide; }
+                                    Text { text: file.note == "" ? file.place : file.place + "  ·  " + file.note; font-size: 11.5px; color: Theme.text-2; overflow: elide; }
+                                }
+                            }
+                        }
+                    }
+                }
+                Rectangle { width: 1px; background: Theme.divider; }
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+                    Rectangle {
+                        vertical-stretch: 1;
+                        border-radius: 10px;
+                        background: Theme.raised;
+                        clip: true;
+                        if root.has-image: Image {
+                            width: parent.width - 16px;
+                            height: parent.height - 16px;
+                            x: 8px;
+                            y: 8px;
+                            source: root.image;
+                            image-fit: contain;
+                        }
+                        if !root.has-image && root.lines.length > 0: Flickable {
+                            content-height: excerpt.preferred-height;
+                            excerpt := VerticalLayout {
+                                padding: 16px;
+                                spacing: 10px;
+                                alignment: start;
+                                for line in root.lines: HorizontalLayout {
+                                    spacing: 0px;
+                                    alignment: start;
+                                    Text { text: line.before; font-size: 13px; color: Theme.text-2; font-family: "Consolas"; vertical-alignment: center; }
+                                    Rectangle {
+                                        width: value-text.preferred-width + 12px;
+                                        height: value-text.preferred-height + 4px;
+                                        border-radius: 5px;
+                                        background: Theme.accent-soft;
+                                        border-width: 1.5px;
+                                        border-color: Theme.accent;
+                                        value-text := Text { text: line.value; font-size: 13px; color: Theme.text; font-family: "Consolas"; }
+                                    }
+                                    Text { text: line.after; font-size: 13px; color: Theme.text-2; font-family: "Consolas"; vertical-alignment: center; }
+                                }
+                            }
+                        }
+                        if !root.has-image && root.lines.length == 0: Text {
+                            width: parent.width - 40px;
+                            x: 20px;
+                            text: root.loading ? "Reading it" : root.note;
+                            font-size: 13px;
+                            color: Theme.text-2;
+                            wrap: word-wrap;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                    if root.has-image || root.lines.length > 0: Text { text: root.note; font-size: 12px; color: Theme.text-2; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Button { label: root.shown ? "Hide" : "Show"; enabled: root.has-image || root.lines.length > 0; clicked => { root.show-toggled(); } }
+                        Button { label: "Open"; clicked => { root.open-file(); } }
+                        Button { label: "Show in folder"; clicked => { root.show-folder(); } }
+                        Rectangle { horizontal-stretch: 1; }
+                        if root.dismiss != "": Link { text: root.dismiss; vertical-alignment: center; clicked => { root.dismissed(); } }
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component SettingsWindow inherits Window {
     title: root.onboarding ? "Welcome to Excavate" : "Excavate settings";
     // The rail's mark in the theme's colors, for the title bar and the taskbar.
@@ -3172,14 +3975,29 @@ export component SettingsWindow inherits Window {
     in property <string> hotkey-note;
     in property <string> hotkey-error;
     in property <string> everything-state: "checking";
+    // Everything is on this PC (installed, or running), whichever index is on.
+    in property <bool> everything-installed;
     // The Indexers step: 0 Bedrock (as recommended), 1 Everything; told to Excavate at "Continue".
     in-out property <int> indexer-choice: 0;
     // Asking before Windows' administrator prompt (AdminAsk), over the whole window.
     in-out property <bool> admin-ask;
+    // Excavate Bedrock, the helper (`HelperCard`).
+    in property <string> helper-state: "missing";
+    in property <int> helper-drives;
+    in property <string> helper-error;
+    in-out property <bool> helper-declined;
+    in property <string> journals-large;
+    callback journals-to-default();
+    callback helper-allow();
+    callback helper-remove();
     callback indexers-continue(bool);
     callback admin-answered(bool);
     // Activity's Bedrock card, and its "Fix this": a larger record of changes on a drive, asked first (journal-ask).
     in property <bool> bedrock-shown;
+    in property <[ReadSpan]> read-spans;
+    in property <string> today-parts;
+    in property <[FixCard]> fixes;
+    callback fix-action(string);
     in property <string> bedrock-title;
     in property <string> bedrock-line;
     in property <float> bedrock-progress: -1;
@@ -3239,6 +4057,30 @@ export component SettingsWindow inherits Window {
     in property <int> time-format;
     in property <bool> blur-secrets: true;
     in property <bool> blur-sharing: true;
+    in property <[PrivacyCount]> privacy-found;
+    callback privacy-kind-clicked(string);
+    // The viewer of what was found (found.rs).
+    in property <bool> found-open;
+    in property <string> found-title;
+    in property <string> found-left;
+    in property <[FoundFile]> found-files;
+    in property <int> found-selected;
+    in property <bool> found-loading;
+    in property <bool> found-has-image;
+    in property <image> found-image;
+    in property <[FoundLine]> found-lines;
+    in property <string> found-note;
+    in property <bool> found-shown;
+    in property <string> found-dismiss;
+    callback found-pick(int);
+    callback found-show-toggled();
+    callback found-open-file();
+    callback found-show-folder();
+    callback found-dismissed();
+    callback found-closed();
+    in property <bool> privacy-found-ready;
+    in property <bool> privacy-check-asked;
+    callback privacy-check-again();
     in property <bool> start-with-windows: true;
     in property <bool> new-search: true;
     in property <bool> typed-toggles;
@@ -3309,10 +4151,14 @@ export component SettingsWindow inherits Window {
     in property <string> update-action;
     callback auto-update-toggled(bool);
     callback update-action-clicked();
-    in property <[StageRow]> stages;
-    in property <[NowRow]> now;
+    // Activity (activity.rs builds it off the UI thread).
+    in property <ActivityHeader> activity-header;
+    in property <int> activity-speed: 1;
+    in property <[KindRow]> kinds;
+    in property <StuckCard> stuck;
     in property <string> problems-title;
-    in property <[ProblemRow]> problems;
+    in property <string> problems-summary;
+    in property <[ProblemGroup]> problem-groups;
     in property <string> reading-summary;
     in property <string> reading-left;
     in property <float> reading-progress;
@@ -3379,10 +4225,13 @@ export component SettingsWindow inherits Window {
     callback popup-size-chosen(int);
     callback time-format-chosen(int);
     callback read-all(bool);
-    // Activity's "Full speed": every kind's "Read everything now" at once.
-    in property <bool> full-speed;
-    in property <bool> full-speed-shown;
-    callback full-speed-chosen(bool);
+    // Activity's speed control, a kind's pause, "Leave it" on what's stuck, and each group's action under "Couldn't be
+    // read".
+    callback speed-chosen(int);
+    callback kind-pause(string);
+    callback stuck-left();
+    callback restart-reading();
+    callback problem-action(string);
     // "Skip" on a file being read now.
     callback skip-file(string);
     callback reading-chosen(string);
@@ -3395,6 +4244,8 @@ export component SettingsWindow inherits Window {
     callback read-now();
     callback blur-secrets-toggled(bool);
     callback blur-sharing-toggled(bool);
+    in property <int> recent-searches;
+    callback recent-cleared();
     callback start-with-windows-toggled(bool);
     callback theme-chosen(int);
     callback theme-picked(int);
@@ -3410,6 +4261,7 @@ export component SettingsWindow inherits Window {
     callback open-log();
     callback open-settings-file();
     callback open-index-folder();
+    callback copy-diagnostics() -> bool;
 
     // Onboarding's rail. Images is two steps and Videos three, listed under their names.
     property <[{ label: string, first: int, last: int, sub: bool }]> steps: [
@@ -3558,9 +4410,9 @@ export component SettingsWindow inherits Window {
                         }
                     }
                     if root.showing == "indexers": indexers-page := VerticalLayout {
-                        // Everything on this PC, running or not.
-                        property <bool> found: root.everything-state != "missing" && root.everything-state != "checking"
-                            && root.everything-state != "installing" && root.everything-state != "failed";
+                        // Everything on this PC, running or not. (Not from everything-state: with Bedrock on, that says how
+                        // Bedrock is doing.)
+                        property <bool> found: root.everything-installed;
                         spacing: 20px;
                         Heading {
                             title: "How Excavate finds files by name";
@@ -3596,7 +4448,19 @@ export component SettingsWindow inherits Window {
                                 }
                             }
                         }
-                        if indexers-page.found: Reveal {
+                        // Bedrock chosen: the helper's consent card (or that it's there).
+                        if root.indexer-choice == 0: Reveal {
+                            order: 2;
+                            HelperCard {
+                                state: root.helper-state;
+                                error: root.helper-error;
+                                declined: root.helper-declined;
+                                allow => { root.helper-declined = false; root.helper-allow(); }
+                                not-now => { root.helper-declined = true; }
+                            }
+                        }
+                        // Bedrock beside Everything, whether Everything is here or not: why Bedrock is recommended.
+                        Reveal {
                             order: 2;
                             VerticalLayout {
                                 spacing: 12px;
@@ -3660,6 +4524,13 @@ export component SettingsWindow inherits Window {
                                 new-search: root.new-search;
                                 typed-toggles: root.typed-toggles;
                                 own-index: root.own-index;
+                                helper-state: root.helper-state;
+                                helper-drives: root.helper-drives;
+                                helper-error: root.helper-error;
+                                helper-allow => { root.helper-allow(); }
+                                helper-remove => { root.helper-remove(); }
+                                journals-large: root.journals-large;
+                                journals-to-default => { root.journals-to-default(); }
                                 preview-size: root.preview-size;
                                 theme: root.theme-choice;
                                 theme-name: root.theme-name;
@@ -3742,20 +4613,22 @@ export component SettingsWindow inherits Window {
                         }
                     }
                     if root.showing == "activity": ActivityPage {
-                        summary: root.reading-summary;
-                        left: root.reading-left;
-                        progress: root.reading-progress;
-                        pause-label: root.pause-label;
+                        header: root.activity-header;
+                        speed: root.activity-speed;
+                        pause-label: root.reading-paused ? "Resume all" : "Pause all";
                         paused: root.reading-paused;
                         pause-rows: root.pause-rows;
-                        full-speed: root.full-speed;
-                        full-speed-shown: root.full-speed-shown;
-                        full-speed-clicked => { root.full-speed-chosen(!root.full-speed); }
-                        stages: root.stages;
-                        now: root.now;
-                        folders: root.reading-folders;
+                        kinds: root.kinds;
+                        stuck: root.stuck;
                         problems-title: root.problems-title;
-                        problems: root.problems;
+                        problems-summary: root.problems-summary;
+                        problem-groups: root.problem-groups;
+                        folders: root.reading-folders;
+                        speed-chosen(stop) => { root.speed-chosen(stop); }
+                        kind-pause(kind) => { root.kind-pause(kind); }
+                        stuck-left => { root.stuck-left(); }
+                        restart-reading => { root.restart-reading(); }
+                        problem-action(why) => { root.problem-action(why); }
                         bedrock-shown: root.bedrock-shown;
                         bedrock-title: root.bedrock-title;
                         bedrock-line: root.bedrock-line;
@@ -3763,6 +4636,10 @@ export component SettingsWindow inherits Window {
                         bedrock-count: root.bedrock-count;
                         bedrock-fix: root.bedrock-fix;
                         bedrock-fix-clicked => { root.journal-ask = true; }
+                        read-spans: root.read-spans;
+                        today-parts: root.today-parts;
+                        fixes: root.fixes;
+                        fix-action(id) => { root.fix-action(id); }
                         pause-clicked => { return root.pause-clicked(); }
                         pause-chosen(index) => { root.pause-chosen(index); }
                         show-in-folder(path) => { root.show-in-folder(path); }
@@ -4024,8 +4901,15 @@ export component SettingsWindow inherits Window {
                             available-height: scroll.visible-height - 68px - 56px - 20px;
                             blur-secrets: root.blur-secrets;
                             blur-sharing: root.blur-sharing;
+                            found: root.privacy-found;
+                            found-ready: root.privacy-found-ready && !root.onboarding;
+                            check-asked: root.privacy-check-asked;
+                            check-again => { root.privacy-check-again(); }
+                            kind-clicked(kind) => { root.privacy-kind-clicked(kind); }
                             blur-secrets-toggled(on) => { root.blur-secrets-toggled(on); }
                             blur-sharing-toggled(on) => { root.blur-sharing-toggled(on); }
+                            recent-searches: root.recent-searches;
+                            recent-cleared => { root.recent-cleared(); }
                             learn-more => { root.learn-more("privacy"); }
                         }
                     }
@@ -4046,20 +4930,51 @@ export component SettingsWindow inherits Window {
                                 open-log => { root.open-log(); }
                                 open-settings-file => { root.open-settings-file(); }
                                 open-index-folder => { root.open-index-folder(); }
+                                copy-diagnostics => { return root.copy-diagnostics(); }
                             }
                         }
                     }
-                    if root.showing == "progress": ProgressPage {
-                        folders: root.reading-folders;
-                        summary: root.reading-summary;
-                        left: root.reading-left;
-                        progress: root.reading-progress;
-                        current: root.reading-current;
-                        model: root.reading-model;
-                        model-progress: root.reading-model-progress;
-                        hotkey: root.hotkey;
-                        images: root.reading-images;
-                        videos: root.reading-videos;
+                    if root.showing == "progress": VerticalLayout {
+                        spacing: 16px;
+                        ActivityPage {
+                            header: root.activity-header;
+                            speed: root.activity-speed;
+                            pause-label: root.reading-paused ? "Resume all" : "Pause all";
+                            paused: root.reading-paused;
+                            pause-rows: root.pause-rows;
+                            kinds: root.kinds;
+                            stuck: root.stuck;
+                            problems-title: root.problems-title;
+                            problems-summary: root.problems-summary;
+                            problem-groups: root.problem-groups;
+                            folders: root.reading-folders;
+                            speed-chosen(stop) => { root.speed-chosen(stop); }
+                            kind-pause(kind) => { root.kind-pause(kind); }
+                            stuck-left => { root.stuck-left(); }
+                            restart-reading => { root.restart-reading(); }
+                            problem-action(why) => { root.problem-action(why); }
+                            bedrock-shown: root.bedrock-shown;
+                            bedrock-title: root.bedrock-title;
+                            bedrock-line: root.bedrock-line;
+                            bedrock-progress: root.bedrock-progress;
+                            bedrock-count: root.bedrock-count;
+                            bedrock-fix: root.bedrock-fix;
+                            bedrock-fix-clicked => { root.journal-ask = true; }
+                            read-spans: root.read-spans;
+                            today-parts: root.today-parts;
+                            fixes: root.fixes;
+                            fix-action(id) => { root.fix-action(id); }
+                            pause-clicked => { return root.pause-clicked(); }
+                            pause-chosen(index) => { root.pause-chosen(index); }
+                            show-in-folder(path) => { root.show-in-folder(path); }
+                            skip-clicked(path) => { root.skip-file(path); }
+                        }
+                        Text {
+                            text: "You can close this window. Reading goes on in the background, and " + root.hotkey + " works right away.";
+                            font-size: 13px;
+                            color: Theme.text-2;
+                            wrap: word-wrap;
+                        }
                     }
                 }
             }
@@ -4097,6 +5012,25 @@ export component SettingsWindow inherits Window {
                 }
             }
         }
+    }
+    if root.found-open: FoundViewer {
+        title: root.found-title;
+        left: root.found-left;
+        files: root.found-files;
+        selected: root.found-selected;
+        loading: root.found-loading;
+        has-image: root.found-has-image;
+        image: root.found-image;
+        lines: root.found-lines;
+        note: root.found-note;
+        shown: root.found-shown;
+        dismiss: root.found-dismiss;
+        pick(index) => { root.found-pick(index); }
+        show-toggled => { root.found-show-toggled(); }
+        open-file => { root.found-open-file(); }
+        show-folder => { root.found-show-folder(); }
+        dismissed => { root.found-dismissed(); }
+        closed => { root.found-closed(); }
     }
     if root.journal-ask: AdminAsk {
         title: "Keep a longer record of changes?";

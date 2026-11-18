@@ -22,14 +22,13 @@ pub fn decode(bytes: &[u8]) -> Option<String> {
 /// `cut`: the bytes stop at a read limit, so a character may be cut at the end.
 fn decode_read(bytes: &[u8], cut: bool) -> Option<String> {
     let has_mark = bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]) || bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
-    if !has_mark && !bytes.iter().take(8192).any(|&b| b == 0) {
-        if let Err(error) = std::str::from_utf8(bytes) {
+    if !has_mark && !bytes.iter().take(8192).any(|&b| b == 0)
+        && let Err(error) = std::str::from_utf8(bytes) {
             // Invalid inside (or at the end of a whole file): not UTF-8.
             if error.error_len().is_some() || !cut {
                 return Some(ansi(bytes));
             }
         }
-    }
     winsys::files::decode_text(bytes)
 }
 

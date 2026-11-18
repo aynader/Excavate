@@ -14,13 +14,13 @@ use crate::deep;
 use crate::models::Size;
 use crate::ocr::{self, Ocr};
 use crate::scan::FileInfo;
-use config::Schedule;
+use config::{Schedule, Speed};
 use config::status::Status;
 use extract::Reader;
 use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -83,6 +83,8 @@ struct Lanes {
     closed: bool,
     /// Images that come after the first sweep.
     later: u64,
+    /// Picture jobs an image reader took ahead of their turn, to make them ready (`Held`): still waiting.
+    held: u64,
 }
 
 #[derive(Default)]
@@ -97,10 +99,30 @@ pub const NOW: i64 = i64::MAX / 2;
 /// An image set aside by the first sweep comes after all the others: its date minus this (below zero, whatever its date).
 const AFTER_THE_SWEEP: i64 = 1 << 40;
 
-/// A listed file's priority.
+/// A listed file's priority: its date (newest first), a large file's moved back by `size_wait`.
 pub fn priority(job: &Job) -> i64 {
-    if job.place.later { job.file.modified - AFTER_THE_SWEEP } else { job.file.modified }
+    let at = job.file.modified - size_wait(job.file.size);
+    if job.place.later { at - AFTER_THE_SWEEP } else { at }
 }
+
+/// Newest first, but a large file waits behind newer small ones: it costs as much as many of them (a long PDF or
+/// presentation, an hour's recording, a camera's raw photo), so search fills in sooner. Up to `LARGE` nothing moves;
+/// above it a file is taken as `LARGE_WAIT` older for each doubling begun (16 MB: a week, 64 MB: three, 1 GB: seven). The
+/// recordings' and videos' queues in the catalog follow the same rule (`size_wait_sql`).
+pub fn size_wait(size: u64) -> i64 {
+    (0..LARGE_STEPS).filter(|step| size > LARGE << step).count() as i64 * LARGE_WAIT
+}
+
+/// `size_wait` of a column, in SQL.
+pub fn size_wait_sql(column: &str) -> String {
+    let steps: Vec<String> = (0..LARGE_STEPS).map(|step| format!("({column} > {})", LARGE << step)).collect();
+    format!("(({}) * {LARGE_WAIT})", steps.join(" + "))
+}
+
+const LARGE: u64 = 8 << 20;
+const LARGE_WAIT: i64 = 7 * 86_400;
+/// (Up to 8 MB × 2^15 = 256 GB: past that no file is any larger.)
+const LARGE_STEPS: u32 = 16;
 
 impl Queue {
     fn lanes(&self) -> std::sync::MutexGuard<'_, Lanes> {
@@ -150,35 +172,43 @@ impl Queue {
         }
     }
 
-    /// The next job of a lane; waits for one. None once closed.
-    pub fn pop(&self, lane: Lane) -> Option<Job> {
-        let mut lanes = self.lanes();
-        loop {
-            if lanes.closed {
-                return None;
-            }
-            let next = match lane {
-                Lane::Text => lanes.text.pop(),
-                Lane::Pictures => lanes.pictures.pop(),
-            };
-            if let Some(queued) = next {
-                lanes.queued.remove(&(catalog::id(&queued.job.file.path), lane == Lane::Pictures));
-                lanes.later -= u64::from(queued.priority < 0);
-                return Some(queued.job);
-            }
-            lanes = self.ready.wait(lanes).unwrap_or_else(|poisoned| poisoned.into_inner());
-        }
-    }
-
     pub fn close(&self) {
         self.lanes().closed = true;
         self.ready.notify_all();
     }
 
-    /// Waiting: documents and code, images, and of those the ones that come after the first sweep.
+    /// Waiting: documents and code, images (those an image reader is making ready ahead among them), and of those the
+    /// ones that come after the first sweep.
     pub fn lengths(&self) -> (u64, u64, u64) {
         let lanes = self.lanes();
-        (lanes.text.len() as u64, lanes.pictures.len() as u64, lanes.later)
+        (lanes.text.len() as u64, lanes.pictures.len() as u64 + lanes.held, lanes.later)
+    }
+
+    /// Scanned PDFs waiting for their pages to be read (among the pictures).
+    pub fn scanned_queued(&self) -> u64 {
+        self.lanes().pictures.iter().filter(|queued| !queued.job.pages.is_empty()).count() as u64
+    }
+
+    /// Images in the queue itself, not counting those taken ahead.
+    fn pictures_queued(&self) -> u64 {
+        self.lanes().pictures.len() as u64
+    }
+
+    /// A picture job taken ahead of its turn: it counts as waiting until it's let go.
+    fn hold(self: &Arc<Self>) -> Held {
+        self.lanes().held += 1;
+        Held(self.clone())
+    }
+}
+
+/// A picture job an image reader has taken ahead of its turn (`read_pictures`): counted among those waiting, so the
+/// status and "everything now" don't take the lane for done while it's being made ready.
+struct Held(Arc<Queue>);
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        let mut lanes = self.0.lanes();
+        lanes.held = lanes.held.saturating_sub(1);
     }
 }
 
@@ -199,6 +229,21 @@ pub enum Write {
     /// No words for such an entry any more (a video that shows none, or where no one speaks): out of the index, its
     /// records kept. The entry's id (`content::entry_id`).
     Unindex(String),
+}
+
+/// How many writes may wait for the writer. Bounded, so lanes that read faster than the writer writes (a commit that
+/// takes a while on a slow disk) wait for it instead of piling what they read up in memory: before, the channel had
+/// no bound. At Full, about half a second of the documents' work; with commits every 2 s (tens of ms each, a second at
+/// worst), under 170 writes waited in most 10 s spans of the measured sweeps, 640 at most. The writer never sends,
+/// and no lane sends while holding a lock the writer takes, so a full channel can only make a lane wait, never stop.
+pub const WRITES_WAITING: usize = 256;
+
+/// The way to the writer: what every lane sends its `Write`s through.
+pub type Writes = SyncSender<Write>;
+
+/// The way in, and the writer's end.
+pub fn writes() -> (Writes, Receiver<Write>) {
+    std::sync::mpsc::sync_channel(WRITES_WAITING)
 }
 
 /// What the workers share with the status writer.
@@ -234,6 +279,16 @@ pub struct Shared {
     /// of its memory counts as room only then.
     pub deep_gpu: AtomicBool,
     pub seeing_gpu: AtomicBool,
+    /// Paused by the person: until when (-1: until turned back on; 0: not paused), and how it's said. Set as the
+    /// settings change, without starting over (`control`).
+    pub pause: Mutex<(i64, String)>,
+    /// How hard each kind works when it isn't "everything now" (`Gate::all`, at Full): 0 for Normal (none chosen),
+    /// else 1 + its place in `Speed::ALL`, for a speed control to set (`set_speed`).
+    speed: std::sync::atomic::AtomicU8,
+    /// Each lane's pace, for its time left (`pace`).
+    pub paces: crate::pace::Paces,
+    /// The kinds the person paused on their own (`config::KINDS`), as the settings say now (`control`).
+    pub kinds_paused: Mutex<Vec<String>>,
 }
 
 /// When new pictures are read. Documents never wait for this; pictures (and scanned pages) do, and Deep's pass with
@@ -308,6 +363,11 @@ impl Gate {
         self.all.load(Ordering::Relaxed)
     }
 
+    /// "Everything now" asked for at `all_at` (0: stopped), as the settings say now: on unless it's been done since.
+    pub fn follow(&self, all_at: i64) {
+        self.all.store(all_at > self.catalog.meta(self.all_key), Ordering::Relaxed);
+    }
+
     /// Everything's been read, in one sitting.
     pub fn all_finished(&self) {
         self.all.store(false, Ordering::Relaxed);
@@ -366,6 +426,34 @@ impl Shared {
         self.status.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    /// How hard the kind behind `gate` works now: Full while it's "everything now" ("Full speed" among them).
+    pub fn speed(&self, gate: &Gate) -> Speed {
+        if gate.all() {
+            return Speed::Full;
+        }
+        match usize::from(self.speed.load(Ordering::Relaxed)) {
+            0 => Speed::Normal,
+            chosen => Speed::ALL.get(chosen - 1).copied().unwrap_or_default(),
+        }
+    }
+
+    /// The speed each kind works at when it isn't "everything now".
+    pub fn set_speed(&self, speed: Speed) {
+        let place = Speed::ALL.iter().position(|each| *each == speed).unwrap_or(1);
+        self.speed.store(place as u8 + 1, Ordering::Relaxed);
+    }
+
+    /// Whether this kind of reading (`config::KINDS`) is paused on its own.
+    pub fn kind_paused(&self, kind: &str) -> bool {
+        self.kinds_paused.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).iter().any(|paused| paused == kind)
+    }
+
+    /// The pause as it is now, if reading is paused.
+    pub fn paused(&self) -> Option<String> {
+        let pause = self.pause.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        (pause.0 == -1 || pause.0 > now()).then(|| pause.1.clone())
+    }
+
     fn picture_took(&self, ms: f64) {
         let mut times = self.picture_times.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         times.push_back(ms);
@@ -380,11 +468,12 @@ impl Shared {
 
     fn set_current(&self, path: &str) {
         self.status().current = path.to_string();
+        self.paces.note(path);
     }
 }
 
 /// Puts what the workers read into the index, committing every two seconds (or 500 files), then records it.
-pub fn write(receiver: Receiver<Write>, mut writer: content::Writer, catalog: Arc<Catalog>, shared: Arc<Shared>) {
+pub fn write(receiver: Receiver<Write>, mut writer: content::Writer, catalog: Arc<Catalog>, shared: Arc<Shared>, control: &Control) {
     let mut updates: Vec<Update> = Vec::new();
     let mut removed: Vec<String> = Vec::new();
     let mut last_commit = Instant::now();
@@ -407,13 +496,15 @@ pub fn write(receiver: Receiver<Write>, mut writer: content::Writer, catalog: Ar
         let nothing_pending = writer.uncommitted == 0 && updates.is_empty() && removed.is_empty();
         let received = if nothing_pending { receiver.recv().map_err(|_| RecvTimeoutError::Disconnected) } else { receiver.recv_timeout(Duration::from_millis(500)) };
         match received {
-            Ok(Write::Put(doc, update)) => {
+            Ok(Write::Put(mut doc, update)) => {
+                crate::looking::keep_whole(&mut doc);
                 if let Err(error) = writer.put(&doc) {
                     config::log(&format!("index {}: {error}", doc.path));
                 }
                 updates.push(update);
             }
-            Ok(Write::Words(doc)) => {
+            Ok(Write::Words(mut doc)) => {
+                crate::looking::keep_whole(&mut doc);
                 if let Err(error) = writer.put(&doc) {
                     config::log(&format!("index {}: {error}", doc.path));
                 }
@@ -438,7 +529,14 @@ pub fn write(receiver: Receiver<Write>, mut writer: content::Writer, catalog: Ar
         }
     }
     commit(&mut writer, &mut updates, &mut removed);
-    writer.close();
+    // Quitting: its merges are waited for. Starting over with new settings ("Full speed", a pause, a folder): not, as
+    // what's read is committed and a merge at idle priority, on a busy PC, could hold the next session back for most of
+    // a minute. (A merge not finished is simply not used: the index stays as committed.)
+    if control.quitting() {
+        writer.close();
+    } else {
+        drop(writer);
+    }
 }
 
 /// What a lane's work asks of the PC.
@@ -507,7 +605,7 @@ pub fn watch_load(shared: &Shared, gates: &[&Gate], control: &Control) {
         if !control.sleep(if looked { LOOK_EVERY } else { Duration::from_secs(1) }) {
             return;
         }
-        if gates.iter().all(|gate| gate.all()) || !shared.wants_load.load(Ordering::Relaxed) {
+        if gates.iter().all(|gate| !shared.speed(gate).waits_for_quiet()) || !shared.wants_load.load(Ordering::Relaxed) {
             // (The next look covers a long stretch, which is harmless: it's one look.)
             for flag in [&shared.cpu_busy, &shared.gpu_busy, &shared.cpu_slow, &shared.gpu_slow] {
                 flag.store(false, Ordering::Relaxed);
@@ -552,6 +650,38 @@ pub fn watch_load(shared: &Shared, gates: &[&Gate], control: &Control) {
     }
 }
 
+/// Where a speed puts Excavate's processes among the PC's: behind everything (idle) up to Normal, below normal at Fast
+/// (ahead of what's merely in the background), and normal at Full, alongside the person's own apps.
+pub fn process_priority(speed: Speed) -> winsys::process::Priority {
+    use winsys::process::Priority;
+    match speed {
+        Speed::Gentle | Speed::Normal => Priority::Idle,
+        Speed::Fast => Priority::BelowNormal,
+        Speed::Full => Priority::Normal,
+    }
+}
+
+/// The indexer's priority for the fastest of its kinds now (the model servers follow their own kind's, `run::report`).
+pub fn set_priority(shared: &Shared, gates: &[&Gate]) {
+    if std::env::var_os("EXCAVATE_FOREGROUND").is_some() {
+        return;
+    }
+    let fastest = gates.iter().map(|gate| shared.speed(gate)).max().unwrap_or_default();
+    winsys::process::set_priority(process_priority(fastest));
+}
+
+/// Whether Windows is kept from sleeping now (`winsys::power`): a kind (reading, looking, listening: `gates`) works at
+/// Full speed and has work left (`left`), and nothing pauses it (the person's pause, a game or a full-screen app, the
+/// battery: a laptop unplugged sleeps as it would). Only Full: at the other speeds the PC sleeps when Windows says.
+pub fn keep_awake(shared: &Shared, gates: [&Gate; 3], left: [u64; 3]) -> bool {
+    full_with_work(gates.map(|gate| shared.speed(gate)), left)
+        && shared.paused().is_none() && !winsys::process::on_battery() && !winsys::process::person_busy()
+}
+
+fn full_with_work(speeds: [Speed; 3], left: [u64; 3]) -> bool {
+    speeds.iter().zip(left).any(|(speed, left)| *speed == Speed::Full && left > 0)
+}
+
 /// Why this kind of work waits now, if it does.
 pub fn pause_reason(context: &Context, need: Need) -> Option<String> {
     reason(context, need, context.read_on_battery, &context.gate)
@@ -568,8 +698,12 @@ pub fn listen_pause(context: &Context, need: Need) -> Option<String> {
 }
 
 fn reason(context: &Context, need: Need, on_battery: bool, gate: &Gate) -> Option<String> {
-    if context.paused_until == -1 || context.paused_until > now() {
-        return Some(context.pause_text.clone());
+    if let Some(paused) = context.shared.paused() {
+        return Some(paused);
+    }
+    // Paused on its own from Activity (each worker's kind, by its thread).
+    if crate::pace::kind_of_thread().is_some_and(|kind| context.shared.kind_paused(kind)) {
+        return Some(config::status::KIND_PAUSED.into());
     }
     if !on_battery && winsys::process::on_battery() {
         return Some("Paused on battery power".into());
@@ -577,7 +711,7 @@ fn reason(context: &Context, need: Need, on_battery: bool, gate: &Gate) -> Optio
     if winsys::process::person_busy() {
         return Some("Paused while a game or full-screen app runs".into());
     }
-    if gate.all() {
+    if !context.shared.speed(gate).waits_for_quiet() {
         return None;
     }
     // The graphics card's work needs a little of the processor too: a processor others use fully starves it.
@@ -655,15 +789,17 @@ fn wait_with(context: &Context, need: Need, why: fn(&Context, Need) -> Option<St
         let reason = why(context, need);
         let waiting = reason.is_some();
         // Not waiting: perhaps slower. A rest as long as the last item took (up to 10 s), once.
-        // ("Read everything now" goes at full pace.)
-        let slow = if waiting || gate(context).all() { None } else { slow_reason(context, need) };
+        // ("Read everything now" and "Full speed" go at full pace; a gentle pace always rests.)
+        let speed = context.shared.speed(gate(context));
+        let slow = if waiting || !speed.rests(true) { None } else { slow_reason(context, need) };
+        let rest = !waiting && speed.rests(slow.is_some());
         let shown = reason.clone().or(slow.clone());
         match note {
             Some(note) => note(shown.as_deref()),
             None => context.shared.paused.lock().unwrap_or_else(|poisoned| poisoned.into_inner())[need.lane()] = shown,
         }
         if !waiting {
-            if let (Some(_), Some(worked), false) = (&slow, worked, rested) {
+            if let (true, Some(worked), false) = (rest, worked, rested) {
                 rested = true;
                 let rest = worked.mul_f64((1.0 - SLOW_SHARE) / SLOW_SHARE).min(Duration::from_secs(10));
                 if !context.control.sleep(rest) {
@@ -678,6 +814,33 @@ fn wait_with(context: &Context, need: Need, why: fn(&Context, Need) -> Option<St
             return false;
         }
     }
+}
+
+/// Files a model's server (llama.cpp's, the listener) stopped on. The first time it's taken for the server's doing (a
+/// game took the graphics card's memory, a driver reset): the file isn't marked, and is tried again with the server
+/// started anew. The second time it's the file's: it's among what couldn't be read. Before, every file a server was on
+/// when it stopped was marked as one that couldn't be read, and never tried again until it changed.
+#[derive(Default)]
+pub struct Crashes(HashMap<String, u8>);
+
+impl Crashes {
+    /// The server stopped while on `path`: whether to take it for the file's doing.
+    pub fn blame(&mut self, path: &str) -> bool {
+        let times = self.0.entry(path.to_lowercase()).or_default();
+        *times = times.saturating_add(1);
+        if *times == 2 {
+            BLAMED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push(path.to_string());
+        }
+        *times >= 2
+    }
+}
+
+/// Files a reader stopped on twice since the status last looked: the status writer lists them among what couldn't be
+/// read (`config::SKIP_STOPPED`), so Activity can offer to try them again.
+static BLAMED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+pub fn take_blamed() -> Vec<String> {
+    std::mem::take(&mut *BLAMED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()))
 }
 
 /// Counts the worker as busy while alive (for "reading" vs "idle").
@@ -696,9 +859,10 @@ impl Drop for Busy<'_> {
     }
 }
 
+#[derive(Clone)]
 pub struct Context {
     pub queue: Arc<Queue>,
-    pub sender: Sender<Write>,
+    pub sender: Writes,
     pub control: &'static Control,
     pub shared: Arc<Shared>,
     pub pictures: bool,
@@ -710,9 +874,6 @@ pub struct Context {
     /// Listening to recordings: the same.
     pub listen_gate: Arc<Gate>,
     pub listen_on_battery: bool,
-    /// Paused by the person: until when (-1: until turned back on), and how it's said.
-    pub paused_until: i64,
-    pub pause_text: String,
     /// The chosen folders and what's left out: Deep's list comes from the catalog, so it checks.
     pub roots: Vec<String>,
     pub exclusions: config::Exclusions,
@@ -774,15 +935,18 @@ fn update(file: &FileInfo, size: u64, modified: i64, state: State, engine: &str,
 }
 
 /// Files (of any kind) whose stored text shows a secret the detector finds now and didn't when they were read: a value on
-/// the line under its label, an identity number after its label; and images about Wi-Fi with nothing
-/// covered, for a QR code with the network's password (`codes`). Their text in the index still has the secret, and their
-/// previews nothing covered, until they're read again.
+/// the line under its label, an identity number after its label; and images whose text makes a QR code a secret (Wi-Fi,
+/// signing in, paying: `privacy::qr_is_secret`) with nothing covered, for the code (`codes`). Their text in the index
+/// still has the secret, and their previews nothing covered, until they're read again.
 pub fn files_with_unmarked_secrets(index: &Path) -> Vec<String> {
     let Ok(reader) = content::Reader::open(index) else { return Vec::new() };
     // (The labels secrets leave in the text are words too: "‹password›" is found by "password".)
     let words = ["password", "passwort", "kennwort", "passphrase", "psk", "pin", "key", "wifi", "wlan", "network", "wireless",
                  "code", "token", "secret", "id", "national", "nid", "personal", "ssn", "nin", "nic", "passport", "ssid", "wpa",
-                 "wpa2", "scan", "connect", "card", "iban", "number", "phrase"];
+                 "wpa2", "scan", "connect", "card", "iban", "number", "phrase", "verification", "authenticator", "backup", "bearer",
+                 "otpauth", "cvv", "booking", "confirmation", "wallet", "sign", "account", "acct", "konto", "kontonummer",
+                 "rekening", "compte", "cuenta", "conto", "puk", "pay", "paypal", "upi", "bitcoin", "ethereum", "lightning",
+                 "login", "link", "transfer", "export", "verify", "otp", "passcode"];
     let mut found: Vec<String> = Vec::new();
     let mut looked: HashSet<String> = HashSet::new();
     for word in words {
@@ -794,9 +958,9 @@ pub fn files_with_unmarked_secrets(index: &Path) -> Vec<String> {
             let Some(stored) = reader.stored(&hit.path) else { continue };
             let marks: serde_json::Value = serde_json::from_slice(&stored.marks).unwrap_or(serde_json::Value::Null);
             let covered = marks["kinds"].as_array().is_some_and(|kinds| !kinds.is_empty());
-            let wifi_image = hit.kind == content::kind::PICTURE && !covered && privacy::about_wifi(&stored.text);
+            let qr_image = hit.kind == content::kind::PICTURE && !covered && privacy::qr_is_secret(&stored.text).is_some();
             let unplaced_pdf = covered && hit.path.to_lowercase().ends_with(".pdf") && marks["pdf"].is_null() && marks["picture"].is_null();
-            if !privacy::find(&stored.text).is_empty() || wifi_image || unplaced_pdf {
+            if !privacy::find(&stored.text).is_empty() || qr_image || unplaced_pdf {
                 found.push(hit.path);
             }
         }
@@ -818,26 +982,94 @@ pub fn kinds(secrets: &[privacy::Secret]) -> Vec<&'static str> {
 }
 
 /// The documents-and-code lane (mostly reading files: low I/O priority).
-pub fn read_text(context: Context) {
-    winsys::process::background_thread();
-    while let Some(job) = context.queue.pop(Lane::Text) {
+/// One of the documents' workers: the first (`rank` 0) always reads; the others only at a speed that reads several
+/// documents at once (`Speed::text_workers`: "Full speed"), and wait meanwhile.
+pub fn read_text(context: Context, rank: usize, catalog: Arc<Catalog>) {
+    let cores = std::thread::available_parallelism().map_or(4, |cores| cores.get());
+    let mut background = None;
+    // Each worker reads in a process of its own (`documents`): Skip and a time limit can end it part way.
+    let mut reader: Option<crate::documents::DocumentReader> = None;
+    loop {
+        let speed = context.shared.speed(&context.gate);
+        // Files read at the lowest disk priority, but at full speed (its reader started again to match).
+        if background != Some(speed.background_io()) {
+            winsys::process::background_thread_as(speed.background_io());
+            background = Some(speed.background_io());
+        }
+        if reader.as_ref().is_some_and(|reader| reader.background != speed.background_io()) {
+            reader = None;
+        }
+        if rank >= speed.text_workers(cores) {
+            // (Its reader goes while it waits.)
+            reader = None;
+            if !context.control.sleep(Duration::from_secs(60)) {
+                break;
+            }
+            continue;
+        }
+        let job = match context.queue.pop_within(Lane::Text, Duration::from_secs(30)) {
+            Err(()) => break,
+            Ok(None) => continue,
+            Ok(Some(job)) => job,
+        };
         let _busy = Busy::new(&context.shared);
         if !wait_until_free(&context, Need::Little) {
             break;
         }
-        let Some((size, modified)) = current(&context, &job.file) else { continue };
+        let _item = context.shared.paces.item(crate::pace::Lane::Documents);
+        let mut read = |file: &FileInfo, size: u64| -> Result<crate::documents::Read, crate::documents::Failed> {
+            // (`EXCAVATE_READ_HERE`, for measuring: every document read in this process, as before 0.1.4.)
+            static HERE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            if reader.is_none() && !*HERE.get_or_init(|| std::env::var_os("EXCAVATE_READ_HERE").is_some()) {
+                match crate::documents::DocumentReader::start(speed.background_io()) {
+                    Ok(started) => reader = Some(started),
+                    Err(error) => config::log(&format!("{error}: read here instead")),
+                }
+            }
+            let Some(process) = reader.as_mut() else {
+                // (No process: read here, as before; nothing can end it part way.)
+                return std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| crate::documents::read_here(&file.path)))
+                    .unwrap_or_else(|_| Err(config::why::READER_STOPPED.into())).map_err(crate::documents::Failed::File);
+            };
+            let stop = || context.control.stopping() || context.control.skip_asked(&file.path);
+            let result = process.read(&file.path, crate::documents::time_limit(size), &stop);
+            if result.as_ref().is_err_and(|failed| !matches!(failed, crate::documents::Failed::File(_))) {
+                reader = None;
+            }
+            result
+        };
+        // A panic past the reader (finding secrets, a PDF's places, the index's document) used to end this thread
+        // with nothing said: at Normal, the only one, so documents stopped for good, and the same file came first
+        // again at every start. Now it's that file's, recorded as one that couldn't be read, and reading goes on.
+        let file = job.file.clone();
+        let done = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| read_document(&context, &catalog, job, &mut read)));
+        if done.is_err() {
+            config::log(&format!("documents: stopped on {}; recorded as unreadable, going on", file.path));
+            let (size, modified) = current(&context, &file).unwrap_or((0, 0));
+            let _ = context.sender.send(Write::Record(update(&file, size, modified, State::Failed, "", config::why::READER_STOPPED.into(), 0)));
+            // (Its reader is started afresh: it may be what stopped.)
+            reader = None;
+        }
+    }
+}
+
+/// Reads one document with `read` (its text and secrets), and sends what it found to the index.
+type ReadDocument<'a> = dyn FnMut(&FileInfo, u64) -> Result<crate::documents::Read, crate::documents::Failed> + 'a;
+
+fn read_document(context: &Context, catalog: &Catalog, job: Job, read: &mut ReadDocument) {
+    use crate::documents::Failed;
+    {
+        let Some((size, modified)) = current(context, &job.file) else { return };
         context.shared.set_current(&job.file.path);
         let file = &job.file;
-        let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| extract::extract(Path::new(&file.path), file.reader)))
-            .unwrap_or_else(|_| Err("the reader stopped on this file".into()));
-        match read {
-            Ok(extracted) => {
-                let (body, secrets) = private(&extracted.text);
+        match read(file, size) {
+            Ok(crate::documents::Read { extracted, secrets }) => {
+                let body = privacy::redact(&extracted.text, &secrets);
                 let characters = body.chars().filter(|c| !c.is_whitespace()).count();
                 let scanned = !extracted.scanned_pages.is_empty() && context.pictures;
                 if characters == 0 && !scanned {
                     let _ = context.sender.send(Write::Record(update(file, size, modified, State::Empty, "", String::new(), 0)));
-                    continue;
+                    return;
                 }
                 if characters > 0 {
                     let mut doc = doc(file, size, modified, body.clone(), content::Source::Text, &secrets, None, 0);
@@ -851,28 +1083,85 @@ pub fn read_text(context: Context) {
                             doc.marks = serde_json::to_vec(&marks).unwrap_or_default();
                         }
                     }
-                    let _ = context.sender.send(Write::Put(Box::new(doc), update(file, size, modified, State::Read, "", String::new(), characters)));
+                    // With scanned pages still to read, its text layer is searchable now and the file is recorded once
+                    // they're read too (the images' lane): recorded now, reading starting over before they were lost
+                    // them for good, the file counting as read.
+                    if scanned {
+                        let _ = context.sender.send(Write::Words(Box::new(doc)));
+                    } else {
+                        let _ = context.sender.send(Write::Put(Box::new(doc), update(file, size, modified, State::Read, "", String::new(), characters)));
+                    }
                 }
                 if scanned {
                     let pages = extracted.scanned_pages.into_iter().take(SCANNED_PAGES).collect();
-                    context.queue.push(Job { pages, text_layer: body, ..Job::new(file.clone()) }, modified);
+                    context.queue.push(Job { pages, text_layer: body, ..Job::new(file.clone()) }, modified - size_wait(size));
                 }
             }
-            Err(error) => {
+            Err(Failed::File(error)) => {
                 let _ = context.sender.send(Write::Record(update(file, size, modified, State::Failed, "", error, 0)));
             }
+            Err(Failed::Stopped) => {
+                config::log(&format!("documents: the reader stopped on {}", file.path));
+                let _ = context.sender.send(Write::Record(update(file, size, modified, State::Failed, "", config::why::READER_STOPPED.into(), 0)));
+            }
+            Err(Failed::TooLong(limit)) => {
+                config::log(&format!("documents: {} took over {} min; its reader was ended", file.path, limit.as_secs() / 60));
+                let error = format!("{} (it took over {} minutes)", config::why::READER_STOPPED, limit.as_secs() / 60);
+                let _ = context.sender.send(Write::Record(update(file, size, modified, State::Failed, "", error, 0)));
+            }
+            // Let go by "Skip": among what couldn't be read, and not read again until it changes. Stopping: nothing
+            // recorded, it's read again next time.
+            Err(Failed::Asked) if context.control.skip_asked(&file.path) => {
+                context.control.skipped();
+                config::log(&format!("documents: {}: skipped", file.path));
+                catalog.skipped_add(&file.path, "documents");
+                let _ = context.sender.send(Write::Record(update(file, size, modified, State::Failed, "", catalog::SKIPPED_ERROR.into(), 0)));
+            }
+            Err(Failed::Asked) => {}
         }
     }
 }
 
-/// How much the indexer's memory (private bytes) may grow past what it was once the OCR reader had read its first
-/// picture, before the reader is loaded fresh. Growth, not a total: on the graphics card the reader's own allocations
-/// count as private bytes too (several GB), and a total of 1 GB had it loaded fresh after nearly every picture
-/// (~0.3 s each).
+/// How much the indexer's memory (private bytes) may grow past what it was once the OCR reader had settled
+/// (`SETTLE_FILES`), before the reader is loaded fresh. Growth, not a total: on the graphics card the reader's own
+/// allocations count as private bytes too (about 3 GB), and a total of 1 GB had it loaded fresh after nearly every
+/// picture (~0.3 s each).
 const RECYCLE_GROWTH: u64 = 1 << 30;
+
+/// Files the reader reads after loading before its memory counts as settled. On the graphics card it's still growing
+/// after the first: measured 1.1 GB after one picture, 2.8 GB after twenty files, then 2.8–2.9 GB to the 2,900th
+/// (photos and scanned pages mixed). Measured from the first picture, that growth alone passed `RECYCLE_GROWTH` and
+/// had it loaded fresh every few dozen pictures, whatever the reader's settings.
+const SETTLE_FILES: usize = 20;
+
+/// The reader's memory since it loaded: the files read, and the memory once `SETTLE_FILES` were.
+#[derive(Default)]
+struct Settling {
+    files: usize,
+    at: Option<u64>,
+}
+
+impl Settling {
+    /// Counts a file read with the memory now at `memory`; the memory it settled at, when it has grown by more than
+    /// `RECYCLE_GROWTH` since.
+    fn grown(&mut self, memory: u64) -> Option<u64> {
+        self.files += 1;
+        match self.at {
+            None if self.files >= SETTLE_FILES => {
+                self.at = Some(memory);
+                None
+            }
+            Some(at) if memory > at + RECYCLE_GROWTH => Some(at),
+            _ => None,
+        }
+    }
+}
 
 /// Scanned pages read per PDF, at most (a 300-page scanned book is read as far as this).
 const SCANNED_PAGES: usize = 60;
+
+/// A model's download that failed is tried again after these many seconds, then the last again and again.
+pub const RETRY_SECONDS: [u64; 3] = [30, 120, 600];
 
 #[allow(clippy::too_many_arguments)]
 fn doc(file: &FileInfo, size: u64, modified: i64, body: String, source: content::Source, secrets: &[privacy::Secret],
@@ -993,26 +1282,52 @@ fn share_copy(context: &Context, catalog: &Catalog, seen: &mut Seen, job: &Job, 
 }
 
 /// The pictures lane: gets the models, loads OCR, then reads pictures and scanned pages.
-pub fn read_pictures(context: Context, models: std::path::PathBuf, size: Size, catalog: Arc<Catalog>, index: std::path::PathBuf) {
+/// One of the images' readers: the first (`rank` 0) always reads, and reads the text in videos once the images are
+/// read; the others only at a speed that reads several images at once (`Speed::picture_workers`), each with a reader
+/// of its own, and wait meanwhile.
+pub fn read_pictures(context: Context, models: std::path::PathBuf, size: Size, catalog: Arc<Catalog>, index: std::path::PathBuf, rank: usize) {
+    let cores = std::thread::available_parallelism().map_or(4, |cores| cores.get());
     winsys::com_mta();
     let mut seen = Seen { copies: catalog.hashes(), bursts: HashMap::new(), reader: None, index, shared: 0, set_aside: 0 };
     // The reader is loaded while there are pictures to read, and let go after a minute without (it holds hundreds
     // of megabytes while loaded; loading again takes a fifth of a second).
     let mut ocr: Option<Ocr> = None;
+    // The lines it reads together (`ocr::region_batch`), as it was loaded.
+    let mut loaded_regions: Option<usize> = None;
     // Text in videos has its own detector and recognizer: loaded while there are videos to read, after the images.
     let mut video_reader: Option<crate::video_text::VideoText> = None;
     let mut recycle = false;
-    // The memory once the reader loaded last had read its first picture.
-    let mut settled: Option<u64> = None;
+    // The memory once the reader loaded last had settled (`Settling`).
+    let mut settled = Settling::default();
+    // At a speed that reads ahead (`Speed::pictures_ahead`), the next jobs, taken from the queue and being made ready
+    // (decoded, or their pages rendered) on threads of their own while the reader reads this one.
+    let mut ahead: VecDeque<Ahead> = VecDeque::new();
+    // Back in line in their places, unread (a pause, the schedule, a slower speed): their threads stop.
+    let give_back = |ahead: &mut VecDeque<Ahead>| {
+        for Ahead { job, .. } in ahead.drain(..) {
+            let priority = priority(&job);
+            context.queue.push(job, priority);
+        }
+    };
     loop {
         if std::mem::take(&mut recycle) {
             ocr = None;
         }
         if ocr.is_none() {
-            settled = None;
+            settled = Settling::default();
+        }
+        let speed = context.shared.speed(&context.gate);
+        if rank >= speed.picture_workers(cores) {
+            give_back(&mut ahead);
+            ocr = None;
+            if !context.control.sleep(Duration::from_secs(60)) {
+                break;
+            }
+            continue;
         }
         // Waiting for the schedule: nothing loaded meanwhile. (Text in images off: nothing to wait for.)
         if context.pictures && !context.gate.open() {
+            give_back(&mut ahead);
             ocr = None;
             if !context.control.sleep(Duration::from_secs(20)) {
                 break;
@@ -1023,6 +1338,7 @@ pub fn read_pictures(context: Context, models: std::path::PathBuf, size: Size, c
         if context.queue.lengths().1 > 0 {
             context.shared.wants_load.store(true, Ordering::Relaxed);
             if pause_reason(&context, Need::Cpu).is_some() {
+                give_back(&mut ahead);
                 if ocr.take().is_some() {
                     config::log("waiting: OCR unloaded");
                 }
@@ -1033,7 +1349,7 @@ pub fn read_pictures(context: Context, models: std::path::PathBuf, size: Size, c
             }
         }
         // The images read: their videos' text next, one video at a time (the images' reader let go meanwhile).
-        if context.video_text && context.queue.lengths().1 == 0 {
+        if rank == 0 && context.video_text && context.queue.lengths().1 == 0 {
             if let Some(video) = catalog.video_next(crate::video_text::ENGINE, 0, 1, config::video_kind::TEXT).pop() {
                 ocr = None;
                 if !crate::video_text::read_one(&context, &catalog, &models, size, &mut video_reader, video) {
@@ -1045,48 +1361,37 @@ pub fn read_pictures(context: Context, models: std::path::PathBuf, size: Size, c
                 config::log("text in videos: every video read, its reader unloaded");
             }
         }
-        let job = match context.queue.pop_within(Lane::Pictures, Duration::from_secs(60)) {
-            Err(()) => break,
-            Ok(None) => {
-                if ocr.take().is_some() {
-                    config::log(&format!("no pictures for a minute: OCR unloaded ({} copies shared, {} nearly the same set aside)", seen.shared, seen.set_aside));
+        // The next job: the first made ready ahead, else the queue's next.
+        let (job, hash, ready) = match ahead.pop_front() {
+            Some(Ahead { job, hash, ready, .. }) => (job, hash, Some(ready)),
+            None => match next_picture(&context, &catalog, &mut seen, size, Duration::from_secs(60)) {
+                Next::Closed => break,
+                Next::Empty => {
+                    if ocr.take().is_some() {
+                        config::log(&format!("no pictures for a minute: OCR unloaded ({} copies shared, {} nearly the same set aside)", seen.shared, seen.set_aside));
+                    }
+                    continue;
                 }
-                continue;
-            }
-            Ok(Some(job)) => job,
+                Next::Skipped | Next::Back => continue,
+                // Reading ahead, this one is made ready on a thread of its own too: a scanned PDF's next pages are
+                // rendered while a page is read.
+                Next::Read(job, hash) => {
+                    let ready = (ahead_for(speed, context.reading_gpu) > 0).then(|| make_ready(&job));
+                    (job, hash, ready)
+                }
+            },
         };
-        // The gate may have closed while this was waiting for work: it goes back in line.
-        if context.pictures && !context.gate.open() {
-            let priority = priority(&job);
-            context.queue.push(job, priority);
-            continue;
-        }
-        // Its text left out (by its folder, or text in images off): recorded without it, so it can still be looked at.
-        if job.pages.is_empty() && (!context.pictures || !context.kinds.on(&job.file.path, "image-text")) {
-            if let Some((size, modified)) = current(&context, &job.file) {
-                let _ = context.sender.send(Write::Record(update(&job.file, size, modified, State::Empty, catalog::SKIPPED, String::new(), 0)));
-            }
-            continue;
-        }
         let engine = size.engine();
-        let mut hash = 0;
-        match look(&context, &catalog, &mut seen, &job, engine, &mut hash) {
-            Look::Shared => {
-                seen.shared += 1;
-                continue;
-            }
-            Look::Later => {
-                seen.set_aside += 1;
-                let mut job = job;
-                job.place.later = true;
-                let priority = priority(&job);
-                context.queue.push(job, priority);
-                continue;
-            }
-            Look::Read => {}
+        // On the graphics card the lines read together follow the speed: a new speed, the reader loaded again with them.
+        let regions = ocr::region_batch(context.reading_gpu, speed);
+        if ocr.is_some() && regions != loaded_regions {
+            config::log("the speed changed: the image reader loads again for it");
+            ocr = None;
+            settled = Settling::default();
         }
         if ocr.is_none() {
-            ocr = load(&context, &models, size);
+            loaded_regions = regions;
+            ocr = load(&context, &models, size, regions);
             context.shared.status().engine = size.label().to_string();
             context.shared.status().reading_gpu = context.reading_gpu;
         }
@@ -1095,13 +1400,47 @@ pub fn read_pictures(context: Context, models: std::path::PathBuf, size: Size, c
         if !wait_until_free(&context, Need::Cpu) {
             break;
         }
+        // The next ones made ready while this one is read, as many as the speed says, leaving one in the queue for
+        // each of the other readers (else one reader could hold the last few while the others have none).
+        let others = speed.picture_workers(cores).saturating_sub(1) as u64;
+        while ahead.len() < ahead_for(speed, context.reading_gpu) && context.queue.pictures_queued() > others {
+            match next_picture(&context, &catalog, &mut seen, size, Duration::ZERO) {
+                Next::Read(job, hash) => {
+                    let ready = make_ready(&job);
+                    ahead.push_back(Ahead { _held: context.queue.hold(), job, hash, ready });
+                }
+                Next::Skipped => {}
+                Next::Back | Next::Empty | Next::Closed => break,
+            }
+        }
+        let _item = context.shared.paces.item(crate::pace::Lane::Images);
         let Some((file_size, modified)) = current(&context, &job.file) else { continue };
         context.shared.set_current(&job.file.path);
         let started = Instant::now();
+        // A scanned PDF's pages: how far along it is, and "Skip" heard between them.
+        let page = std::cell::Cell::new(0u64);
+        let skip = || context.control.skip_asked(&job.file.path);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            if job.pages.is_empty() { picture(ocr, &job.file) } else { scanned(ocr, &job) }
+            if job.pages.is_empty() { picture(ocr, &job.file, ready.as_ref()) } else {
+                scanned(ocr, &job, ready.as_ref(), &|| {
+                    context.shared.paces.progress(page.replace(page.get() + 1), job.pages.len() as u64, "pages");
+                    context.control.stopping() || skip()
+                })
+            }
         }))
         .unwrap_or_else(|_| Err("OCR stopped on this file".into()));
+        // Let go by "Skip": among what couldn't be read, and not read again until it changes.
+        if result.as_ref().is_err_and(|error| error == STOPPED) && skip() {
+            context.control.skipped();
+            config::log(&format!("scanned pages: {}: skipped", job.file.path));
+            catalog.skipped_add(&job.file.path, "text in images");
+            let _ = context.sender.send(Write::Record(update(&job.file, file_size, modified, State::Failed, size.engine(), catalog::SKIPPED_ERROR.into(), 0)));
+            continue;
+        }
+        // Stopped between a PDF's pages (up to 60 of them, half a minute): nothing recorded, it's read again next time.
+        if result.as_ref().is_err_and(|error| error == STOPPED) {
+            break;
+        }
         let file = &job.file;
         let place = job.place;
         // The first of its contents: copies that come later share what's read from it.
@@ -1112,20 +1451,16 @@ pub fn read_pictures(context: Context, models: std::path::PathBuf, size: Size, c
         // A safety net: should the reader's memory still grow (a runtime that keeps what it allocated), it's let go
         // and loaded fresh for the next picture.
         let memory = winsys::process_memory().1;
-        match settled {
-            None => settled = Some(memory),
-            Some(at) if memory > at + RECYCLE_GROWTH => {
-                config::log(&format!("OCR grew from {} to {} MB: loading it fresh", at >> 20, memory >> 20));
-                recycle = true;
-            }
-            Some(_) => {}
+        if let Some(at) = settled.grown(memory) {
+            config::log(&format!("OCR grew from {} to {} MB after {} files: loading it fresh", at >> 20, memory >> 20, settled.files));
+            recycle = true;
         }
         match result {
             Ok(Pass { text, lines: mark, codes, pictures: pictures_read, doubtful }) => {
                 if pictures_read > 0 {
                     context.shared.picture_took(started.elapsed().as_secs_f64() * 1000.0 / pictures_read as f64);
                 }
-                let (body, secrets) = private(&text);
+                let (body, secrets, mark) = picture_marks(&text, mark, &codes);
                 let characters = body.chars().filter(|c| !c.is_whitespace()).count();
                 // (Only for pictures: scanned pages stay with the first pass.)
                 let deep = if !job.pages.is_empty() { catalog::DEEP_NO } else if doubtful { catalog::DEEP_FIRST } else if characters > 0 { catalog::DEEP_WANTED } else { catalog::DEEP_NO };
@@ -1138,18 +1473,6 @@ pub fn read_pictures(context: Context, models: std::path::PathBuf, size: Size, c
                     continue;
                 }
                 let source = if job.pages.is_empty() || job.text_layer.trim().is_empty() { content::Source::Picture } else { content::Source::Mixed };
-                // A QR code in an image about Wi-Fi: the network's password, covered (the code alone).
-                let wifi_codes = !codes.is_empty() && privacy::about_wifi(&text);
-                let mut secrets = secrets;
-                if wifi_codes && !secrets.iter().any(|secret| secret.kind == privacy::Kind::Password) {
-                    secrets.push(privacy::Secret { kind: privacy::Kind::Password, range: 0..0 });
-                }
-                let mut mark = if secrets.is_empty() { None } else { mark.map(|mark| boxes_with_secrets(mark, &text, &secrets)) };
-                if let (true, Some(mark)) = (wifi_codes, mark.as_mut()) {
-                    if let Some(boxes) = mark["boxes"].as_array_mut() {
-                        boxes.extend(codes.iter().map(|code| serde_json::json!(code.map(|value| value.round() as i32))));
-                    }
-                }
                 let doc = doc(file, file_size, modified, body, source, &secrets, mark, place.similar);
                 let record = Update { deep, ..with_place(update(file, file_size, modified, State::Read, engine, String::new(), characters)) };
                 let _ = context.sender.send(Write::Put(Box::new(doc), record));
@@ -1162,7 +1485,10 @@ pub fn read_pictures(context: Context, models: std::path::PathBuf, size: Size, c
     config::log(&format!("images: {} copies shared, {} nearly the same set aside", seen.shared, seen.set_aside));
 }
 
-fn load(context: &Context, models: &Path, size: Size) -> Option<Ocr> {
+fn load(context: &Context, models: &Path, size: Size, regions: Option<usize>) -> Option<Ocr> {
+    // A failed download is tried again soon, then less often (half a minute, 2 minutes, then every 10), as the other
+    // models' are: it was every 10 minutes from the first, so a moment offline on a first run held images back that long.
+    let mut failures = 0usize;
     loop {
         if context.control.stopping() {
             return None;
@@ -1176,19 +1502,26 @@ fn load(context: &Context, models: &Path, size: Size) -> Option<Ocr> {
                 status.model.total = total;
             });
             if let Err(error) = result {
+                // Reading starting over: the download goes on, and the next session takes it up (not a failure).
+                if context.control.stopping() {
+                    return None;
+                }
                 config::log(&format!("models: {error}"));
                 context.shared.status().model = config::status::Model { state: "failed".into(), error, ..Default::default() };
                 // Offline, most likely: try again in a while.
-                if !context.control.sleep(Duration::from_secs(600)) {
+                let wait = RETRY_SECONDS[failures.min(RETRY_SECONDS.len() - 1)];
+                failures += 1;
+                if !context.control.sleep(Duration::from_secs(wait)) {
                     return None;
                 }
                 continue;
             }
         }
         let started = Instant::now();
-        match Ocr::load(models, size, ocr::threads(), context.reading_gpu) {
+        match Ocr::load(models, size, ocr::threads(), context.reading_gpu, regions) {
             Ok(ocr) => {
-                config::log(&format!("{} loaded in {} ms ({} threads)", size.label(), started.elapsed().as_millis(), ocr::threads()));
+                let lines = regions.map(|regions| format!(", {regions} lines at a time")).unwrap_or_default();
+                config::log(&format!("{} loaded in {} ms ({} threads{lines})", size.label(), started.elapsed().as_millis(), ocr::threads()));
                 context.shared.status().model = config::status::Model { state: "ready".into(), ..Default::default() };
                 return Some(ocr);
             }
@@ -1201,6 +1534,38 @@ fn load(context: &Context, models: &Path, size: Size) -> Option<Ocr> {
             }
         }
     }
+}
+
+/// What the index keeps of a picture read: its text with secrets out (labels in), the secrets, and where they are for
+/// the preview to blur (`boxes_with_secrets`). Values are found by the text, and by where its lines are (a value beside
+/// or under its label, `privacy::values_by_layout`). A QR code in an image about Wi-Fi is the network's password, and
+/// one about an authenticator or a wallet its secret: covered (the code alone).
+fn picture_marks(text: &str, lines: Option<PictureLines>, codes: &[[f32; 4]]) -> (String, Vec<privacy::Secret>, Option<serde_json::Value>) {
+    let mut found = privacy::find(text);
+    if let Some(lines) = &lines {
+        found.extend(privacy::values_by_layout(&lines.lines, text));
+    }
+    let mut secrets = privacy::merged(found);
+    let body = privacy::redact(text, &secrets);
+    let code_kind = if codes.is_empty() { None } else { privacy::qr_is_secret(text) };
+    if let Some(kind) = code_kind && !secrets.iter().any(|secret| secret.kind == kind) {
+        secrets.push(privacy::Secret { kind, range: 0..0 });
+    }
+    // Every line's place and its text as kept (secrets out), for the preview to outline the words searched for; the
+    // secrets' boxes beside them when there are any.
+    let mut mark = lines.map(|lines| {
+        let kept = lines_kept(&lines, text, &secrets);
+        let mut mark = if secrets.is_empty() { serde_json::json!({ "w": lines.width, "h": lines.height, "boxes": [] }) } else { boxes_with_secrets(lines, text, &secrets) };
+        if !kept.is_empty() {
+            mark["lines"] = serde_json::Value::Array(kept);
+        }
+        mark
+    });
+    if let (true, Some(mark)) = (code_kind.is_some(), mark.as_mut())
+        && let Some(boxes) = mark["boxes"].as_array_mut() {
+            boxes.extend(codes.iter().map(|code| serde_json::json!(code.map(|value| value.round() as i32))));
+        }
+    (body, secrets, mark)
 }
 
 /// A picture's lines, each with its byte range in the joined text and its box (in the picture's own pixels).
@@ -1224,10 +1589,129 @@ struct Pass {
     doubtful: bool,
 }
 
-fn picture(ocr: &Ocr, file: &FileInfo) -> Result<Pass, String> {
+/// How many jobs an image reader makes ready ahead at this speed (`Speed::pictures_ahead`; `EXCAVATE_PICTURES_AHEAD`
+/// for measuring), when the graphics card reads (`gpu`). On the processor none: there the reading itself is what takes
+/// the time, and making the next ones ready beside it measured no faster (2026-11-15: images 193 to 215 a minute
+/// against 155 to 259 without; scanned pages 12 to 20 against 12 to 22), only holding more memory.
+fn ahead_for(speed: Speed, gpu: bool) -> usize {
+    std::env::var("EXCAVATE_PICTURES_AHEAD").ok().and_then(|value| value.parse().ok()).unwrap_or_else(|| if gpu { speed.pictures_ahead() } else { 0 })
+}
+
+/// What the queue gives an image reader next (`next_picture`).
+enum Next {
+    /// To read, with its contents' hash when it was taken (`look`).
+    Read(Job, u64),
+    /// Done without a read (a copy's words shared, set aside for later, its text left out): the next one.
+    Skipped,
+    /// Back in line: the schedule closed while it waited.
+    Back,
+    /// None came in time.
+    Empty,
+    Closed,
+}
+
+/// The queue's next picture job, and what's done before one costs a read: the schedule, a folder that leaves images'
+/// text out, and the first sweep's looks (`look`). `wait`: how long to wait for one.
+fn next_picture(context: &Context, catalog: &Catalog, seen: &mut Seen, size: Size, wait: Duration) -> Next {
+    let job = match context.queue.pop_within(Lane::Pictures, wait) {
+        Err(()) => return Next::Closed,
+        Ok(None) => return Next::Empty,
+        Ok(Some(job)) => job,
+    };
+    // The gate may have closed while this was waiting for work: it goes back in line.
+    if context.pictures && !context.gate.open() {
+        let priority = priority(&job);
+        context.queue.push(job, priority);
+        return Next::Back;
+    }
+    // Its text left out (by its folder, or text in images off): recorded without it, so it can still be looked at.
+    if job.pages.is_empty() && (!context.pictures || !context.kinds.on(&job.file.path, "image-text")) {
+        if let Some((size, modified)) = current(context, &job.file) {
+            let _ = context.sender.send(Write::Record(update(&job.file, size, modified, State::Empty, catalog::SKIPPED, String::new(), 0)));
+        }
+        return Next::Skipped;
+    }
+    let mut hash = 0;
+    match look(context, catalog, seen, &job, size.engine(), &mut hash) {
+        Look::Shared => {
+            seen.shared += 1;
+            Next::Skipped
+        }
+        Look::Later => {
+            seen.set_aside += 1;
+            let mut job = job;
+            job.place.later = true;
+            let priority = priority(&job);
+            context.queue.push(job, priority);
+            Next::Skipped
+        }
+        Look::Read => Next::Read(job, hash),
+    }
+}
+
+/// What's made ready for the reader on a thread of its own (`make_ready`): an image decoded the right way up, or one
+/// of a scanned PDF's pages rendered.
+enum Ready {
+    Image(Result<(winsys::imaging::Rgb, u16), String>),
+    Page(Result<(u32, u32, Vec<u8>), String>),
+}
+
+/// A job taken ahead of its turn, being made ready.
+struct Ahead {
+    job: Job,
+    hash: u64,
+    ready: Receiver<Ready>,
+    _held: Held,
+}
+
+/// Pictures made ready that wait for the reader, per job (besides the one being made): a scanned page at 1800 px is
+/// about 12 MB, a picture up to 2560 px about 20 MB.
+const READY_WAITING: usize = 1;
+
+/// A scanned page's width as it's rendered for OCR.
+const SCAN_WIDTH: u32 = 1800;
+
+/// Makes a job's pictures ready on a thread of its own, in order, a page or two ahead of the reader: the image
+/// decoded, or the scanned pages rendered (PDFium takes one call at a time in a process; this one waits its turn). The
+/// pixels are the same as when the reader made them itself, so what's read is too. Dropping the receiver stops it at
+/// its next picture.
+fn make_ready(job: &Job) -> Receiver<Ready> {
+    let (out, ready) = std::sync::mpsc::sync_channel(READY_WAITING);
+    let (path, pages) = (job.file.path.clone(), job.pages.clone());
+    // (No thread to be had: the channel is closed at once, and the reader takes that as a failure on this file.)
+    let _ = std::thread::Builder::new().name("pictures ready".into()).spawn(move || {
+        winsys::com_mta();
+        let crashed = || "OCR stopped on this file".to_string();
+        if pages.is_empty() {
+            let decoded = std::panic::catch_unwind(|| winsys::imaging::decode_upright(&path, ocr::MAX_SIDE)).unwrap_or_else(|_| Err(crashed()));
+            let _ = out.send(Ready::Image(decoded));
+            return;
+        }
+        let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            extract::pdf::render_each(Path::new(&path), &pages, SCAN_WIDTH, &mut |width, height, pixels| {
+                out.send(Ready::Page(Ok((width, height, pixels)))).map_err(|_| STOPPED.to_string())
+            })
+        }))
+        .unwrap_or_else(|_| Err(crashed()));
+        // (Stopped: nobody reads it any more.)
+        if let Err(error) = rendered && error != STOPPED {
+            let _ = out.send(Ready::Page(Err(error)));
+        }
+    });
+    ready
+}
+
+/// A picture's lines. `ready`: decoded ahead (`make_ready`); else here.
+fn picture(ocr: &Ocr, file: &FileInfo, ready: Option<&Receiver<Ready>>) -> Result<Pass, String> {
     // Read the right way up (a phone's photo is often stored sideways); where each line is,
     // kept as the picture is stored (the preview turns it, `blur::turned`).
-    let (decoded, orientation) = winsys::imaging::decode_upright(&file.path, ocr::MAX_SIDE)?;
+    let (decoded, orientation) = match ready {
+        None => winsys::imaging::decode_upright(&file.path, ocr::MAX_SIDE)?,
+        Some(ready) => match ready.recv() {
+            Ok(Ready::Image(decoded)) => decoded?,
+            _ => return Err("OCR stopped on this file".into()),
+        },
+    };
     let stored_width = if orientation >= 5 { decoded.height } else { decoded.width };
     let scale = decoded.original.0 as f32 / stored_width as f32;
     let read = ocr.read(decoded.width, decoded.height, decoded.pixels)?;
@@ -1239,24 +1723,32 @@ fn picture(ocr: &Ocr, file: &FileInfo) -> Result<Pass, String> {
         placed.push((start..text.len(), line.bounds.map(|value| value * scale)));
         text.push('\n');
     }
-    // QR codes only in an image about Wi-Fi (rare): it's decoded again, smaller, and looked through. Looking through
+    // QR codes only in an image about Wi-Fi, an authenticator, a wallet, paying or signing in with a phone (rare): it's decoded again, smaller, and looked through. Looking through
     // every image cost 11 ms at 1600 × 1200; this costs the others nothing.
-    let codes = if privacy::about_wifi(&text) { wifi_codes(&file.path) } else { Vec::new() };
+    let codes = if privacy::qr_is_secret(&text).is_some() { secret_codes(&file.path) } else { Vec::new() };
     let lines = PictureLines { width: decoded.original.0, height: decoded.original.1, orientation, lines: placed };
     Ok(Pass { text, lines: Some(lines), codes, pictures: 1, doubtful: read.doubtful })
 }
 
 /// Where QR codes are in an image, in its original's pixels (`codes::find` on a copy at most 1000 pixels wide).
-fn wifi_codes(path: &str) -> Vec<[f32; 4]> {
+fn secret_codes(path: &str) -> Vec<[f32; 4]> {
     let Ok(small) = winsys::imaging::decode(path, 1000) else { return Vec::new() };
     let scale = small.original.0 as f32 / small.width.max(1) as f32;
     crate::codes::find(small.width, small.height, &small.pixels).into_iter().map(|code| code.map(|value| value * scale)).collect()
 }
 
-fn scanned(ocr: &Ocr, job: &Job) -> Result<Pass, String> {
+/// What `scanned` answers when reading stopped between its pages.
+const STOPPED: &str = "stopped";
+
+/// A scanned PDF's pages, read in turn after its text layer. `ready`: rendered ahead (`make_ready`); else here, each
+/// page read as it's rendered.
+fn scanned(ocr: &Ocr, job: &Job, ready: Option<&Receiver<Ready>>, stopping: &dyn Fn() -> bool) -> Result<Pass, String> {
     let mut text = job.text_layer.clone();
     let mut pictures = 0;
-    extract::pdf::render_each(Path::new(&job.file.path), &job.pages, 1800, &mut |width, height, pixels| {
+    let mut page = |width: u32, height: u32, pixels: Vec<u8>| -> Result<(), String> {
+        if stopping() {
+            return Err(STOPPED.into());
+        }
         for line in ocr.read(width, height, pixels)?.lines {
             text.push_str(&line.text);
             text.push('\n');
@@ -1264,7 +1756,25 @@ fn scanned(ocr: &Ocr, job: &Job) -> Result<Pass, String> {
         text.push('\n');
         pictures += 1;
         Ok(())
-    })?;
+    };
+    match ready {
+        None => extract::pdf::render_each(Path::new(&job.file.path), &job.pages, SCAN_WIDTH, &mut page)?,
+        Some(ready) => {
+            let mut rendered = 0;
+            for each in ready.iter() {
+                match each {
+                    Ready::Page(Ok((width, height, pixels))) => page(width, height, pixels)?,
+                    Ready::Page(Err(error)) => return Err(error),
+                    Ready::Image(_) => {}
+                }
+                rendered += 1;
+            }
+            // Every page, or the thread that renders them stopped without saying why.
+            if rendered != job.pages.len() {
+                return Err("OCR stopped on this file".into());
+            }
+        }
+    }
     Ok(Pass { text, lines: None, codes: Vec::new(), pictures, doubtful: false })
 }
 
@@ -1284,6 +1794,8 @@ pub fn read_deep(context: Context, catalog: Arc<Catalog>, models: std::path::Pat
     // a picture's doing: a pause, or a busy graphics card.)
     let mut rounds: VecDeque<f64> = VecDeque::new();
     let mut last_round: Option<Instant> = None;
+    let mut download_failures = 0usize;
+    let mut crashes = Crashes::default();
     loop {
         if context.control.stopping() {
             break;
@@ -1307,9 +1819,15 @@ pub fn read_deep(context: Context, catalog: Arc<Catalog>, models: std::path::Pat
                 status.model.total = total;
             });
             if let Err(error) = result {
+                // Reading starting over: the download goes on, and the next session takes it up (not a failure).
+                if context.control.stopping() {
+                    break;
+                }
                 config::log(&format!("Deep's models: {error}"));
                 context.shared.status().model = config::status::Model { state: "failed".into(), name: "the thorough reader".into(), error, ..Default::default() };
-                if !context.control.sleep(Duration::from_secs(600)) {
+                let wait = RETRY_SECONDS[download_failures.min(RETRY_SECONDS.len() - 1)];
+                download_failures += 1;
+                if !context.control.sleep(Duration::from_secs(wait)) {
                     break;
                 }
                 continue;
@@ -1349,6 +1867,7 @@ pub fn read_deep(context: Context, catalog: Arc<Catalog>, models: std::path::Pat
             if !wait_until_free(&context, deep_need) {
                 break;
             }
+            let _item = context.shared.paces.item(crate::pace::Lane::Deep);
             if server.as_mut().is_none_or(|server| !server.running()) {
                 context.shared.deep_on.store(true, std::sync::atomic::Ordering::SeqCst);
                 match deep::Server::start(&models, context.deep_gpu, &|| context.control.stopping()) {
@@ -1367,7 +1886,7 @@ pub fn read_deep(context: Context, catalog: Arc<Catalog>, models: std::path::Pat
                 }
                 context.shared.status().model = config::status::Model { state: "ready".into(), ..Default::default() };
             }
-            let Some(server) = server.as_ref() else { break };
+            let Some(running) = server.as_ref() else { break };
             let id = catalog::id(&path);
             let name = path.rsplit('\\').next().unwrap_or(&path).to_string();
             let file = FileInfo { name, path: path.clone(), size, modified, reader: Reader::Picture };
@@ -1388,7 +1907,7 @@ pub fn read_deep(context: Context, catalog: Arc<Catalog>, models: std::path::Pat
             }
             let started = Instant::now();
             let result = winsys::imaging::decode_upright(&path, deep::MAX_SIDE).and_then(|(picture, _)| {
-                server.read(picture.width, picture.height, &picture.pixels).map(|text| (text, picture.original))
+                running.read(picture.width, picture.height, &picture.pixels).map(|text| (text, picture.original))
             });
             let first = reader.as_ref().and_then(|reader| reader.stored(&path));
             read.insert(id);
@@ -1413,7 +1932,12 @@ pub fn read_deep(context: Context, catalog: Arc<Catalog>, models: std::path::Pat
                 }
                 Err(error) => {
                     config::log(&format!("Deep on {path}: {error}"));
-                    catalog.deep_set(&path, catalog::DEEP_FAILED);
+                    // Its server stopped on it: started again for it once before it counts as the image's doing.
+                    if server.as_mut().is_some_and(|server| server.running()) || crashes.blame(&path) {
+                        catalog.deep_set(&path, catalog::DEEP_FAILED);
+                    } else {
+                        read.remove(&catalog::id(&path));
+                    }
                 }
             }
             idle_since = Instant::now();
@@ -1459,7 +1983,13 @@ fn deep_result(context: &Context, catalog: &Catalog, file: &FileInfo, text: &str
     let characters = body.chars().filter(|c| !c.is_whitespace()).count();
     let marks: serde_json::Value = first.and_then(|first| serde_json::from_slice(&first.marks).ok()).unwrap_or(serde_json::Value::Null);
     let known: Vec<&str> = marks["kinds"].as_array().map(|kinds| kinds.iter().filter_map(|kind| kind.as_str()).collect()).unwrap_or_default();
-    let unboxed = secrets.iter().any(|secret| !known.contains(&secret.kind.name()));
+    // A secret only Deep saw has no box: one of a kind the first pass didn't find, or more of a kind than the labels
+    // the first pass left in its text.
+    let first_text = first.map_or("", |first| first.text.as_str());
+    let unboxed = secrets.iter().any(|secret| {
+        let deep = secrets.iter().filter(|other| other.kind == secret.kind).count();
+        !known.contains(&secret.kind.name()) || deep > first_text.matches(secret.kind.label()).count()
+    });
     let mut kinds: Vec<String> = known.iter().map(|kind| kind.to_string()).collect();
     kinds.extend(secrets.iter().map(|secret| secret.kind.name().to_string()));
     kinds.sort_unstable();
@@ -1494,53 +2024,6 @@ fn deep_result(context: &Context, catalog: &Catalog, file: &FileInfo, text: &str
     };
     let record = update(file, file.size, file.modified, State::Read, deep::ENGINE, String::new(), characters);
     let _ = context.sender.send(Write::Put(Box::new(doc), record));
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_next_scheduled_time() {
-        // 2026-10-30 05:00 UTC.
-        let done = 1_793_336_400;
-        assert_eq!(done % 86_400, 5 * 3600);
-        // The next day at 03:00, a week on, and in a time zone two hours ahead (07:00 there, so the same local dates).
-        assert_eq!(next_run(done, 1, 180, 0), done - 2 * 3600 + 86_400);
-        assert_eq!(next_run(done, 7, 180, 0), done - 2 * 3600 + 7 * 86_400);
-        assert_eq!(next_run(done, 1, 180, 2 * 3600), done - 4 * 3600 + 86_400);
-        // Finished late at night in a zone behind UTC: still the next local day.
-        assert_eq!(next_run(done, 1, 180, -6 * 3600), done - 2 * 3600 + 6 * 3600);
-    }
-
-    #[test]
-    fn only_the_secret_of_a_line_is_blurred() {
-        let text = "Network: Home\nWi-Fi password: hunter2";
-        let line = |start: usize, end: usize, top: f32| (start..end, [100.0, top, 100.0 + (end - start) as f32 * 10.0, top + 20.0]);
-        let lines = |orientation| PictureLines { width: 800, height: 600, orientation, lines: vec![line(0, 13, 0.0), line(14, text.len(), 30.0)] };
-        let secrets = privacy::find(text);
-        assert_eq!(secrets.len(), 1);
-        let marks = boxes_with_secrets(lines(1), text, &secrets);
-        // "hunter2" is characters 16 to 23 of its line (10 px each from x 100): 1.5 more on each side.
-        assert_eq!(marks["boxes"], serde_json::json!([[245, 30, 330, 50]]));
-        // A picture stored upside down (3) or sideways (6), read the right way up: the same part of the line, kept
-        // where it is as stored, so the preview's turn puts it back over "hunter2".
-        for orientation in [3u16, 6, 8] {
-            let marks = boxes_with_secrets(lines(orientation), text, &secrets);
-            let stored: Vec<[i32; 4]> = serde_json::from_value(marks["boxes"].clone()).unwrap();
-            let (shown, _) = winsys::imaging::turned(&stored, (800, 600), orientation);
-            assert_eq!(shown, vec![[245, 30, 330, 50]], "orientation {orientation}");
-        }
-    }
-
-    #[test]
-    fn keeps_the_lines_deep_missed() {
-        let first = "Northwind Traders\nINV-2026-86754\nreturn 0k(response)\n\nTotal: $12.40";
-        let deep = "Northwind Traders\nreturn Ok(response)\nTotal $12.40".to_string();
-        // The invoice number stays; a line with one misread word doesn't come back.
-        assert_eq!(with_missed_lines(deep.clone(), first), format!("{deep}\nINV-2026-86754"));
-        assert_eq!(with_missed_lines(deep.clone(), ""), deep);
-    }
 }
 
 /// The parts of the lines that hold a secret, for the preview to blur: {"w", "h", "boxes": [[l, t, r, b], …]}. Only
@@ -1582,5 +2065,305 @@ fn boxes_with_secrets(lines: PictureLines, text: &str, secrets: &[privacy::Secre
     serde_json::json!({ "w": lines.width, "h": lines.height, "boxes": boxes })
 }
 
+/// At most this many lines of a picture are kept with their places (a page of small print has a few hundred).
+const LINES_KEPT: usize = 400;
+
+/// Each line of a picture as [left, top, right, bottom, text]: where it is in the picture as stored, and its text with
+/// any secret in it replaced by its label, as the index keeps the text.
+fn lines_kept(lines: &PictureLines, text: &str, secrets: &[privacy::Secret]) -> Vec<serde_json::Value> {
+    let (w, h) = (lines.width as f32, lines.height as f32);
+    let upright = if lines.orientation >= 5 { (h, w) } else { (w, h) };
+    lines.lines.iter().take(LINES_KEPT).filter_map(|(range, bounds)| {
+        let line = text.get(range.clone())?;
+        if line.trim().is_empty() {
+            return None;
+        }
+        let inside: Vec<privacy::Secret> = secrets.iter()
+            .filter(|secret| secret.range.start < range.end && secret.range.end > range.start)
+            .map(|secret| privacy::Secret { kind: secret.kind, range: (secret.range.start.max(range.start) - range.start)..(secret.range.end.min(range.end) - range.start) })
+            .collect();
+        let shown = privacy::redact(line, &inside);
+        let place = if lines.orientation > 1 { winsys::imaging::unturned(*bounds, upright, lines.orientation) } else { *bounds };
+        let place = place.map(|value| value.round() as i32);
+        Some(serde_json::json!([place[0], place[1], place[2], place[3], shown.trim()]))
+    }).collect()
+}
+
 /// Characters more blurred on each side of a secret within its line.
 const SECRET_MARGIN: f32 = 1.5;
+
+/// `--privacy-bench <specimens folder> <models folder> <out.jsonl> [tiny]`: reads each image in the folder as the pictures
+/// lane does (`picture`, then `picture_marks`) and writes, a line an image, the secrets' kinds and the boxes the preview
+/// would blur, turned the right way up as the preview shows them. For the privacy benchmark (synthetic images only).
+pub fn privacy_bench() {
+    let args: Vec<String> = std::env::args().collect();
+    let at = args.iter().position(|arg| arg == "--privacy-bench").unwrap_or(0);
+    let (Some(folder), Some(models), Some(out)) = (args.get(at + 1), args.get(at + 2), args.get(at + 3)) else { return };
+    let size = if args.get(at + 4).is_some_and(|size| size == "tiny") { Size::Tiny } else { Size::Small };
+    winsys::com_mta();
+    let ocr = match Ocr::load(Path::new(models), size, ocr::threads(), false, ocr::region_batch(false, Speed::Normal)) {
+        Ok(ocr) => ocr,
+        Err(error) => {
+            let _ = std::fs::write(out, format!("{{\"error\": {}}}\n", serde_json::json!(error)));
+            return;
+        }
+    };
+    let mut names: Vec<String> = std::fs::read_dir(folder).into_iter().flatten().flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| [".png", ".jpg"].iter().any(|extension| name.ends_with(extension)))
+        .collect();
+    names.sort();
+    let mut lines = String::new();
+    for name in names {
+        let path = Path::new(folder).join(&name).to_string_lossy().into_owned();
+        let file = FileInfo { path: path.clone(), name: name.clone(), size: 0, modified: 0, reader: Reader::Picture };
+        let started = Instant::now();
+        let line = match picture(&ocr, &file, None) {
+            Ok(Pass { text, lines: placed, codes, .. }) => {
+                let ms = started.elapsed().as_millis() as u64;
+                // What looking for secrets costs on top of reading: the rules on the text, and the QR codes looked for
+                // again (the reading did it once) when the text calls for them, each timed alone.
+                let rules = Instant::now();
+                let (_, secrets, mark) = picture_marks(&text, placed, &codes);
+                let rules_us = rules.elapsed().as_micros() as u64;
+                let gated = privacy::qr_is_secret(&text).is_some();
+                let locating = Instant::now();
+                if gated {
+                    secret_codes(&path);
+                }
+                let locate_us = locating.elapsed().as_micros() as u64;
+                let (boxes, shown) = match &mark {
+                    Some(mark) => {
+                        let boxes: Vec<[i32; 4]> = serde_json::from_value(mark["boxes"].clone()).unwrap_or_default();
+                        let size = (mark["w"].as_u64().unwrap_or(0) as u32, mark["h"].as_u64().unwrap_or(0) as u32);
+                        winsys::imaging::turned(&boxes, size, winsys::imaging::orientation(&path))
+                    }
+                    None => (Vec::new(), (0, 0)),
+                };
+                serde_json::json!({ "file": name, "kinds": kinds(&secrets), "boxes": boxes, "size": [shown.0, shown.1],
+                                    "codes": codes.len(), "text": text, "ms": ms, "rules_us": rules_us, "gated": gated,
+                                    "locate_us": locate_us })
+            }
+            Err(error) => serde_json::json!({ "file": name, "error": error }),
+        };
+        lines.push_str(&line.to_string());
+        lines.push('\n');
+    }
+    let _ = std::fs::write(out, lines);
+}
+
+/// `--ocr-memory <list> <models folder> <out.tsv> <gpu|cpu> [tiny]`: reads each file in the list (a path a line: images,
+/// and PDFs, whose scanned pages are read as the pictures lane reads them) with one reader that's never loaded fresh,
+/// and writes a line per picture: what it was, its size, the milliseconds it took and the process's private bytes and
+/// working set after it. For measuring whether the reader's memory settles (synthetic and public images only).
+pub fn ocr_memory() {
+    let args: Vec<String> = std::env::args().collect();
+    let at = args.iter().position(|arg| arg == "--ocr-memory").unwrap_or(0);
+    let (Some(list), Some(models), Some(out), Some(device)) = (args.get(at + 1), args.get(at + 2), args.get(at + 3), args.get(at + 4)) else { return };
+    let size = if args.get(at + 5).is_some_and(|size| size == "tiny") { Size::Tiny } else { Size::Small };
+    winsys::com_mta();
+    let started = Instant::now();
+    let ocr = match Ocr::load(Path::new(models), size, ocr::threads(), device == "gpu", ocr::region_batch(device == "gpu", Speed::Fast)) {
+        Ok(ocr) => ocr,
+        Err(error) => {
+            let _ = std::fs::write(out, format!("error\t{error}\n"));
+            return;
+        }
+    };
+    let (_, loaded) = winsys::process_memory();
+    let mut lines = format!("# loaded in {} ms, {} MB private\nn\tkind\twidth\theight\tms\tprivate_mb\tworking_mb\tfile\n",
+                            started.elapsed().as_millis(), loaded >> 20);
+    let mut read_text = String::new();
+    let count = std::cell::Cell::new(0usize);
+    let row =|lines: &mut String, kind: &str, width: u32, height: u32, ms: f64, file: &str| {
+        count.set(count.get() + 1);
+        let count = count.get();
+        let (working, private) = winsys::process_memory();
+        lines.push_str(&format!("{count}\t{kind}\t{width}\t{height}\t{ms:.1}\t{}\t{}\t{file}\n", private >> 20, working >> 20));
+    };
+    for path in std::fs::read_to_string(list).unwrap_or_default().lines().map(str::trim).filter(|line| !line.is_empty()) {
+        if path.to_ascii_lowercase().ends_with(".pdf") {
+            let Ok(extracted) = extract::pdf::text(Path::new(path)) else { continue };
+            let pages: Vec<u16> = extracted.scanned_pages.into_iter().take(SCANNED_PAGES).collect();
+            let _ = extract::pdf::render_each(Path::new(path), &pages, SCAN_WIDTH, &mut |width, height, pixels| {
+                let started = Instant::now();
+                let _ = ocr.read(width, height, pixels);
+                row(&mut lines, "page", width, height, started.elapsed().as_secs_f64() * 1000.0, path);
+                Ok(())
+            });
+        } else if let Ok((decoded, _)) = winsys::imaging::decode_upright(path, ocr::MAX_SIDE) {
+            let (width, height) = (decoded.width, decoded.height);
+            let started = Instant::now();
+            let read = ocr.read(width, height, decoded.pixels).unwrap_or_default();
+            let ms = started.elapsed().as_secs_f64() * 1000.0;
+            row(&mut lines, "image", width, height, ms, path);
+            // What was read, in the form the OCR benchmark scores.
+            let name = Path::new(path).file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+            let texts: Vec<&str> = read.lines.iter().map(|line| line.text.as_str()).collect();
+            read_text.push_str(&serde_json::json!({ "engine": device, "image": name, "lines": texts, "ms": ms }).to_string());
+            read_text.push('\n');
+        }
+        // Written as it goes, so a long run can be watched.
+        if count.get().is_multiple_of(50) {
+            let _ = std::fs::write(out, &lines);
+        }
+    }
+    let _ = std::fs::write(out, lines);
+    let _ = std::fs::write(format!("{out}.jsonl"), read_text);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_next_scheduled_time() {
+        // 2026-10-30 05:00 UTC.
+        let done = 1_793_336_400;
+        assert_eq!(done % 86_400, 5 * 3600);
+        // The next day at 03:00, a week on, and in a time zone two hours ahead (07:00 there, so the same local dates).
+        assert_eq!(next_run(done, 1, 180, 0), done - 2 * 3600 + 86_400);
+        assert_eq!(next_run(done, 7, 180, 0), done - 2 * 3600 + 7 * 86_400);
+        assert_eq!(next_run(done, 1, 180, 2 * 3600), done - 4 * 3600 + 86_400);
+        // Finished late at night in a zone behind UTC: still the next local day.
+        assert_eq!(next_run(done, 1, 180, -6 * 3600), done - 2 * 3600 + 6 * 3600);
+    }
+
+    #[test]
+    fn the_reader_is_loaded_fresh_only_when_it_grows_after_settling() {
+        const GB: u64 = 1 << 30;
+        let mut settling = Settling::default();
+        // Growing while it warms up (0.8 GB after one picture, 2 GB after ten): not counted.
+        for file in 1..SETTLE_FILES {
+            assert_eq!(settling.grown(GB * 8 / 10 + file as u64 * GB / 16), None);
+        }
+        assert_eq!(settling.grown(2 * GB), None);
+        assert_eq!(settling.grown(2 * GB + RECYCLE_GROWTH), None);
+        assert_eq!(settling.grown(3 * GB + 1), Some(2 * GB));
+    }
+
+    #[test]
+    fn a_picture_taken_ahead_still_counts_as_waiting() {
+        let queue = Arc::new(Queue::default());
+        let picture = |path: &str| Job::new(FileInfo { name: String::new(), path: path.into(), size: 1, modified: 1, reader: Reader::Picture });
+        queue.push(picture(r"C:\a.png"), 2);
+        queue.push(picture(r"C:\b.png"), 1);
+        let taken = queue.pop_within(Lane::Pictures, Duration::ZERO).unwrap().unwrap();
+        assert_eq!(taken.file.path, r"C:\a.png");
+        let held = queue.hold();
+        // Waiting as the status sees it: both; in the queue itself, one (what's left for the other readers).
+        assert_eq!((queue.lengths().1, queue.pictures_queued()), (2, 1));
+        drop(held);
+        assert_eq!(queue.lengths().1, 1);
+    }
+
+    #[test]
+    fn a_picture_made_ready_ahead_is_the_same() {
+        winsys::com_mta();
+        let file = std::env::temp_dir().join(format!("excavate-ready-{}.png", std::process::id()));
+        let picture = image::RgbImage::from_fn(300, 200, |x, y| image::Rgb([(x % 251) as u8, (y % 241) as u8, ((x * y) % 239) as u8]));
+        picture.save(&file).unwrap();
+        let path = file.display().to_string();
+        let job = Job::new(FileInfo { name: String::new(), path: path.clone(), size: 1, modified: 1, reader: Reader::Picture });
+        let ready = make_ready(&job);
+        let Ok(Ready::Image(Ok((ahead, turned)))) = ready.recv() else { panic!("an image") };
+        let (here, turned_here) = winsys::imaging::decode_upright(&path, ocr::MAX_SIDE).unwrap();
+        assert_eq!((ahead.width, ahead.height, turned), (here.width, here.height, turned_here));
+        assert!(ahead.pixels == here.pixels, "the same pixels, decoded on another thread");
+        // Nothing more: the thread is done.
+        assert!(ready.recv().is_err());
+        let _ = std::fs::remove_file(file);
+    }
+
+    #[test]
+    fn a_large_file_waits_behind_newer_small_ones() {
+        let day = 86_400;
+        let job = |size: u64, modified: i64| Job::new(FileInfo { name: String::new(), path: String::new(), size, modified, reader: Reader::Text });
+        assert_eq!(size_wait(8 << 20), 0);
+        assert_eq!(size_wait((8 << 20) + 1), 7 * day);
+        assert_eq!(size_wait(64 << 20), 3 * 7 * day);
+        assert_eq!(size_wait(1 << 30), 7 * 7 * day);
+        // A 100 MB file from today comes after a small one from three weeks ago, before one from six weeks ago.
+        let today = 1_800_000_000;
+        let (large, small, older) = (priority(&job(100 << 20, today)), priority(&job(1 << 20, today - 21 * day)), priority(&job(1 << 20, today - 42 * day)));
+        assert!(small > large && large > older);
+        // What the first sweep set aside still comes after everything else.
+        let mut later = job(1, today);
+        later.place.later = true;
+        assert!(priority(&later) < priority(&job(1 << 40, 0)));
+    }
+
+    #[test]
+    fn only_the_secret_of_a_line_is_blurred() {
+        let text = "Network: Home\nWi-Fi password: hunter2";
+        let line = |start: usize, end: usize, top: f32| (start..end, [100.0, top, 100.0 + (end - start) as f32 * 10.0, top + 20.0]);
+        let lines = |orientation| PictureLines { width: 800, height: 600, orientation, lines: vec![line(0, 13, 0.0), line(14, text.len(), 30.0)] };
+        let secrets = privacy::find(text);
+        assert_eq!(secrets.len(), 1);
+        let marks = boxes_with_secrets(lines(1), text, &secrets);
+        // "hunter2" is characters 16 to 23 of its line (10 px each from x 100): 1.5 more on each side.
+        assert_eq!(marks["boxes"], serde_json::json!([[245, 30, 330, 50]]));
+        // A picture stored upside down (3) or sideways (6), read the right way up: the same part of the line, kept
+        // where it is as stored, so the preview's turn puts it back over "hunter2".
+        for orientation in [3u16, 6, 8] {
+            let marks = boxes_with_secrets(lines(orientation), text, &secrets);
+            let stored: Vec<[i32; 4]> = serde_json::from_value(marks["boxes"].clone()).unwrap();
+            let (shown, _) = winsys::imaging::turned(&stored, (800, 600), orientation);
+            assert_eq!(shown, vec![[245, 30, 330, 50]], "orientation {orientation}");
+        }
+    }
+
+    #[test]
+    fn full_speed_follows_the_settings_as_they_change() {
+        let path = std::env::temp_dir().join(format!("excavate-speed-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let catalog = Arc::new(Catalog::open(&path).unwrap());
+        let gate = Gate::new(&config::Settings::default(), catalog.clone());
+        let shared = Shared::default();
+        // Normal unless asked otherwise.
+        assert_eq!(shared.speed(&gate), Speed::Normal);
+        // "Full speed": taken in at once, and stopped the same way.
+        gate.follow(now());
+        assert_eq!(shared.speed(&gate), Speed::Full);
+        assert_eq!(process_priority(shared.speed(&gate)), winsys::process::Priority::Normal);
+        gate.follow(0);
+        assert_eq!(shared.speed(&gate), Speed::Normal);
+        assert_eq!(process_priority(Speed::Normal), winsys::process::Priority::Idle);
+        // Done in one sitting since it was asked: not on again by the same request.
+        let asked = now() - 10;
+        gate.follow(asked);
+        gate.all_finished();
+        gate.follow(asked);
+        assert!(!gate.all());
+        shared.set_speed(Speed::Fast);
+        assert_eq!(shared.speed(&gate), Speed::Fast);
+        // Kept awake only at Full with work left, and not while paused.
+        assert!(!keep_awake(&shared, [&gate; 3], [5, 5, 5]), "Fast: Windows sleeps as it would");
+        gate.follow(now());
+        assert!(!keep_awake(&shared, [&gate; 3], [0, 0, 0]), "nothing left");
+        assert!(full_with_work([Speed::Full, Speed::Normal, Speed::Normal], [3, 0, 0]));
+        assert!(!full_with_work([Speed::Normal, Speed::Full, Speed::Normal], [3, 0, 0]), "the kind at Full has nothing left");
+        *shared.pause.lock().unwrap() = (-1, "Paused".into());
+        assert!(!keep_awake(&shared, [&gate; 3], [5, 0, 0]), "paused");
+        drop(gate);
+        drop(catalog);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_file_is_blamed_the_second_time_a_server_stops_on_it() {
+        let mut crashes = Crashes::default();
+        assert!(!crashes.blame(r"C:\Videos\a.mp4"), "the first time, the server's doing");
+        assert!(!crashes.blame(r"C:\Videos\b.mp4"));
+        assert!(crashes.blame(r"c:\videos\A.MP4"), "the second, the file's");
+    }
+
+    #[test]
+    fn keeps_the_lines_deep_missed() {
+        let first = "Northwind Traders\nINV-2026-86754\nreturn 0k(response)\n\nTotal: $12.40";
+        let deep = "Northwind Traders\nreturn Ok(response)\nTotal $12.40".to_string();
+        // The invoice number stays; a line with one misread word doesn't come back.
+        assert_eq!(with_missed_lines(deep.clone(), first), format!("{deep}\nINV-2026-86754"));
+        assert_eq!(with_missed_lines(deep.clone(), ""), deep);
+    }
+}

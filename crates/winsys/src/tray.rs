@@ -25,11 +25,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::PCWSTR;
 
-const CLASS: &str = "Excavate.Shell";
 const WM_TRAY: u32 = WM_APP + 1;
 const WM_REOPEN: u32 = WM_APP + 2;
 const WM_SET_HOTKEY: u32 = WM_APP + 3;
 const WM_QUIT_SHELL: u32 = WM_APP + 4;
+const WM_QUIT_ASKED: u32 = WM_APP + 5;
 const NIN_SELECT: u32 = WM_USER;
 const NIN_KEYSELECT: u32 = WM_USER + 1;
 const HOTKEY_ID: i32 = 1;
@@ -48,6 +48,8 @@ pub enum Event {
     ThemeChanged,
     /// The pointer is over the tray icon: the moment to bring its tooltip up to date.
     Hover,
+    /// `excavate.exe --quit` asked this copy to quit, as the tray menu's Quit does.
+    Quit,
     /// Windows is shutting down or signing out: what must be saved is saved now, before this returns (the handler is
     /// called on the tray's own thread for this one, and Windows may end the process right after).
     EndSession,
@@ -121,11 +123,10 @@ fn virtual_key(name: &str) -> Option<u32> {
     if bytes.len() == 1 && bytes[0].is_ascii_alphanumeric() {
         return Some(u32::from(bytes[0]));
     }
-    if let Some(number) = upper.strip_prefix('F').and_then(|n| n.parse::<u32>().ok()) {
-        if (1..=24).contains(&number) {
+    if let Some(number) = upper.strip_prefix('F').and_then(|n| n.parse::<u32>().ok())
+        && (1..=24).contains(&number) {
             return Some(0x6F + number);
         }
-    }
     None
 }
 
@@ -147,6 +148,8 @@ fn key_name(key: u32) -> String {
 
 /// What the shell thread needs to know.
 pub struct Options {
+    /// The window's class, which a second launch finds it by (`knock`): one per home (`config::window_class`).
+    pub class: String,
     pub tooltip: String,
     /// Icon resources in the executable (see app/excavate.rc): drawn for a dark taskbar, and for a light one.
     pub icon_for_dark_taskbar: u16,
@@ -281,13 +284,23 @@ impl Tray {
     }
 }
 
-/// When Excavate is running already: asks it to open and returns true (this launch should then exit).
-pub fn knock() -> bool {
-    let class = wide(CLASS);
+/// When Excavate is running already (its window of this `class`): asks it to open and returns true (this launch should
+/// then exit).
+pub fn knock(class: &str) -> bool {
+    post(class, WM_REOPEN)
+}
+
+/// Asks the Excavate running with this window `class` to quit, as its tray menu's Quit does; false when none is.
+pub fn ask_to_quit(class: &str) -> bool {
+    post(class, WM_QUIT_ASKED)
+}
+
+fn post(class: &str, message: u32) -> bool {
+    let class = wide(class);
     // SAFETY: finding and messaging another process's window by its class.
     unsafe {
         match FindWindowW(PCWSTR(class.as_ptr()), PCWSTR::null()) {
-            Ok(window) if !window.is_invalid() => PostMessageW(Some(window), WM_REOPEN, WPARAM(0), LPARAM(0)).is_ok(),
+            Ok(window) if !window.is_invalid() => PostMessageW(Some(window), message, WPARAM(0), LPARAM(0)).is_ok(),
             _ => false,
         }
     }
@@ -309,7 +322,7 @@ fn run(state: Arc<State>, started: std::sync::mpsc::Sender<Started>) {
                 return;
             }
         };
-        let class = wide(CLASS);
+        let class = wide(&state.options.class);
         let window_class = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
             lpfnWndProc: Some(window_proc),
@@ -553,7 +566,7 @@ fn from_rgba(rgba: &[u8], size: u32) -> HICON {
         let mut bits = std::ptr::null_mut();
         let Ok(color) = CreateDIBSection(None, &info, DIB_RGB_COLORS, &mut bits, None, 0) else { return HICON::default() };
         let out = std::slice::from_raw_parts_mut(bits.cast::<u8>(), count * 4);
-        for (to, from) in out.chunks_exact_mut(4).zip(rgba.chunks_exact(4)) {
+        for (to, from) in out.as_chunks_mut::<4>().0.iter_mut().zip(rgba.as_chunks::<4>().0) {
             to.copy_from_slice(&[from[2], from[1], from[0], from[3]]);
         }
         let mask = CreateBitmap(size as i32, size as i32, 1, 1, None);
@@ -617,6 +630,7 @@ unsafe extern "system" fn window_proc(window: HWND, message: u32, wparam: WPARAM
             _ => {}
         },
         WM_REOPEN => (state.handler)(Event::Reopen),
+        WM_QUIT_ASKED => (state.handler)(Event::Quit),
         WM_ENDSESSION if wparam.0 != 0 => (state.handler)(Event::EndSession),
         WM_SET_HOTKEY => {
             if wparam.0 == 0 {

@@ -10,6 +10,7 @@ pub mod known;
 pub mod mft;
 pub mod names;
 pub mod search;
+pub mod service;
 pub mod store;
 pub mod syntax;
 pub mod walk;

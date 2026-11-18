@@ -4,7 +4,8 @@
 
 use crate::settings::log;
 use config::Paths;
-use std::cell::RefCell;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// One image it found.
@@ -63,43 +64,65 @@ fn line_for(count: usize) -> f32 {
 }
 
 pub struct Seeker {
-    job: Option<winsys::process::Job>,
-    child: RefCell<Option<std::process::Child>>,
+    job: Option<Arc<winsys::process::Job>>,
+    child: Arc<Mutex<Option<std::process::Child>>>,
+    /// A start in flight (on its own thread).
+    starting: Arc<AtomicBool>,
 }
 
 impl Seeker {
     pub fn new() -> Seeker {
-        Seeker { job: winsys::process::Job::new(), child: RefCell::new(None) }
+        Seeker { job: winsys::process::Job::new().map(Arc::new), child: Arc::default(), starting: Arc::default() }
     }
 
     /// Starts it if this Excavate hasn't, or it ended. (One already running for these settings keeps going: a second
     /// one ends at once.)
+    /// Starting a process can take most of a second while the disk is busy or a virus scanner reads the program (it
+    /// held the popup that long, 80 ms after Alt+S): it's started on a thread of its own, and this returns at once.
     fn ensure(&self) {
-        let mut child = self.child.borrow_mut();
-        if matches!(child.as_mut().map(|child| child.try_wait()), Some(Ok(None))) {
+        if self.starting.load(Ordering::Acquire) {
             return;
         }
-        // Excavate Helper (`excavate-helper.exe`, Task Manager's name for it); the indexer's own program where it's missing.
-        let beside = |name: &str| std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.join(name))).filter(|exe| exe.exists());
-        let Some(exe) = beside("excavate-helper.exe").or_else(|| beside("excavate-indexer.exe")) else {
-            return;
-        };
-        match std::process::Command::new(exe).arg("--seek").spawn() {
-            Ok(started) => {
-                if let Some(job) = &self.job {
-                    job.add(started.id());
-                }
-                *child = Some(started);
+        {
+            let mut child = self.child.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            if matches!(child.as_mut().map(|child| child.try_wait()), Some(Ok(None))) {
+                return;
             }
-            Err(error) => log(&format!("can't start the search helper: {error}")),
+        }
+        if self.starting.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let (child, starting, job) = (self.child.clone(), self.starting.clone(), self.job.clone());
+        let started = std::thread::Builder::new().name("helper start".into()).spawn(move || {
+            // Excavate Helper (`excavate-helper.exe`, Task Manager's name for it); the indexer's own program where it's missing.
+            let beside = |name: &str| std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.join(name))).filter(|exe| exe.exists());
+            if let Some(exe) = beside("excavate-helper.exe").or_else(|| beside("excavate-indexer.exe")) {
+                match std::process::Command::new(exe).arg("--seek").spawn() {
+                    Ok(started) => {
+                        if let Some(job) = &job {
+                            job.add(started.id());
+                        }
+                        *child.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(started);
+                    }
+                    Err(error) => log(&format!("can't start the search helper: {error}")),
+                }
+            }
+            starting.store(false, Ordering::Release);
+        });
+        if started.is_err() {
+            self.starting.store(false, Ordering::Release);
         }
     }
 
     /// Ends it: the choice of models changed, and the next search starts one with the new choice.
     pub fn stop(&self) {
-        if let Some(mut child) = self.child.borrow_mut().take() {
-            let _ = child.kill();
-            let _ = child.wait();
+        let taken = self.child.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
+        if let Some(mut child) = taken {
+            // (Off the UI thread too: waiting for a process to end can take a moment.)
+            std::thread::spawn(move || {
+                let _ = child.kill();
+                let _ = child.wait();
+            });
         }
     }
 
@@ -143,8 +166,8 @@ fn ask(file: &std::path::Path, text: &str, limit: usize, wanted: Wanted) -> Resu
         let port = std::fs::read(file).ok()
             .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
             .and_then(|said| said["port"].as_u64());
-        if let Some(port) = port {
-            if let Ok((200, reply)) = winsys::http::local(&format!("http://127.0.0.1:{port}/search"), &body, Duration::from_secs(20)) {
+        if let Some(port) = port
+            && let Ok((200, reply)) = winsys::http::local(&format!("http://127.0.0.1:{port}/search"), &body, Duration::from_secs(20)) {
                 let reply: serde_json::Value = serde_json::from_slice(&reply).map_err(|error| error.to_string())?;
                 // What's gone since it was looked at is left out (the reader forgets it within minutes).
                 let found = |key: &str| reply[key].as_array().map(|hits| hits.iter().filter_map(|hit| {
@@ -163,7 +186,6 @@ fn ask(file: &std::path::Path, text: &str, limit: usize, wanted: Wanted) -> Resu
                 let kind = reply["kind"]["kind"].as_str().zip(reply["kind"]["p"].as_f64()).map(|(kind, sure)| (kind.to_string(), sure as f32));
                 return Ok(Answer { hits, waiting, images, filtered, documents, pieces, kind, ms: reply["ms"].as_f64().unwrap_or(0.0) });
             }
-        }
         if started.elapsed() > Duration::from_secs(8) {
             return Err("the search helper didn't answer".into());
         }

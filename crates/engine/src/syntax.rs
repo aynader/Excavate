@@ -237,7 +237,12 @@ struct Parser {
     count: Option<usize>,
     sort: Option<SortKey>,
     descending: Option<bool>,
+    /// Groups open around where the parser is (`MAX_DEPTH` at most).
+    depth: usize,
 }
+
+/// Groups nested deeper than this are taken as one: a pasted run of thousands of `(` would otherwise overflow the stack.
+const MAX_DEPTH: usize = 64;
 
 impl Parser {
     fn peek_past_space(&self) -> Option<&Token> {
@@ -291,12 +296,25 @@ impl Parser {
     fn unary(&mut self, mods: Mods) -> Node {
         match self.tokens.get(self.at) {
             Some(Token::Not) => {
+                // A run of `!` in one go (each pair cancels), not one call each.
+                let mut nots = 0;
+                while self.tokens.get(self.at) == Some(&Token::Not) {
+                    nots += 1;
+                    self.at += 1;
+                }
+                let inner = self.unary(mods);
+                if nots % 2 == 1 { Node::Not(Box::new(inner)) } else { inner }
+            }
+            Some(Token::Open) if self.depth >= MAX_DEPTH => {
+                // Too deep: the bracket is passed over, what's inside joins this group.
                 self.at += 1;
-                Node::Not(Box::new(self.unary(mods)))
+                Node::All
             }
             Some(Token::Open) => {
                 self.at += 1;
+                self.depth += 1;
                 let inner = self.and(mods);
+                self.depth -= 1;
                 if self.tokens.get(self.at) == Some(&Token::Close) {
                     self.at += 1;
                 }
@@ -327,8 +345,7 @@ impl Parser {
         let mut rest = text;
         let mut rest_mask = mask;
         // Functions and modifiers, as long as they're unquoted.
-        loop {
-            let Some(colon) = rest.find(':') else { break };
+        while let Some(colon) = rest.find(':') {
             let name_len = rest[..colon].chars().count();
             if rest_mask[..name_len + 1].iter().any(|&q| q) {
                 break;
@@ -654,7 +671,7 @@ fn macro_exts(name: &str) -> &'static [&'static str] {
 
 /// Reads Everything's syntax.
 pub fn parse(text: &str) -> Parsed {
-    let mut parser = Parser { tokens: lex(text), at: 0, unsupported: Vec::new(), count: None, sort: None, descending: None };
+    let mut parser = Parser { tokens: lex(text), at: 0, unsupported: Vec::new(), count: None, sort: None, descending: None, depth: 0 };
     let mut items = Vec::new();
     // A stray `>` doesn't end the search: what's after it still counts.
     loop {
@@ -813,30 +830,7 @@ fn date_range(value: &str, now: i64, offset: i64, first: i64) -> Option<(i64, i6
     }
 }
 
-/// Days since 1970-01-01 for a date (Howard Hinnant's algorithm).
-pub fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let mp = (m + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
-}
-
-/// The date of a day since 1970-01-01.
-pub fn civil(days: i64) -> (i64, i64, i64) {
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    (if m <= 2 { y + 1 } else { y }, m, d)
-}
+pub use common::{civil, days_from_civil};
 
 /// A `size:` value as bytes, both ends included: `>1mb`, `<=10kb`, `1mb..2gb`, `empty` `tiny` `small` `medium`
 /// `large` `huge` `gigantic` (Everything's), or a number of bytes.
@@ -895,6 +889,14 @@ fn bytes(text: &str) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deep_nesting_stays_on_the_stack() {
+        let deep = format!("{}a{}", "(".repeat(100_000), ")".repeat(100_000));
+        assert!(!matches!(parse(&deep).root, Node::All));
+        assert!(matches!(parse(&"!".repeat(100_001)).root, Node::All | Node::Not(_)));
+        assert!(matches!(parse("!!a").root, Node::Leaf(_) | Node::And(_) | Node::Or(_)));
+    }
 
     fn show(node: &Node) -> String {
         match node {
@@ -1010,5 +1012,29 @@ mod tests {
         assert_eq!(sizes("empty"), Some((0, 0)));
         assert_eq!(sizes("1.5mb"), Some((1_572_864, 1_572_864)));
         assert_eq!(sizes("lots"), None);
+    }
+
+    /// docs/SEARCH.md lists every function and modifier, and each example there of one this index answers reads.
+    #[test]
+    fn the_search_page_matches() {
+        let page = include_str!("../../../docs/SEARCH.md").replace("\\|", "|");
+        for name in FUNCTIONS.iter().chain(MODIFIERS) {
+            assert!(page.contains(&format!("`{name}:")), "docs/SEARCH.md doesn't list {name}:");
+        }
+        // Answered by the app (`functions.rs`), or by nothing.
+        const ELSEWHERE: &[&str] = &["content", "utf8content", "width", "height", "dimensions", "length", "runcount", "rc", "daterun",
+                                     "dr", "orientation", "bitdepth", "frontmatter"];
+        let mut checked = 0;
+        for example in page.split('`').skip(1).step_by(2) {
+            let Some((name, value)) = example.split_once(':') else { continue };
+            if value.is_empty() || !FUNCTIONS.contains(&name) || ELSEWHERE.contains(&name) {
+                continue;
+            }
+            let parsed = parse(example);
+            assert!(parsed.unsupported.is_empty(), "{example}: {:?}", parsed.unsupported);
+            assert!(!show(&parsed.root).contains("(not *all*)"), "{example} doesn't read: {}", show(&parsed.root));
+            checked += 1;
+        }
+        assert!(checked > 20, "only {checked} examples checked");
     }
 }

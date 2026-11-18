@@ -16,7 +16,7 @@ use windows::core::PCWSTR;
 pub type Result<T> = std::result::Result<T, String>;
 
 fn hwnd(owner: isize) -> Option<HWND> {
-    (owner != 0).then(|| HWND(owner as *mut _))
+    (owner != 0).then_some(HWND(owner as *mut _))
 }
 
 /// A shell verb: "open" (the default action, in the file's folder), "runas", "properties", "edit"…
@@ -45,38 +45,12 @@ pub fn open(owner: isize, path: &str) -> Result<()> {
 /// Runs a program with administrator rights (Windows asks for approval), waits until it ends, and returns its exit code:
 /// none if it's still running when `patience` runs out. Saying no comes back as an error.
 pub fn run_elevated(path: &str, parameters: &str, patience: std::time::Duration) -> Result<Option<u32>> {
-    use windows::Win32::Foundation::CloseHandle;
-    use windows::Win32::Foundation::WAIT_TIMEOUT;
-    use windows::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
-    use windows::Win32::UI::Shell::SEE_MASK_NOCLOSEPROCESS;
-    let (file, verb, parameters) = (wide(path), wide("runas"), wide(parameters));
-    let mut info = SHELLEXECUTEINFOW {
-        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
-        fMask: SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC,
-        lpVerb: PCWSTR(verb.as_ptr()),
-        lpFile: PCWSTR(file.as_ptr()),
-        lpParameters: PCWSTR(parameters.as_ptr()),
-        nShow: SW_SHOWNORMAL.0,
-        ..Default::default()
-    };
-    // SAFETY: every string outlives the call; the process handle is ours to wait on and close.
-    unsafe {
-        ShellExecuteExW(&mut info).map_err(|error| {
-            // ERROR_CANCELLED: the approval was declined.
-            if error.code().0 as u32 & 0xFFFF == 1223 { "Windows' approval was declined.".to_string() } else { error.message().to_string() }
-        })?;
-        if info.hProcess.is_invalid() {
-            return Ok(Some(0));
-        }
-        if WaitForSingleObject(info.hProcess, patience.as_millis().min(u32::MAX as u128 - 1) as u32) == WAIT_TIMEOUT {
-            let _ = CloseHandle(info.hProcess);
-            return Ok(None);
-        }
-        let mut code = 0u32;
-        let _ = GetExitCodeProcess(info.hProcess, &mut code);
-        let _ = CloseHandle(info.hProcess);
-        Ok(Some(code))
-    }
+    use crate::process::{ERROR_CANCELLED, start_elevated, wait_and_close};
+    let process = start_elevated(path, parameters, true).map_err(|error| {
+        if error.code().0 as u32 & 0xFFFF == ERROR_CANCELLED { "Windows' approval was declined.".to_string() } else { error.message().to_string() }
+    })?;
+    let Some(process) = process else { return Ok(Some(0)) };
+    Ok(wait_and_close(process, patience.as_millis().min(u32::MAX as u128 - 1) as u32))
 }
 
 /// Windows' "Open with" dialog.
@@ -165,6 +139,37 @@ fn set_clipboard(owner: isize, formats: &[(u32, Vec<u8>)]) -> Result<()> {
         let _ = CloseClipboard();
         result
     }
+}
+
+/// Opens each folder once in Explorer with its files among `paths` selected together.
+pub fn reveal_many(paths: &[String]) -> Result<()> {
+    let mut folders: Vec<(String, Vec<&String>)> = Vec::new();
+    for path in paths {
+        let folder = Path::new(path).parent().map(|folder| folder.display().to_string()).unwrap_or_default();
+        match folders.iter_mut().find(|(known, _)| *known == folder) {
+            Some((_, files)) => files.push(path),
+            None => folders.push((folder, vec![path])),
+        }
+    }
+    for (folder, files) in folders {
+        let folder_name = wide(&folder);
+        // SAFETY: the ID lists are created here, used for the call and freed here.
+        unsafe {
+            let parent = ILCreateFromPathW(PCWSTR(folder_name.as_ptr()));
+            if parent.is_null() {
+                return Err(format!("{folder} isn't there"));
+            }
+            let lists: Vec<_> = files.iter().map(|file| ILCreateFromPathW(PCWSTR(wide(file).as_ptr()))).filter(|list| !list.is_null()).collect();
+            let children: Vec<*const _> = lists.iter().map(|list| windows::Win32::UI::Shell::ILFindLastID(*list).cast_const()).collect();
+            let result = SHOpenFolderAndSelectItems(parent, Some(&children), 0);
+            for list in lists {
+                ILFree(Some(list));
+            }
+            ILFree(Some(parent));
+            result.map_err(|error| error.message().to_string())?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

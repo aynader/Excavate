@@ -227,7 +227,7 @@ pub fn since(path: &str, from: Option<Position>) -> Result<Changed, Why> {
 }
 
 /// The file beside the index that keeps each drive's journal position.
-fn file_for(index: &Path) -> std::path::PathBuf {
+pub(crate) fn file_for(index: &Path) -> std::path::PathBuf {
     index.with_extension("journal")
 }
 

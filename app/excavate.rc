@@ -4,7 +4,8 @@
 2 ICON "../brand/tray-dark.ico"
 3 ICON "../brand/tray-light.ico"
 
-1 24 "excavate.manifest"
+// MANIFEST: excavate.manifest with the version in Cargo.toml, written by build.rs.
+1 24 MANIFEST
 
 // VERSION_NUMBERS and VERSION_TEXT: the version in Cargo.toml, passed by build.rs.
 1 VERSIONINFO

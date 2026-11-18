@@ -2,8 +2,8 @@
 
 use crate::wide;
 use windows::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_SET_VALUE, REG_SZ, RRF_RT_REG_DWORD, RRF_RT_REG_MULTI_SZ, RRF_RT_REG_SZ, RegCloseKey,
-    RegDeleteValueW, RegGetValueW, RegOpenKeyExW, RegSetValueExW,
+    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_SET_VALUE, REG_BINARY, REG_DWORD, REG_OPTION_NON_VOLATILE, REG_SZ, RRF_RT_REG_BINARY, RRF_RT_REG_DWORD, RRF_RT_REG_MULTI_SZ,
+    RRF_RT_REG_SZ, RegCloseKey, RegCreateKeyExW, RegDeleteTreeW, RegDeleteValueW, RegGetValueW, RegOpenKeyExW, RegSetValueExW,
 };
 use windows::core::PCWSTR;
 
@@ -90,6 +90,25 @@ pub fn dword(root: Root, key: &str, value: &str) -> Option<u32> {
     Some(data)
 }
 
+/// A binary value's bytes.
+pub fn bytes(root: Root, key: &str, value: &str) -> Option<Vec<u8>> {
+    let (key, value) = (wide(key), wide(value));
+    let mut size = 0u32;
+    // SAFETY: as `string`.
+    unsafe {
+        RegGetValueW(root.key(), PCWSTR(key.as_ptr()), PCWSTR(value.as_ptr()), RRF_RT_REG_BINARY, None, None, Some(&mut size))
+            .ok()
+            .ok()?;
+        let mut buffer = vec![0u8; size as usize];
+        RegGetValueW(root.key(), PCWSTR(key.as_ptr()), PCWSTR(value.as_ptr()), RRF_RT_REG_BINARY, None,
+                     Some(buffer.as_mut_ptr().cast()), Some(&mut size))
+            .ok()
+            .ok()?;
+        buffer.truncate(size as usize);
+        Some(buffer)
+    }
+}
+
 /// Sets (Some) or deletes (None) a string value under an existing key of the current user.
 pub fn set_user_string(key: &str, value: &str, data: Option<&str>) -> windows::core::Result<()> {
     let (key, value) = (wide(key), wide(value));
@@ -113,19 +132,79 @@ pub fn set_user_string(key: &str, value: &str, data: Option<&str>) -> windows::c
     }
 }
 
-const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-
-/// Whether this executable starts with Windows (the current user's Run key names it).
-pub fn starts_with_windows(name: &str) -> bool {
-    string(Root::CurrentUser, RUN_KEY, name).is_some()
+/// A value to write with `set_user_key`.
+pub enum Value<'a> {
+    Text(&'a str),
+    Number(u32),
+    Bytes(&'a [u8]),
 }
 
-/// Starts this executable at sign-in with `arguments`, or stops doing so.
+/// Creates (or opens) a key of the current user and writes these values in it.
+pub fn set_user_key(key: &str, values: &[(&str, Value)]) -> windows::core::Result<()> {
+    let key = wide(key);
+    let mut handle = HKEY::default();
+    // SAFETY: the key is created, written and closed here; each data buffer outlives its call.
+    unsafe {
+        RegCreateKeyExW(HKEY_CURRENT_USER, PCWSTR(key.as_ptr()), None, PCWSTR::null(), REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, None, &mut handle, None).ok()?;
+        let mut result = Ok(());
+        for (name, value) in values {
+            let name = wide(name);
+            let written = match value {
+                Value::Text(text) => {
+                    let data = wide(text);
+                    let bytes = std::slice::from_raw_parts(data.as_ptr().cast::<u8>(), data.len() * 2);
+                    RegSetValueExW(handle, PCWSTR(name.as_ptr()), None, REG_SZ, Some(bytes))
+                }
+                Value::Number(number) => RegSetValueExW(handle, PCWSTR(name.as_ptr()), None, REG_DWORD, Some(&number.to_le_bytes())),
+                Value::Bytes(bytes) => RegSetValueExW(handle, PCWSTR(name.as_ptr()), None, REG_BINARY, Some(bytes)),
+            };
+            if written.is_err() {
+                result = written.ok();
+                break;
+            }
+        }
+        let _ = RegCloseKey(handle);
+        result
+    }
+}
+
+/// Deletes a key of the current user with everything under it (already gone is fine).
+pub fn delete_user_key(key: &str) -> windows::core::Result<()> {
+    let key = wide(key);
+    // SAFETY: the key name outlives the call.
+    let result = unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, PCWSTR(key.as_ptr())) };
+    if result.0 == 2 { Ok(()) } else { result.ok() } // ERROR_FILE_NOT_FOUND
+}
+
+const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+
+/// Windows' own list of what may start at sign-in (Task Manager's Startup apps, Settings' Startup): a program turned off
+/// there keeps its Run entry, and its record here starts with an odd byte (3 off; 2 or 6 on).
+const APPROVED_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+
+/// Whether this executable starts with Windows: the current user's Run key names it, and it isn't turned off in Task
+/// Manager or Settings.
+pub fn starts_with_windows(name: &str) -> bool {
+    string(Root::CurrentUser, RUN_KEY, name).is_some() && !turned_off_in_windows(name)
+}
+
+fn turned_off_in_windows(name: &str) -> bool {
+    bytes(Root::CurrentUser, APPROVED_KEY, name).and_then(|record| record.first().copied()).is_some_and(|first| first & 1 == 1)
+}
+
+/// Starts this executable at sign-in with `arguments`, or stops doing so. On also turns it back on in Windows' own
+/// list, where Task Manager may have turned it off.
 pub fn set_start_with_windows(name: &str, arguments: &str, on: bool) -> windows::core::Result<()> {
     if !on {
+        // (Windows' record may not exist at all.)
+        let _ = set_user_string(APPROVED_KEY, name, None);
         return set_user_string(RUN_KEY, name, None);
     }
-    set_user_string(RUN_KEY, name, Some(&run_value(arguments)?))
+    set_user_string(RUN_KEY, name, Some(&run_value(arguments)?))?;
+    if turned_off_in_windows(name) {
+        set_user_key(APPROVED_KEY, &[(name, Value::Bytes(&[2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]))])?;
+    }
+    Ok(())
 }
 
 /// Start with Windows follows the build: when it's on and names another program, it's pointed at this one. Off stays off.
@@ -166,6 +245,18 @@ mod tests {
         set_start_with_windows(name, "", false).unwrap();
         assert!(!starts_with_windows(name));
         set_start_with_windows(name, "", false).unwrap(); // deleting twice is fine
+    }
+
+    #[test]
+    fn turned_off_in_task_manager() {
+        let name = "Excavate.Test.Approved";
+        set_start_with_windows(name, "--test", true).unwrap();
+        set_user_key(APPROVED_KEY, &[(name, Value::Bytes(&[3, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8]))]).unwrap();
+        assert!(!starts_with_windows(name), "off in Task Manager");
+        set_start_with_windows(name, "--test", true).unwrap();
+        assert!(starts_with_windows(name), "on again from Excavate");
+        set_start_with_windows(name, "", false).unwrap();
+        assert!(bytes(Root::CurrentUser, APPROVED_KEY, name).is_none());
     }
 
     #[test]

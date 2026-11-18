@@ -180,7 +180,7 @@ pub fn parse_record(rec: &[u8]) -> Option<Record> {
                 let chars = *v.get(64)? as usize;
                 let namespace = *v.get(65)?;
                 if namespace != NAMESPACE_DOS {
-                    let name: Vec<u16> = v.get(66..66 + chars * 2)?.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+                    let name: Vec<u16> = v.get(66..66 + chars * 2)?.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
                     out.names.push((parent, name));
                 }
             }
@@ -243,6 +243,24 @@ pub struct MftRead {
 /// Every file and folder on a volume, from its MFT (`volume` reads the raw volume: a handle, or an image), into
 /// `index` under a root named `drive` ("C:"). By record number, `index.by_record` gives each record's first entry.
 pub fn raw(index: &mut Index, volume: &mut (impl Read + Seek + Send), drive: &str) -> std::io::Result<MftRead> {
+    let mut builder = Builder::new(index, drive);
+    // (One slot per record, made at once before the first record goes in.)
+    let records = std::cell::Cell::new(None);
+    let mut found = read_records(volume, |count| records.set(Some(count)), |number, record| {
+        if let Some(count) = records.take() {
+            builder.expect(index, count);
+        }
+        builder.add(index, number, record)
+    })?;
+    found.names = builder.finish(index);
+    Ok(found)
+}
+
+/// Every record in use on a volume, in record order, to `each` (with its number), after `count` is told how many
+/// records the MFT holds: what `raw` builds from, and what Excavate Bedrock (the service) sends. `names` in what's
+/// returned is left at 0 (the builder counts them).
+pub fn read_records<V: Read + Seek + Send, C: FnOnce(usize), E: FnMut(u64, Record)>(volume: &mut V, count: C, mut each: E)
+    -> std::io::Result<MftRead> {
     let bad = |what: &str| std::io::Error::other(what.to_string());
     let mut sector = vec![0u8; 4096];
     volume.seek(SeekFrom::Start(0))?;
@@ -258,14 +276,7 @@ pub fn raw(index: &mut Index, volume: &mut (impl Read + Seek + Send), drive: &st
         return Err(bad("the MFT's first record doesn't check"));
     }
     let extents = mft_extents(&boot, &record0[..record_size]).ok_or_else(|| bad("the MFT's pieces aren't readable"))?;
-    let root = index.push(NONE, drive.trim_end_matches('\\'), Meta { size: None, modified: 0, flags: DIR });
-    let first = index.len();
-    // Each entry pushed here: the record of its folder, and its own record.
-    let mut parents: Vec<u64> = Vec::new();
-    let mut owners: Vec<u32> = Vec::new();
     let mut found = MftRead::default();
-    // Names and sizes in extension records, for their base records (rare: files with very many links or pieces).
-    let mut extra: HashMap<u64, Vec<Record>> = HashMap::new();
     let mut number = 0u64;
     // Pieces of 8 MB (whole records), read ahead on a thread of their own while this one parses each record and adds
     // its entries, in record order. (Parsing the pieces' records on every core instead took 7 times the
@@ -281,11 +292,7 @@ pub fn raw(index: &mut Index, volume: &mut (impl Read + Seek + Send), drive: &st
             done += want as u64;
         }
     }
-    // One slot per record, made at once (the MFT says how many it holds).
-    let total = pieces.iter().map(|&(_, bytes)| bytes / record_size).sum::<usize>();
-    if index.by_record.len() < total {
-        index.by_record.resize(total, NONE);
-    }
+    count(pieces.iter().map(|&(_, bytes)| bytes / record_size).sum::<usize>());
     let volume: &mut (dyn ReadSeek + Send) = volume;
     std::thread::scope(|scope| -> std::io::Result<()> {
         // Two pieces read ahead at most; buffers come back to be read into again.
@@ -319,61 +326,99 @@ pub fn raw(index: &mut Index, volume: &mut (impl Read + Seek + Send), drive: &st
                 }
                 let Some(record) = parse_record(rec) else { continue };
                 found.in_use += 1;
-                if record.base != 0 {
-                    extra.entry(record.base).or_default().push(record);
-                    continue;
-                }
-                // NTFS's own files ($MFT, $LogFile…) and the root itself, which is the drive's entry.
-                if n < FIRST_USER_RECORD {
-                    if n == ROOT_RECORD {
-                        set_record(index, n, root);
-                    }
-                    continue;
-                }
-                add_names(index, &mut parents, &mut owners, &mut found, n, &record, &record);
+                each(n, record);
             }
             let _ = spare_tx.send(buffer);
         }
         Ok(())
     })?;
-    // What extension records add: more names (with their base's facts), or the size when the base hadn't it.
-    for (base, records) in extra {
-        let Some(&entry) = index.by_record.get(base as usize).filter(|&&e| e != NONE) else { continue };
-        let facts = index.meta(entry);
-        for record in records {
-            if let Some(size) = record.size.filter(|_| facts.flags & DIR == 0) {
-                // Every entry of the base record: its names went in one after the other.
-                let mut e = entry as usize;
-                while e < index.len() && owners.get(e - first) == Some(&(base as u32)) {
-                    index.set_facts(e as u32, Some(size), facts.modified);
-                    e += 1;
+    Ok(found)
+}
+
+/// Builds a drive's entries from its records, in any order (`add` each, then `finish`).
+pub struct Builder {
+    root: u32,
+    first: usize,
+    /// Each entry pushed here: the record of its folder, and its own record.
+    parents: Vec<u64>,
+    owners: Vec<u32>,
+    /// Names and sizes in extension records, for their base records (rare: files with very many links or pieces).
+    extra: HashMap<u64, Vec<Record>>,
+    names: u64,
+}
+
+impl Builder {
+    /// The drive's entry ("C:") made in `index`; its files follow.
+    pub fn new(index: &mut Index, drive: &str) -> Builder {
+        let root = index.push(NONE, drive.trim_end_matches('\\'), Meta { size: None, modified: 0, flags: DIR });
+        Builder { root, first: index.len(), parents: Vec::new(), owners: Vec::new(), extra: HashMap::new(), names: 0 }
+    }
+
+    /// Room for this many records (the MFT says how many it holds), made at once.
+    pub fn expect(&self, index: &mut Index, records: usize) {
+        if index.by_record.len() < records {
+            index.by_record.resize(records, NONE);
+        }
+    }
+
+    pub fn add(&mut self, index: &mut Index, n: u64, record: Record) {
+        if record.base != 0 {
+            self.extra.entry(record.base).or_default().push(record);
+            return;
+        }
+        // NTFS's own files ($MFT, $LogFile…) and the root itself, which is the drive's entry.
+        if n < FIRST_USER_RECORD {
+            if n == ROOT_RECORD {
+                set_record(index, n, self.root);
+            }
+            return;
+        }
+        add_names(index, &mut self.parents, &mut self.owners, &mut self.names, n, &record, &record);
+    }
+
+    /// Joins every name to its folder; returns how many names went in.
+    pub fn finish(mut self, index: &mut Index) -> u64 {
+        let (root, first) = (self.root, self.first);
+        // What extension records add: more names (with their base's facts), or the size when the base hadn't it.
+        for (base, records) in std::mem::take(&mut self.extra) {
+            let Some(&entry) = index.by_record.get(base as usize).filter(|&&e| e != NONE) else { continue };
+            let facts = index.meta(entry);
+            for record in records {
+                if let Some(size) = record.size.filter(|_| facts.flags & DIR == 0) {
+                    // Every entry of the base record: its names went in one after the other.
+                    let mut e = entry as usize;
+                    while e < index.len() && self.owners.get(e - first) == Some(&(base as u32)) {
+                        index.set_facts(e as u32, Some(size), facts.modified);
+                        e += 1;
+                    }
+                }
+                let start = index.len();
+                let names = Record { names: record.names.clone(), ..Record::default() };
+                add_names(index, &mut self.parents, &mut self.owners, &mut self.names, base, &Record::default(), &names);
+                let size = index.size(entry);
+                for e in start..index.len() {
+                    index.set_facts(e as u32, size, facts.modified);
+                    index.set_flags(e as u32, facts.flags);
                 }
             }
-            let start = index.len();
-            let names = Record { names: record.names.clone(), ..Record::default() };
-            add_names(index, &mut parents, &mut owners, &mut found, base, &Record::default(), &names);
-            let size = index.size(entry);
-            for e in start..index.len() {
-                index.set_facts(e as u32, size, facts.modified);
-                index.set_flags(e as u32, facts.flags);
+        }
+        // Parents can come after their children, so they're joined once everything is in. A name whose folder isn't
+        // there ($Extend's files, or a folder that was being deleted) goes, with whatever is inside it.
+        for (n, parent) in self.parents.into_iter().enumerate() {
+            let entry = (first + n) as u32;
+            let at = parent as usize;
+            let folder = if parent == ROOT_RECORD { root } else { index.by_record.get(at).copied().unwrap_or(NONE) };
+            index.parents.set(entry as usize, folder);
+            if folder == NONE || parent == EXTEND_RECORD {
+                index.parents.set(entry as usize, root);
+                index.remove(entry);
             }
         }
+        index.unordered();
+        index.forget_joined_roots();
+        index.settle();
+        self.names
     }
-    // Parents can come after their children, so they're joined once everything is in. A name whose folder isn't
-    // there ($Extend's files, or a folder that was being deleted) goes, with whatever is inside it.
-    for (n, parent) in parents.into_iter().enumerate() {
-        let entry = (first + n) as u32;
-        let at = parent as usize;
-        let folder = if parent == ROOT_RECORD { root } else { index.by_record.get(at).copied().unwrap_or(NONE) };
-        index.parents.set(entry as usize, folder);
-        if folder == NONE || parent == EXTEND_RECORD {
-            index.parents.set(entry as usize, root);
-            index.remove(entry);
-        }
-    }
-    index.forget_joined_roots();
-    index.settle();
-    Ok(found)
 }
 
 pub(crate) fn set_record(index: &mut Index, record: u64, entry: u32) {
@@ -386,7 +431,7 @@ pub(crate) fn set_record(index: &mut Index, record: u64, entry: u32) {
     }
 }
 
-fn add_names(index: &mut Index, parents: &mut Vec<u64>, owners: &mut Vec<u32>, found: &mut MftRead, number: u64, facts: &Record,
+fn add_names(index: &mut Index, parents: &mut Vec<u64>, owners: &mut Vec<u32>, count: &mut u64, number: u64, facts: &Record,
              names: &Record) {
     let mut flags = if facts.is_dir { DIR } else { 0 };
     if facts.attributes & FILE_ATTRIBUTE_HIDDEN != 0 { flags |= HIDDEN; }
@@ -409,7 +454,7 @@ fn add_names(index: &mut Index, parents: &mut Vec<u64>, owners: &mut Vec<u32>, f
         parents.push(*parent);
         owners.push(number as u32);
         set_record(index, number, entry);
-        found.names += 1;
+        *count += 1;
     }
 }
 
@@ -514,7 +559,7 @@ pub mod image {
             a[20..22].copy_from_slice(&24u16.to_le_bytes());
             a.extend_from_slice(&body);
         }
-        while a.len() % 8 != 0 {
+        while !a.len().is_multiple_of(8) {
             a.push(0);
         }
         let len = a.len() as u32;

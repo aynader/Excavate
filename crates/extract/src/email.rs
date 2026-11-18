@@ -36,11 +36,10 @@ pub fn eml(path: &Path) -> Result<String, String> {
         body.push_str(&part);
         body.push('\n');
     }
-    if body.trim().is_empty() {
-        if let Some(html) = message.body_html(0) {
+    if body.trim().is_empty()
+        && let Some(html) = message.body_html(0) {
             body = crate::html::to_text(&html);
         }
-    }
     text.push_str(&body);
     let attachments: Vec<String> = message.attachments().filter_map(|part| part.attachment_name().map(str::to_string)).collect();
     if !attachments.is_empty() {
@@ -59,7 +58,7 @@ pub fn msg(path: &Path) -> Result<String, String> {
                 let mut bytes = Vec::new();
                 stream.by_ref().take(16 << 20).read_to_end(&mut bytes).ok()?;
                 return Some(if wide {
-                    let units: Vec<u16> = bytes.chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+                    let units: Vec<u16> = bytes.as_chunks::<2>().0.iter().map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
                     String::from_utf16_lossy(&units).trim_end_matches('\0').to_string()
                 } else {
                     crate::text::decode(&bytes).unwrap_or_default().trim_end_matches('\0').to_string()

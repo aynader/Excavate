@@ -92,7 +92,7 @@ fn place(kind: &str, sample: &[String], root: &Path, whole: bool) -> Vec<String>
 }
 
 /// What Excavate's settings say for the kind and choice, as if "Read everything now" had just been pressed.
-fn settings(kind: &str, choice: &str, folders: Vec<String>) -> Settings {
+pub(crate) fn settings(kind: &str, choice: &str, folders: Vec<String>) -> Settings {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
     let mut s = Settings { setup_done: true, first_run_done: true, folders, exclude: Vec::new(), ..Settings::default() };
     (s.pictures_on, s.seeing_on, s.listening_on, s.videos_on, s.video_text, s.video_speech) = (false, false, false, false, false, false);
@@ -133,7 +133,7 @@ fn counted(kind: &str, status: &Status) -> (u64, u64) {
 }
 
 /// Nothing left to do of any kind, the kind's work counted, and the indexer saying so.
-fn finished(kind: &str, status: &Status) -> bool {
+pub(crate) fn finished(kind: &str, status: &Status) -> bool {
     let (done, all) = counted(kind, status);
     status.state == "idle" && all > 0 && done >= all && status.read + status.failed >= status.files && status.deep_queued == 0
         && status.looking.iter().all(|l| l.queued + l.videos_queued + l.documents_queued == 0)

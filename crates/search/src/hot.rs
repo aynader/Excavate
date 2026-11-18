@@ -115,7 +115,7 @@ impl HotIndex {
                 name,
                 folder,
                 is_folder: metadata.is_dir(),
-                size: metadata.is_file().then(|| metadata.len()),
+                size: metadata.is_file().then_some(metadata.len()),
                 modified: metadata.modified().ok().and_then(seconds),
                 opened: Some(*opened),
                 origin: Some(Origin::Recent),
@@ -130,7 +130,7 @@ impl HotIndex {
                 name,
                 folder,
                 is_folder: metadata.is_dir(),
-                size: metadata.is_file().then(|| metadata.len()),
+                size: metadata.is_file().then_some(metadata.len()),
                 modified: metadata.modified().ok().and_then(seconds),
                 opens: *opens,
                 opened: Some(*last),
@@ -146,7 +146,7 @@ impl HotIndex {
                     name: path.file_name()?.to_string_lossy().into_owned(),
                     folder: path.parent()?.display().to_string(),
                     is_folder: metadata.is_dir(),
-                    size: metadata.is_file().then(|| metadata.len()),
+                    size: metadata.is_file().then_some(metadata.len()),
                     modified: metadata.modified().ok().and_then(seconds),
                     hidden: is_hidden(metadata),
                     origin: Some(Origin::Folder),
@@ -204,7 +204,7 @@ impl HotIndex {
             })
             .collect();
         if terms.words.is_empty() {
-            ranked.sort_by(|a, b| b.candidate.opened.cmp(&a.candidate.opened));
+            ranked.sort_by_key(|hot| std::cmp::Reverse(hot.candidate.opened));
         } else {
             ranked.sort_by(|a, b| b.score.total_cmp(&a.score));
         }

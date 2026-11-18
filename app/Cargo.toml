@@ -7,6 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+extract.workspace = true
 slint = { version = "1.18", default-features = false, features = [
     "std",
     "compat-1-2",
@@ -17,6 +18,7 @@ slint = { version = "1.18", default-features = false, features = [
     "unstable-winit-030",
     "raw-window-handle-06",
 ] }
+common.workspace = true
 config.workspace = true
 content.workspace = true
 mark.workspace = true
@@ -29,6 +31,8 @@ winsys.workspace = true
 windows.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# The indexer's catalog, read-only: whether a picture or a video is still waiting to be read (its preview covered till then).
+rusqlite = { version = "0.41", features = ["bundled"] }
 raw-window-handle = "0.6"
 sha2 = "0.11"
 zip = { version = "9", default-features = false, features = ["deflate"] }
@@ -36,3 +40,6 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 [build-dependencies]
 slint-build = "1.18"
 embed-resource = "3"
+
+[lints]
+workspace = true

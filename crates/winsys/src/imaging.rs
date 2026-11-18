@@ -178,13 +178,7 @@ pub fn exif_time(text: &str) -> Option<i64> {
     if !(1900..=2200).contains(&year) || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
         return None;
     }
-    // Days since 1970 from a civil date (Howard Hinnant's algorithm).
-    let (y, m) = if month <= 2 { (year - 1, month + 9) } else { (year, month - 3) };
-    let era = y.div_euclid(400);
-    let year_of_era = y - era * 400;
-    let day_of_year = (153 * m + 2) / 5 + day - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    let days = era * 146_097 + day_of_era - 719_468;
+    let days = common::days_from_civil(year, month, day);
     Some(days * 86_400 + hour * 3600 + minute * 60 + second)
 }
 

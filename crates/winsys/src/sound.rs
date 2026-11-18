@@ -2,7 +2,6 @@
 //! decoded and resampled by Media Foundation (as `audio.rs` does for the speech models), played by WASAPI in shared
 //! mode. The device's own clock says where the sound is (`Position`), and a playing video keeps to it.
 
-use crate::wide;
 use std::sync::atomic::{AtomicU64, Ordering};
 use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
 use windows::Win32::Media::Audio::{
@@ -10,10 +9,7 @@ use windows::Win32::Media::Audio::{
     AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, WAVEFORMATEX,
 };
 use windows::Win32::Media::MediaFoundation::{
-    IMFAttributes, IMFMediaType, IMFSourceReader, MF_MT_AUDIO_BITS_PER_SAMPLE, MF_MT_AUDIO_NUM_CHANNELS, MF_MT_AUDIO_SAMPLES_PER_SECOND,
-    MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MF_SOURCE_READER_ALL_STREAMS, MF_SOURCE_READER_FIRST_AUDIO_STREAM, MF_SOURCE_READERF_ENDOFSTREAM,
-    MF_VERSION, MFAudioFormat_Float, MFCreateAttributes, MFCreateMediaType, MFCreateSourceReaderFromURL, MFMediaType_Audio,
-    MFSTARTUP_LITE, MFShutdown, MFStartup,
+    MF_SOURCE_READER_FIRST_AUDIO_STREAM, MF_SOURCE_READERF_ENDOFSTREAM, MF_VERSION, MFSTARTUP_LITE, MFShutdown, MFStartup,
 };
 use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL};
 use windows::Win32::System::Com::StructuredStorage::{PROPVARIANT, PropVariantClear};
@@ -47,7 +43,7 @@ impl Position {
 }
 
 /// `play`'s error for a file with no sound in it (a video without a soundtrack).
-pub const NO_SOUND: &str = "no sound in it";
+pub const NO_SOUND: &str = crate::audio::NO_SOUND;
 
 /// Plays the sound of `path` from `from` seconds, until `keep_on` says stop or it ends (then after what was handed to
 /// the device has been heard). `position` follows it. Says whether it reached the end. COM must be initialized on the
@@ -56,6 +52,7 @@ pub fn play(path: &str, from: f64, keep_on: &dyn Fn() -> bool, position: &Positi
     let error = |error: windows::core::Error| error.message().to_string();
     // SAFETY: Media Foundation started and shut down here; COM objects created, used and released here; buffers
     // written within the length the device gave.
+    crate::media::check()?;
     unsafe {
         MFStartup(MF_VERSION, MFSTARTUP_LITE).map_err(error)?;
         let result = (|| -> Result<bool, String> {
@@ -76,7 +73,7 @@ pub fn play(path: &str, from: f64, keep_on: &dyn Fn() -> bool, position: &Positi
                 wBitsPerSample: 32,
                 cbSize: 0,
             };
-            let reader = open(path, rate, channels as u32)?;
+            let reader = crate::audio::reader(path, rate, channels as u32)?;
             let stream = MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32;
             if from > 0.0 {
                 let mut at = PROPVARIANT::default();
@@ -125,7 +122,7 @@ pub fn play(path: &str, from: f64, keep_on: &dyn Fn() -> bool, position: &Positi
                             buffer.Lock(&mut data, None, Some(&mut length)).map_err(error)?;
                             if !data.is_null() {
                                 let bytes = std::slice::from_raw_parts(data, length as usize);
-                                pending.extend(bytes.chunks_exact(4).map(|four| f32::from_le_bytes([four[0], four[1], four[2], four[3]])));
+                                pending.extend(bytes.as_chunks::<4>().0.iter().map(|four| f32::from_le_bytes([four[0], four[1], four[2], four[3]])));
                             }
                             let _ = buffer.Unlock();
                         }
@@ -164,28 +161,5 @@ pub fn play(path: &str, from: f64, keep_on: &dyn Fn() -> bool, position: &Positi
         position.clear();
         let _ = MFShutdown();
         result
-    }
-}
-
-fn open(path: &str, rate: u32, channels: u32) -> Result<IMFSourceReader, String> {
-    let error = |error: windows::core::Error| error.message().to_string();
-    let file = wide(path);
-    // SAFETY: the reader and its attributes are created here; only the first audio stream is read.
-    unsafe {
-        let mut attributes: Option<IMFAttributes> = None;
-        MFCreateAttributes(&mut attributes, 1).map_err(error)?;
-        let attributes = attributes.ok_or("no attributes")?;
-        let reader = MFCreateSourceReaderFromURL(PCWSTR(file.as_ptr()), &attributes).map_err(error)?;
-        let stream = MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32;
-        reader.SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS.0 as u32, false).map_err(error)?;
-        reader.SetStreamSelection(stream, true).map_err(|_| NO_SOUND.to_string())?;
-        let wanted: IMFMediaType = MFCreateMediaType().map_err(error)?;
-        wanted.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio).map_err(error)?;
-        wanted.SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_Float).map_err(error)?;
-        wanted.SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND, rate).map_err(error)?;
-        wanted.SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, channels).map_err(error)?;
-        wanted.SetUINT32(&MF_MT_AUDIO_BITS_PER_SAMPLE, 32).map_err(error)?;
-        reader.SetCurrentMediaType(stream, None, &wanted).map_err(error)?;
-        Ok(reader)
     }
 }

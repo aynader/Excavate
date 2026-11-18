@@ -38,10 +38,7 @@ impl Measured {
         let path = paths.devices();
         if let (Some(folder), Ok(json)) = (path.parent(), serde_json::to_vec_pretty(self)) {
             let _ = std::fs::create_dir_all(folder);
-            let temporary = path.with_extension("json.new");
-            if std::fs::write(&temporary, json).is_ok() {
-                let _ = std::fs::rename(&temporary, &path);
-            }
+            let _ = crate::write_atomic(&path, &json);
         }
     }
 

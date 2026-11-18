@@ -209,11 +209,10 @@ fn everything_cycles(everything: &Everything, exe: &Path, db: &Path, runs: usize
             }
             // Until it holds as many entries as before (within 1%: a few change meanwhile).
             loop {
-                if let Some(now) = total() {
-                    if now as f64 >= expected as f64 * 0.99 && everything.status().db_loaded {
+                if let Some(now) = total()
+                    && now as f64 >= expected as f64 * 0.99 && everything.status().db_loaded {
                         break;
                     }
-                }
                 if started.elapsed() > Duration::from_secs(3600) {
                     break;
                 }

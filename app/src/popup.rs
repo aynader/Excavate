@@ -87,11 +87,10 @@ pub fn take_back_keyboard(app: &App) {
 
 /// The monitor Excavate opens on: the one chosen, or the one the mouse is on (also while the one chosen is unplugged).
 pub fn opening_monitor(settings: &Settings) -> winsys::display::Monitor {
-    if !settings.monitor.is_empty() {
-        if let Some(screen) = winsys::display::screens().into_iter().find(|screen| screen.id == settings.monitor) {
+    if !settings.monitor.is_empty()
+        && let Some(screen) = winsys::display::screens().into_iter().find(|screen| screen.id == settings.monitor) {
             return screen.monitor;
         }
-    }
     let (x, y) = winsys::display::cursor();
     winsys::display::monitor_at(x, y)
 }
@@ -206,11 +205,10 @@ pub fn prewarm(app: &App) {
         let _ = slint::invoke_from_event_loop(|| with_app(|app| {
             app.warming.set(false);
             window_ready(app);
-            if !app.visible.get() {
-                if let Some(ui) = app.ui.upgrade() {
+            if !app.visible.get()
+                && let Some(ui) = app.ui.upgrade() {
                     let _ = ui.hide();
                 }
-            }
             // Wanted already. Once the news that hiding it lost the keyboard is in, or that would close it again.
             if app.show_wanted.take() {
                 let _ = slint::invoke_from_event_loop(|| with_app(|app| open(app)));
@@ -229,12 +227,28 @@ fn style_window(app: &App, handle: isize) {
     winsys::window::style_popup(handle, dark, (r, g, b), app.settings.borrow().acrylic);
 }
 
+/// Closes the popup for settings to open in front: see `park`.
+pub fn hide_for_settings(app: &App) {
+    app.handing_over.set(true);
+    hide(app);
+    app.handing_over.set(false);
+}
+
 pub fn hide(app: &App) {
     let Some(ui) = app.ui.upgrade() else { return };
     if !app.visible.get() {
         return;
     }
     app.visible.set(false);
+    ui.set_shortcuts_open(false);
+    ui.set_why_open(false);
+    app.chips_to_words();
+    app.mark(-1, "clear", -1);
+    // A rename left half done is dropped (the name stays as it was), so the keys go to the search next time.
+    if ui.get_renaming() >= 0 {
+        ui.set_renaming(-1);
+        ui.invoke_focus_field();
+    }
     app.stop_video();
     app.hidden_at.set(Some(Instant::now()));
     keep_size(app, &ui);
@@ -248,6 +262,9 @@ pub fn hide(app: &App) {
     app.image_text_off();
     if ui.get_enlarged() {
         ui.invoke_close_enlarged();
+    }
+    if ui.get_text_open() {
+        ui.invoke_close_text();
     }
     // However it closed. Once what closed it is done with the search (what's recorded for a result opened), and before anything
     // can open it again, so nothing old shows.
@@ -278,7 +295,8 @@ fn park(app: &App, ui: &Popup) {
     ui.set_reading(slint::SharedString::new());
     // (EXCAVATE_NO_PARK: hidden as before, to compare.)
     if handle != 0 && std::env::var_os("EXCAVATE_NO_PARK").is_none() && winsys::window::cloak(handle, true) {
-        if winsys::window::give_back(handle, app.before.get()) {
+        // Settings opens next: giving the keyboard back first would leave it behind the window that had it.
+        if app.handing_over.get() || winsys::window::give_back(handle, app.before.get()) {
             app.parked.set(true);
             return;
         }
@@ -322,12 +340,29 @@ pub fn toggle(app: &App, trigger: Trigger) {
 pub fn wire(ui: &Popup) {
     ui.on_edited(|text| with_app(|app| app.edited(&text)));
     ui.on_activated(|index, action| with_app(|app| act(app, index.max(0) as usize, &action)));
+    ui.on_why_asked(|index| with_app(|app| {
+        if let Some(ui) = app.ui.upgrade() {
+            let lines: Vec<slint::SharedString> = app.why(index.max(0) as usize).into_iter().map(Into::into).collect();
+            ui.set_why_lines(slint::ModelRc::new(slint::VecModel::from(lines)));
+        }
+    }));
+    ui.on_office_area(|x, y, width, height, uncovered| with_app(|app| app.office_area(x, y, width, height, uncovered)));
+    ui.on_chip_back(|| with_app(|app| app.chip_back(None)));
+    ui.on_chip_removed(|index| with_app(|app| app.chip_back(Some(index.max(0) as usize))));
+    ui.on_pin_search(|text| with_app(|app| app.pin_search(&text)));
+    ui.on_mark(|index, mode, selected| with_app(|app| app.mark(index, &mode, selected)));
+    ui.on_drag_out(|index| with_app(|app| drag_out(app, index.max(0) as usize)));
+    ui.on_rename_done(|index, name| with_app(|app| renamed(app, index.max(0) as usize, name.trim())));
+    ui.on_copies_clicked(|index| with_app(|app| app.open_copies(index.max(0) as usize)));
+    ui.on_copies_activated(|index, action| with_app(|app| app.copy_activated(index.max(0) as usize, &action)));
     ui.on_filter_chosen(|index| with_app(|app| app.filter_chosen(index.max(0) as usize)));
     ui.on_text_bytes(|text| text.len() as i32);
     ui.on_toggle_chosen(|index| with_app(|app| app.toggle_chosen(index)));
     ui.on_enlarged_changed(|on| with_app(|app| app.enlarged_changed(on)));
     ui.on_enlarged_zoomed(|settling| with_app(|app| app.enlarged_zoomed(settling)));
     ui.on_enlarged_move(|by| with_app(|app| app.enlarged_move(by)));
+    ui.on_text_open_changed(|on| with_app(|app| app.text_open_changed(on)));
+    ui.on_text_move(|by| with_app(|app| app.text_move(by)));
     ui.on_selection_moved(|index| with_app(|app| app.selection_moved(index)));
     ui.on_visible_rows(|first, count| with_app(|app| app.visible_rows(first, count)));
     ui.on_context_menu(|index, x, y| with_app(|app| context_menu(app, index.max(0) as usize, x, y)));
@@ -339,7 +374,7 @@ pub fn wire(ui: &Popup) {
     ui.on_show_more(|| with_app(|app| app.show_all()));
     ui.on_escape(|| with_app(|app| hide(app)));
     ui.on_settings_clicked(|| with_app(|app| {
-        hide(app);
+        hide_for_settings(app);
         crate::setup::open_on(app, crate::setup::GENERAL);
     }));
     ui.on_reveal(|| with_app(|app| app.reveal()));
@@ -356,6 +391,14 @@ pub fn wire(ui: &Popup) {
         }
     }));
     ui.on_banner_clicked(|| with_app(|app| banner_clicked(app)));
+    ui.on_banner_dismissed(|| {
+        with_app(|app| {
+            // "Not now" on the offer to install, which isn't made again.
+            app.settings.borrow_mut().install_offer_closed = true;
+            app.settings.borrow().save(&app.paths);
+            app.update_status();
+        })
+    });
     ui.on_reading_clicked(|| with_app(|app| {
         // Paused by the person: a click resumes it.
         if app.settings.borrow().paused(crate::app::now()) {
@@ -363,7 +406,7 @@ pub fn wire(ui: &Popup) {
             app.follow_reading(true);
             return;
         }
-        hide(app);
+        hide_for_settings(app);
         crate::setup::open_on(app, crate::setup::ACTIVITY);
     }));
     ui.on_preview_toggled(|on| with_app(|app| {
@@ -376,7 +419,9 @@ pub fn wire(ui: &Popup) {
         match event {
             // Losing the keyboard to another window hides the popup, as Start and Search do.
             winit::event::WindowEvent::Focused(focused) if !*focused => with_app(|app| {
-                if app.visible.get() && !crate::bench::running() && !app.verifying.get() {
+                // (A sandbox's tests can keep it open, `EXCAVATE_KEEP_OPEN`: the person may be using the PC meanwhile.)
+                let kept = std::env::var_os("EXCAVATE_HOME").is_some() && std::env::var_os("EXCAVATE_KEEP_OPEN").is_some();
+                if app.visible.get() && !crate::bench::running() && !app.verifying.get() && !kept {
                     hide(app);
                 }
             }),
@@ -403,12 +448,11 @@ fn frame_drawn(app: &App) {
         log(&format!("zoomed in {:.1} ms", at.elapsed().as_secs_f64() * 1000.0));
     }
     // (Not the frames of a window being created out of sight.)
-    if app.visible.get() {
-        if let Some(started) = app.show_started.take() {
+    if app.visible.get()
+        && let Some(started) = app.show_started.take() {
             log(&format!("popup on screen in {:.1} ms", started.elapsed().as_secs_f64() * 1000.0));
             crate::bench::shown(started.elapsed());
         }
-    }
     crate::bench::frame();
 }
 
@@ -419,6 +463,7 @@ pub fn start_tray(app: &App) {
         "Alt+S".parse().unwrap()
     });
     let options = Options {
+        class: config::window_class("Shell"),
         tooltip: format!("Excavate ({hotkey})"),
         icon_for_dark_taskbar: 2,
         icon_for_light_taskbar: 3,
@@ -610,14 +655,14 @@ fn tray_event(app: &App, event: Event) {
         }
         Event::Menu(id @ (TRAY_PAUSE_HOUR | TRAY_PAUSE_TOMORROW | TRAY_PAUSE_UNTIL_ON | TRAY_RESUME)) => pause_chosen(app, id),
         Event::Menu(TRAY_SETTINGS) => {
-            hide(app);
+            hide_for_settings(app);
             let onboarding = !app.settings.borrow().setup_done;
             crate::setup::open(app, onboarding);
         }
         Event::Menu(TRAY_LOG) => {
             let _ = winsys::shell::open(0, &app.paths.log().display().to_string());
         }
-        Event::Menu(TRAY_QUIT) => quit(app),
+        Event::Menu(TRAY_QUIT) | Event::Quit => quit(app),
         Event::Menu(_) => {}
     }
 }
@@ -626,8 +671,8 @@ pub fn quit(app: &App) {
     let started = std::time::Instant::now();
     let step = |what: &str| log(&format!("quitting: {what} ({} ms)", started.elapsed().as_millis()));
     hide(app);
-    app.stop_video();
-    step("preview stopped");
+    let stopped = app.stop_video_and_wait(std::time::Duration::from_secs(2));
+    step(if stopped { "preview stopped" } else { "preview stopped (its video didn't let go in 2 s)" });
     app.indexer.stop();
     step("indexer stopped");
     crate::own_index::stop();
@@ -773,9 +818,35 @@ pub fn fix_everything(app: &App) {
 }
 
 fn banner_clicked(app: &App) {
+    // Undo, just after a delete: back from the Recycle Bin.
+    if app.ui.upgrade().is_some_and(|ui| ui.get_banner_action() == "Undo") {
+        if let Some(paths) = app.take_undo() {
+            let owner = app.hwnd.get();
+            on_a_thread(move || {
+                let result = winsys::actions::restore(owner, &paths);
+                move |app: &App| {
+                    match result {
+                        Ok(n) if n == paths.len() => app.notice(if n == 1 { "Put back" } else { "Put back, all of them" }),
+                        Ok(n) => app.notice(&format!("{n} of {} put back", paths.len())),
+                        Err(error) => app.notice(&format!("Couldn't put it back: {error}")),
+                    }
+                    app.search_again_soon();
+                }
+            });
+        }
+        return;
+    }
     if !app.settings.borrow().setup_done {
-        hide(app);
+        hide_for_settings(app);
         crate::setup::open(app, true);
+        return;
+    }
+    // The offer to install: this copy starts again to show the install screen, and quits.
+    let offer = app.ui.upgrade().is_some_and(|ui| ui.get_banner_dismiss() != "");
+    if offer && app.install_offered() {
+        if crate::install::start_install_screen() {
+            quit(app);
+        }
         return;
     }
     if app.everything_fixing().is_some() {
@@ -789,15 +860,121 @@ fn banner_clicked(app: &App) {
         Some(_) => check_everything(app),
         // Settings → General has "Install Everything".
         None => {
-            hide(app);
+            hide_for_settings(app);
             crate::setup::open_on(app, 0);
         }
     }
 }
 
 /// What a result does.
-pub fn act(app: &App, index: usize, action: &str) {
+/// A result renamed in place (Enter in its name field): the file gets the new name, unless it's empty or unchanged.
+fn renamed(app: &App, index: usize, name: &str) {
+    let Some(ui) = app.ui.upgrade() else { return };
+    ui.set_renaming(-1);
+    ui.invoke_focus_field();
     let Some(target) = app.target(index) else { return };
+    let old = std::path::Path::new(&target.path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    if name.is_empty() || name == old {
+        return;
+    }
+    match winsys::actions::rename(&target.path, name) {
+        Ok(path) => {
+            log(&format!("renamed: {} to {path}", target.path));
+            app.renamed_in_place(index, name);
+            app.notice(&format!("Renamed to \u{201c}{name}\u{201d}"));
+        }
+        Err(error) => app.notice(&format!("Couldn't rename it: {error}")),
+    }
+}
+
+pub fn act(app: &App, index: usize, action: &str) {
+    // Several selected: Copy, Show in folder and Delete take them all.
+    if matches!(action, "copy" | "reveal" | "delete") && let Some(paths) = app.marked_paths() {
+        act_on_many(app, &paths, action);
+        return;
+    }
+    let Some(target) = app.target(index) else { return };
+    act_on(app, &target, action);
+}
+
+/// Copy, Show in folder or Delete for several results at once.
+fn act_on_many(app: &App, paths: &[String], action: &str) {
+    let owner = app.hwnd.get();
+    let count = paths.len();
+    let result = match action {
+        "copy" => winsys::shell::copy_files(owner, paths).map(|()| app.notice(&format!("Copied {count} files"))),
+        "reveal" => {
+            hide(app);
+            winsys::shell::reveal_many(paths)
+        }
+        "delete" => {
+            let paths = paths.to_vec();
+            on_a_thread(move || {
+                let result = winsys::actions::recycle(owner, &paths);
+                move |app: &App| match result {
+                    Ok(()) => {
+                        log(&format!("to the Recycle Bin: {count} files"));
+                        app.mark(-1, "clear", -1);
+                        app.offer_undo(paths, format!("Moved {count} files to the Recycle Bin"));
+                        app.search_again_soon();
+                    }
+                    Err(error) => app.notice(&format!("Couldn't do that: {error}")),
+                }
+            });
+            Ok(())
+        }
+        _ => Ok(()),
+    };
+    if let Err(error) = result {
+        log(&format!("{action} {count} files: {error}"));
+        app.notice(&format!("Couldn't do that: {error}"));
+    }
+}
+
+/// The Recycle Bin's work (seconds for a big folder, a network drive or the shell's own hooks) on a thread of its own,
+/// so the popup keeps answering; what `work` returns runs back on the UI thread.
+fn on_a_thread<Then: FnOnce(&App) + Send + 'static>(work: impl FnOnce() -> Then + Send + 'static) {
+    std::thread::spawn(move || {
+        winsys::com_sta();
+        let then = work();
+        let _ = slint::invoke_from_event_loop(move || with_app(|app| then(app)));
+    });
+}
+
+/// A result dragged out of the popup (with the others marked, if it's one of them): into another app, a folder or
+/// the desktop.
+fn drag_out(app: &App, index: usize) {
+    let Some(target) = app.target(index) else { return };
+    let paths = app.marked_paths().filter(|paths| paths.contains(&target.path)).unwrap_or_else(|| vec![target.path.clone()]);
+    if app.dragging.replace(true) {
+        return;
+    }
+    // Not inside Slint's handling of the mouse: Windows' drag runs its own loop until the drop, and Slint's event that
+    // started it has to be over first.
+    slint::Timer::single_shot(Duration::ZERO, move || with_app(|app| {
+        if std::env::var_os("EXCAVATE_HOME").is_some() && std::env::var_os("EXCAVATE_PRETEND_DRAG").is_some() {
+            log(&format!("pretend drag: {} files", paths.len()));
+        } else {
+            match winsys::actions::drag_out(app.hwnd.get(), &paths) {
+                Ok(true) => log(&format!("dragged out: {} files", paths.len())),
+                Ok(false) => log("drag cancelled"),
+                Err(error) => app.notice(&format!("Couldn't drag it: {error}")),
+            }
+        }
+        // Windows' drag took the button's release: Slint is told, or it would take the next move for another drag.
+        if let Some(ui) = app.ui.upgrade() {
+            let scale = app.scale.get().max(0.1);
+            let (x, y) = winsys::window::cursor_in(app.hwnd.get()).unwrap_or((0, 0));
+            let position = slint::LogicalPosition::new(x as f32 / scale, y as f32 / scale);
+            ui.window().dispatch_event(slint::platform::WindowEvent::PointerReleased { position, button: slint::platform::PointerEventButton::Left });
+            ui.window().dispatch_event(slint::platform::WindowEvent::PointerMoved { position });
+        }
+        app.dragging.set(false);
+    }));
+}
+
+/// What a file does: a result, or one of its copies.
+pub fn act_on(app: &App, target: &Target, action: &str) {
     let owner = app.hwnd.get();
     // For tests in a sandbox (`EXCAVATE_PRETEND_OPEN`): what would be opened is logged, nothing starts, and the popup
     // stays.
@@ -806,9 +983,39 @@ pub fn act(app: &App, index: usize, action: &str) {
         return;
     }
     let result = match action {
+        "rename" => {
+            let Some(ui) = app.ui.upgrade() else { return };
+            let index = ui.get_selected();
+            let name = std::path::Path::new(&target.path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            // The part before the extension (a folder: all of it), as Explorer selects it.
+            let select = if target.is_folder { name.len() } else { name.rfind('.').filter(|&at| at > 0).unwrap_or(name.len()) };
+            ui.set_rename_name(name.as_str().into());
+            ui.set_rename_select(select as i32);
+            ui.set_renaming(index);
+            Ok(())
+        }
+        "delete" => {
+            let name = crate::format::display_name(&target.name).to_string();
+            let path = target.path.clone();
+            on_a_thread(move || {
+                let result = winsys::actions::recycle(owner, std::slice::from_ref(&path));
+                move |app: &App| match result {
+                    Ok(()) => {
+                        log(&format!("to the Recycle Bin: {path}"));
+                        // Its row, wherever it is now.
+                        if let Some(index) = app.row_of(&path) {
+                            app.removed_in_place(index);
+                        }
+                        app.offer_undo(vec![path], format!("Moved \u{201c}{name}\u{201d} to the Recycle Bin"));
+                    }
+                    Err(error) => app.notice(&format!("Couldn't do that: {error}")),
+                }
+            });
+            Ok(())
+        }
         "open" => {
             hide(app);
-            app.record_open(&target);
+            app.record_open(target);
             // A video found by a moment opens there, when a player can be asked to.
             match (app.moment(&target.path), crate::seeking::vlc()) {
                 (Some(at), Some(vlc)) => std::process::Command::new(vlc).arg(format!("--start-time={at:.0}")).arg(&target.path).spawn()
@@ -818,7 +1025,7 @@ pub fn act(app: &App, index: usize, action: &str) {
         }
         "reveal" => {
             hide(app);
-            app.record_open(&target);
+            app.record_open(target);
             winsys::shell::reveal(&target.path)
         }
         "runas" => {
@@ -835,7 +1042,7 @@ pub fn act(app: &App, index: usize, action: &str) {
         }),
         "copy-path" => winsys::shell::copy_text(owner, &target.path).map(|()| app.notice("Copied the path")),
         "copy-name" => winsys::shell::copy_text(owner, &target.name).map(|()| app.notice("Copied the name")),
-        "everything" => show_in_everything(app, &target),
+        "everything" => show_in_everything(app, target),
         _ => Ok(()),
     };
     if let Err(error) = result {
@@ -870,6 +1077,9 @@ const MENU_COPY_NAME: u16 = 6;
 const MENU_RUNAS: u16 = 7;
 const MENU_PROPERTIES: u16 = 8;
 const MENU_EVERYTHING: u16 = 9;
+const MENU_RENAME: u16 = 10;
+const MENU_DELETE: u16 = 11;
+const MENU_MORE: u16 = 12;
 
 fn context_menu(app: &App, index: usize, x: f32, y: f32) {
     let Some(target) = app.target(index) else { return };
@@ -885,6 +1095,9 @@ fn context_menu(app: &App, index: usize, x: f32, y: f32) {
         Item::new(MENU_COPY_PATH, "Copy path\tCtrl+Shift+C"),
         Item::new(MENU_COPY_NAME, "Copy name"),
         Item::Separator,
+        Item::new(MENU_RENAME, "Rename\tF2"),
+        Item::new(MENU_DELETE, "Delete\tDel"),
+        Item::Separator,
     ];
     if runnable {
         items.push(Item::new(MENU_RUNAS, "Run as administrator\tCtrl+Shift+Enter"));
@@ -895,8 +1108,17 @@ fn context_menu(app: &App, index: usize, x: f32, y: f32) {
         items.push(Item::Separator);
         items.push(Item::new(MENU_EVERYTHING, "Show in Everything"));
     }
+    items.push(Item::Separator);
+    items.push(Item::new(MENU_MORE, "More options"));
     let (sx, sy) = screen_point(app, x, y);
     let chosen = winsys::menu::popup(app.hwnd.get(), &items, sx, sy, 0);
+    if chosen == Some(MENU_MORE) {
+        // Windows' own menu, where this one was.
+        if let Err(error) = winsys::actions::shell_menu(app.hwnd.get(), &target.path, sx, sy) {
+            app.notice(&format!("Couldn't show Windows' menu: {error}"));
+        }
+        return;
+    }
     log(&format!("context menu for {} at {sx},{sy}: {chosen:?} (error {})", target.path,
                  winsys::menu::LAST_ERROR.load(std::sync::atomic::Ordering::Relaxed)));
     let action = match chosen {
@@ -908,6 +1130,8 @@ fn context_menu(app: &App, index: usize, x: f32, y: f32) {
         Some(MENU_COPY_NAME) => "copy-name",
         Some(MENU_RUNAS) => "runas",
         Some(MENU_PROPERTIES) => "properties",
+        Some(MENU_RENAME) => "rename",
+        Some(MENU_DELETE) => "delete",
         Some(MENU_EVERYTHING) => "everything",
         _ => return,
     };

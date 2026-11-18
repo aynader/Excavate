@@ -6,6 +6,7 @@ import { Theme } from "theme.slint";
 import { Bar, Glyph, Keycap, Menu } from "widgets.slint";
 export { Theme }
 export { SettingsWindow, FolderItem, ReadingCard, TagRow, DemoRow } from "settings.slint";
+export { InstallWindow } from "install.slint";
 
 export struct Row {
     name: styled-text,
@@ -18,8 +19,20 @@ export struct Row {
     rtl: bool,
     meta: string,
     badge: string,
+    // "+3 copies": the same image in other places, folded into this row.
+    copies: string,
     icon: image,
     has-icon: bool,
+}
+
+// One of a result's copies, in the list "+3 copies" opens: the same file elsewhere.
+export struct CopyRow {
+    name: string,
+    folder: string,
+    icon: image,
+    has-icon: bool,
+    // Kept online only (OneDrive and the like).
+    online: bool,
 }
 
 export struct Preview {
@@ -28,6 +41,8 @@ export struct Preview {
     kind: string,
     facts: string,
     path: string,
+    // "Also in Desktop and Downloads": the same image's other places (its row says "+2 copies").
+    copies: string,
     image: image,
     has-image: bool,
     text: string,
@@ -46,6 +61,21 @@ export struct Preview {
     // Where it is (0 to 1), and "1:23 / 4:05".
     progress: float,
     time: string,
+    // An Office file shown by Windows' own preview handler, in a window of its own over the image's place.
+    office: bool,
+}
+
+/// A piece of a file's text as the index keeps it, opened large (whole_text.rs): a heading where a part starts ("Said"),
+/// a recording's moment, lines left out before it, and its matches (the first's index among all, and how many).
+export struct TextPiece {
+    text: styled-text,
+    // The same words without markup, to measure the piece's wrapped height with (StyledText's own height is one line's).
+    plain: string,
+    label: string,
+    time: string,
+    gap: bool,
+    first: int,
+    matches: int,
 }
 
 /// A small breathing core: the indexer is at work.
@@ -120,6 +150,81 @@ component Hint inherits HorizontalLayout {
     Text { text: root.action; font-size: 11.5px; color: Theme.text-3; vertical-alignment: center; }
 }
 
+// A heading over the pinned or recent searches.
+component SearchesHeading inherits HorizontalLayout {
+    in property <string> text;
+    in property <string> hint;
+    height: 30px;
+    padding-left: 8px;
+    padding-right: 8px;
+    Text { text: root.text; font-size: 11.5px; font-weight: 600; color: Theme.text-3; vertical-alignment: center; }
+    Rectangle { horizontal-stretch: 1; }
+    if root.hint != "": Text { text: root.hint; font-size: 11.5px; color: Theme.text-3; vertical-alignment: center; }
+}
+
+// A pinned or recent search: a click searches it, the pin on hover pins or unpins it.
+component SearchLine inherits Rectangle {
+    in property <string> text;
+    in property <bool> pinned;
+    callback clicked();
+    callback pin-clicked();
+    height: 34px;
+    border-radius: 7px;
+    background: line-touch.has-hover ? Theme.hover : transparent;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { root.clicked(); }
+    line-touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 6px;
+        spacing: 10px;
+        Glyph {
+            width: 15px;
+            height: 15px;
+            y: (parent.height - self.height) / 2;
+            commands: root.pinned
+                ? "M9 4h6l-1 6l3 3v1H7v-1l3-3z M12 14v6"
+                : "M12 7v5l3 2 M21 12a9 9 0 1 1-18 0a9 9 0 1 1 18 0z";
+            stroke: Theme.text-3;
+            stroke-width: 1.5px;
+        }
+        Text { text: root.text; font-size: 13.5px; color: Theme.text; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+        pin := Rectangle {
+            opacity: line-touch.has-hover || pin-touch.has-hover ? 1 : 0;
+            width: 44px;
+            height: 26px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 6px;
+            background: pin-touch.has-hover ? Theme.selected : transparent;
+            accessible-role: button;
+            accessible-label: root.pinned ? "Unpin" : "Pin";
+            accessible-action-default => { root.pin-clicked(); }
+            Text {
+                text: root.pinned ? "Unpin" : "Pin";
+                font-size: 11px;
+                color: Theme.text-2;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            pin-touch := TouchArea { mouse-cursor: pointer; clicked => { root.pin-clicked(); } }
+        }
+    }
+}
+
+// An action in the footer, for the several results selected.
+component FooterAction inherits Text {
+    callback clicked();
+    font-size: 11.5px;
+    font-weight: 600;
+    color: action-touch.has-hover ? Theme.text : Theme.accent;
+    vertical-alignment: center;
+    accessible-role: button;
+    accessible-label: self.text;
+    accessible-action-default => { root.clicked(); }
+    action-touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
 component Chip inherits Rectangle {
     in property <string> label;
     in property <bool> on;
@@ -147,23 +252,72 @@ component Chip inherits Rectangle {
 component ResultRow inherits Rectangle {
     in property <Row> data;
     in property <bool> selected;
+    // Being renamed (F2): the name is a field, the part before the extension selected.
+    in property <bool> renaming;
+    in property <string> rename-name;
+    in property <int> rename-select;
+    callback rename-done(string);
+    // One of several selected.
+    in property <bool> marked;
+    // Ctrl+click ("toggle") or Shift+click ("range").
+    callback marked-click(string);
+    // Pressed and moved a few pixels: dragged out.
+    callback drag-started();
+    // The ⓘ on the selected row hovered (or left).
+    callback why-hovered(bool);
     callback clicked();
     callback double-clicked();
     callback right-clicked(length, length);
+    // "+3 copies" clicked: where the row's bottom is, in the window.
+    callback copies-clicked(length);
     height: Theme.row-height;
+
+    // First, so it's under the row: "+3 copies" has a click of its own on top of it (declared last, it took that click).
+    touch := TouchArea {
+        property <bool> modified;
+        property <bool> dragging;
+        property <length> down-x;
+        property <length> down-y;
+        clicked => {
+            if (!self.modified && !self.dragging) { root.clicked(); }
+            self.modified = false;
+            self.dragging = false;
+        }
+        double-clicked => { root.double-clicked(); }
+        pointer-event(event) => {
+            if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                self.down-x = self.mouse-x;
+                self.down-y = self.mouse-y;
+                self.dragging = false;
+                self.modified = event.modifiers.control || event.modifiers.shift;
+                if (event.modifiers.control) { root.marked-click("toggle"); }
+                else if (event.modifiers.shift) { root.marked-click("range"); }
+            }
+            if (event.button == PointerEventButton.right && event.kind == PointerEventKind.up) {
+                root.right-clicked(self.mouse-x, self.mouse-y);
+            }
+        }
+        moved => {
+            if (self.pressed && !self.dragging && !root.renaming
+                    && (abs(self.mouse-x - self.down-x) > 8px || abs(self.mouse-y - self.down-y) > 8px)) {
+                self.dragging = true;
+                root.drag-started();
+            }
+        }
+    }
 
     background-rect := Rectangle {
         x: 6px;
         width: parent.width - 12px;
         border-radius: 8px;
-        background: root.selected ? Theme.selected : touch.has-hover ? Theme.hover : transparent;
+        background: root.selected || root.marked ? Theme.selected : touch.has-hover ? Theme.hover : transparent;
         animate background { duration: Theme.quick; }
 
         // The selection's mark: a short amber bar, as beside the page that's open in settings.
         Rectangle {
             x: 4px;
             width: 4px;
-            height: root.selected ? 16px : 0px;
+            height: root.selected || root.marked ? 16px : 0px;
             y: (parent.height - self.height) / 2;
             border-radius: 2px;
             background: Theme.accent;
@@ -199,7 +353,33 @@ component ResultRow inherits Rectangle {
                 spacing: 2px;
                 HorizontalLayout {
                     spacing: 8px;
-                    Rectangle {
+                    if root.renaming: Rectangle {
+                        height: 22px;
+                        border-radius: 5px;
+                        border-width: 1.5px;
+                        border-color: Theme.accent;
+                        background: Theme.field-focus;
+                        init => {
+                            rename-field.text = root.rename-name;
+                            rename-field.focus();
+                            rename-field.set-selection-offsets(0, root.rename-select);
+                        }
+                        rename-field := TextInput {
+                            x: 6px;
+                            width: parent.width - 12px;
+                            height: parent.height;
+                            font-size: 14px;
+                            font-family: Theme.font;
+                            color: Theme.text;
+                            vertical-alignment: center;
+                            single-line: true;
+                            selection-background-color: Theme.accent-soft;
+                            selection-foreground-color: Theme.text;
+                            accessible-label: "New name";
+                            accepted => { root.rename-done(self.text); }
+                        }
+                    }
+                    if !root.renaming: Rectangle {
                         clip: true;
                         height: 20px;
                         StyledText {
@@ -212,6 +392,39 @@ component ResultRow inherits Rectangle {
                             default-font-family: Theme.font;
                             vertical-alignment: center;
                             max-lines: 1;
+                        }
+                    }
+                    if root.data.copies != "": Rectangle {
+                        height: 18px;
+                        y: 1px;
+                        width: copies-text.preferred-width + 26px;
+                        horizontal-stretch: 0;
+                        border-radius: 9px;
+                        border-width: 1px;
+                        border-color: copies-touch.has-hover ? Theme.accent : Theme.stroke-strong;
+                        background: copies-touch.has-hover ? Theme.accent-soft : transparent;
+                        accessible-role: button;
+                        accessible-label: root.data.copies;
+                        accessible-action-default => { root.copies-clicked(root.absolute-position.y + root.height); }
+                        copies-text := Text {
+                            x: 8px;
+                            text: root.data.copies;
+                            font-size: 11.5px;
+                            font-family: Theme.font;
+                            color: copies-touch.has-hover ? Theme.accent : Theme.text-2;
+                            vertical-alignment: center;
+                        }
+                        Glyph {
+                            x: parent.width - 16px;
+                            y: (parent.height - self.height) / 2;
+                            width: 10px;
+                            height: 10px;
+                            commands: "M6 9l6 6l6 -6";
+                            stroke: copies-touch.has-hover ? Theme.accent : Theme.text-2;
+                        }
+                        copies-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.copies-clicked(root.absolute-position.y + root.height); }
                         }
                     }
                     if root.data.badge != "": Rectangle {
@@ -264,18 +477,38 @@ component ResultRow inherits Rectangle {
                 horizontal-stretch: 0;
                 min-width: self.preferred-width;
             }
-        }
-    }
 
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-        double-clicked => { root.double-clicked(); }
-        pointer-event(event) => {
-            if (event.button == PointerEventButton.right && event.kind == PointerEventKind.up) {
-                root.right-clicked(self.mouse-x, self.mouse-y);
+            // ⓘ on the selected result: why it came up, on hover.
+            Rectangle {
+                width: 18px;
+                horizontal-stretch: 0;
+                opacity: root.selected && !root.renaming ? 1 : 0;
+                Rectangle {
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 9px;
+                    border-width: 1px;
+                    border-color: why-touch.has-hover ? Theme.accent : Theme.stroke-strong;
+                    Text {
+                        text: "i";
+                        font-size: 11px;
+                        font-weight: 700;
+                        color: why-touch.has-hover ? Theme.accent : Theme.text-3;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                accessible-role: button;
+                accessible-label: "Why it came up";
+                accessible-action-default => { root.why-hovered(true); }
+                why-touch := TouchArea {
+                    enabled: root.selected;
+                    changed has-hover => { root.why-hovered(self.has-hover); }
+                }
             }
         }
     }
+
 }
 
 /// One of the search field's toggles: amber while it's on.
@@ -339,12 +572,24 @@ component PreviewPane inherits Rectangle {
     // The corner let go (or double-clicked): the size is kept.
     callback corner-done();
     // What room is left for the image: the rest of the pane, as it is, under it.
-    property <length> image-room: root.room - 112px - title-text.preferred-height - kind-text.preferred-height - path-text.preferred-height - (root.preview.hidden != "" ? 26px : 0px) - (root.preview.has-text ? 110px : 0px);
+    property <length> image-room: root.room - 112px - title-text.preferred-height - kind-text.preferred-height - path-text.preferred-height - copies-text.height - (root.preview.hidden != "" ? 26px : 0px) - (root.preview.has-text ? 110px : 0px);
     callback open();
     callback reveal();
     callback reveal-secrets();
     callback enlarge();
     callback media-clicked();
+    // Its text ("Where it matched", "Text in this image") opened large.
+    callback expand-text();
+    // An Office file's preview: where its window goes (the image's place, in the popup), a few times a second.
+    callback office-area(length, length, length, length);
+    Timer {
+        interval: 120ms;
+        running: root.preview.office;
+        triggered => {
+            root.office-area(image-box.absolute-position.x + 1px, image-box.absolute-position.y + 1px,
+                             image-box.width - 2px, image-box.height - 2px);
+        }
+    }
 
     VerticalLayout {
         padding: 16px;
@@ -352,7 +597,9 @@ component PreviewPane inherits Rectangle {
 
         image-box := Rectangle {
             // Gives way in a short window, to what's under it; as tall as dragged, while there's room.
-            height: root.image-dragged > 0 ? clamp(root.image-dragged, 96px, max(96px, root.image-room)) : clamp(root.image-room, 96px, root.image-most);
+            // An Office file takes all the room there is: it's read in the preview, not glanced at.
+            height: root.preview.office ? max(96px, root.image-room)
+                : root.image-dragged > 0 ? clamp(root.image-dragged, 96px, max(96px, root.image-room)) : clamp(root.image-room, 96px, root.image-most);
             border-radius: Theme.radius;
             background: Theme.field;
             border-width: 1px;
@@ -516,6 +763,16 @@ component PreviewPane inherits Rectangle {
             max-lines: 3;
             overflow: elide;
         }
+        copies-text := Text {
+            visible: root.preview.copies != "";
+            height: root.preview.copies != "" ? self.preferred-height : 0px;
+            text: root.preview.copies;
+            font-size: 11.5px;
+            color: Theme.text-2;
+            wrap: word-wrap;
+            max-lines: 3;
+            overflow: elide;
+        }
 
         if root.preview.hidden != "": HorizontalLayout {
             spacing: 8px;
@@ -562,19 +819,64 @@ component PreviewPane inherits Rectangle {
             border-width: 1px;
             border-color: Theme.divider;
             clip: true;
-            Text {
-                x: 10px;
-                y: 8px;
-                width: parent.width - 20px;
-                height: parent.height - 16px;
-                text: root.preview.text;
-                font-family: root.preview.text-label != "" ? Theme.font : Theme.mono-font;
-                font-size: root.preview.text-label != "" ? 12px : 11px;
-                color: Theme.text-2;
-                wrap: root.preview.text-label != "" ? word-wrap : no-wrap;
-                overflow: clip;
-                vertical-alignment: top;
+            // The index's text opens large on a click (a file's own start doesn't).
+            property <bool> expandable: root.preview.text-label != "";
+            // The wheel scrolls it, as a finger does.
+            text-flick := Flickable {
+                width: parent.width;
+                height: parent.height;
+                content-height: text-body.preferred-height + 16px;
+                text-body := Text {
+                    x: 10px;
+                    y: 8px;
+                    width: text-flick.width - 20px;
+                    height: self.preferred-height;
+                    text: root.preview.text;
+                    font-family: root.preview.text-label != "" ? Theme.font : Theme.mono-font;
+                    font-size: root.preview.text-label != "" ? 12px : 11px;
+                    color: Theme.text-2;
+                    wrap: root.preview.text-label != "" ? word-wrap : no-wrap;
+                    overflow: clip;
+                    vertical-alignment: top;
+                }
+                text-touch := TouchArea {
+                    width: text-flick.width;
+                    height: max(text-flick.height, text-flick.content-height);
+                    enabled: expandable;
+                    mouse-cursor: self.enabled ? pointer : default;
+                    clicked => { root.expand-text(); }
+                }
             }
+            // How far down it is, while there's more than shows.
+            if text-flick.content-height > text-flick.height + 1px: Rectangle {
+                x: parent.width - 6px;
+                width: 3px;
+                height: max(16px, parent.height * text-flick.height / text-flick.content-height);
+                y: -text-flick.content-y * (parent.height - self.height) / max(1px, text-flick.content-height - text-flick.height);
+                border-radius: 1.5px;
+                background: Theme.stroke-strong;
+                opacity: text-touch.has-hover ? 1 : 0.5;
+            }
+            // Opens large, as the image's corner says.
+            if expandable && text-touch.has-hover: Rectangle {
+                x: parent.width - self.width - 7px;
+                y: 7px;
+                width: 26px;
+                height: 26px;
+                border-radius: 6px;
+                background: Theme.popover;
+                border-width: 1px;
+                border-color: Theme.stroke-strong;
+                Glyph {
+                    width: 16px;
+                    height: 16px;
+                    commands: "M14 4h6v6 M20 4l-7 7 M10 20H4v-6 M4 20l7-7";
+                    stroke: Theme.text;
+                }
+            }
+            accessible-role: button;
+            accessible-label: root.preview.text-label;
+            accessible-action-default => { if (expandable) { root.expand-text(); } }
         }
         if !root.preview.has-text: Rectangle { vertical-stretch: 1; }
 
@@ -867,6 +1169,396 @@ component EnlargedView inherits Rectangle {
     }
 }
 
+/// A file's text as the index keeps it, over the whole popup, as an image is enlarged: all of it (a long one's start and
+/// the places around its matches), what was searched for marked, and why it was found. The wheel scrolls; the arrows by
+/// the count of matches, or F3, go from one match to the next.
+component EnlargedText inherits Rectangle {
+    in property <Preview> preview;
+    in property <[TextPiece]> pieces;
+    // "Matched by what it shows", and how strongly (0 to 1; below 0: not by that).
+    in property <string> why;
+    in property <float> strength: -1;
+    // "Words that matched: …", the words marked.
+    in property <styled-text> words;
+    in property <bool> has-words;
+    in property <int> matches;
+    // The match in view (0 is the first; below 0, none yet).
+    in-out property <int> current: -1;
+    in property <int> position;
+    in property <int> count;
+    // A page down or up asked (`paged` changes each time; `page-by` says which way).
+    in property <int> paged;
+    in property <int> page-by;
+    callback close();
+    changed paged => { root.page(root.page-by); }
+
+    public function next-match(by: int) {
+        if (root.matches > 0) {
+            root.current = mod(max(0, root.current) + by + root.matches, root.matches);
+        }
+    }
+    function page(by: int) {
+        flick.content-y = clamp(flick.content-y - by * (flick.height - 48px), min(0px, flick.height - flick.content-height), 0px);
+    }
+    // A piece at `y` in the page: in view, a little below the top.
+    function scroll-to(y: length) {
+        flick.content-y = clamp(48px - y, min(0px, flick.height - flick.content-height), 0px);
+    }
+
+    background: Theme.base;
+    property <float> shown: 0;
+    init => { self.shown = 1; }
+    animate shown { duration: Theme.quick; }
+    opacity: self.shown;
+    // Nothing beneath hears the pointer.
+    TouchArea {
+        scroll-event(event) => { accept }
+    }
+    VerticalLayout {
+        HorizontalLayout {
+            height: 44px;
+            padding-left: 18px;
+            padding-right: 10px;
+            spacing: 10px;
+            Text {
+                text: root.preview.title;
+                font-size: 14px;
+                font-family: Theme.display-font;
+                font-weight: 600;
+                color: Theme.text;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 0;
+                min-width: 80px;
+            }
+            Text {
+                text: root.position + " of " + root.count;
+                font-size: 12px;
+                color: Theme.text-3;
+                vertical-alignment: center;
+                horizontal-stretch: 0;
+            }
+            if root.preview.hidden != "": HorizontalLayout {
+                spacing: 6px;
+                horizontal-stretch: 0;
+                Glyph {
+                    width: 14px;
+                    height: 14px;
+                    y: (parent.height - self.height) / 2;
+                    commands: "M6 11h12v9H6z M8.5 11V8a3.5 3.5 0 0 1 7 0v3";
+                    stroke: Theme.accent;
+                }
+                Text { text: root.preview.hidden; font-size: 12px; color: Theme.text-2; vertical-alignment: center; }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            // The matches: one before, which of them, one after.
+            if root.matches > 0: HorizontalLayout {
+                spacing: 2px;
+                horizontal-stretch: 0;
+                Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 7px;
+                    background: before-touch.has-hover ? Theme.hover : transparent;
+                    accessible-role: button;
+                    accessible-label: "Previous match";
+                    accessible-action-default => { root.next-match(-1); }
+                    Glyph { width: 16px; height: 16px; commands: "M6 15l6-6l6 6"; stroke: Theme.text-2; }
+                    before-touch := TouchArea { mouse-cursor: pointer; clicked => { root.next-match(-1); } }
+                }
+                Text {
+                    text: max(1, root.current + 1) + " of " + root.matches;
+                    font-size: 12px;
+                    color: Theme.text-2;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                    min-width: 44px;
+                }
+                Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 7px;
+                    background: after-touch.has-hover ? Theme.hover : transparent;
+                    accessible-role: button;
+                    accessible-label: "Next match";
+                    accessible-action-default => { root.next-match(1); }
+                    Glyph { width: 16px; height: 16px; commands: "M6 9l6 6l6-6"; stroke: Theme.text-2; }
+                    after-touch := TouchArea { mouse-cursor: pointer; clicked => { root.next-match(1); } }
+                }
+            }
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 7px;
+                background: close-touch.has-hover ? Theme.hover : transparent;
+                Glyph {
+                    width: 16px;
+                    height: 16px;
+                    commands: "M6 6l12 12 M18 6L6 18";
+                    stroke: Theme.text-2;
+                }
+                close-touch := TouchArea { mouse-cursor: pointer; clicked => { root.close(); } }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.divider; }
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.backdrop;
+            clip: true;
+            // The page's card, drawn only where it's in view (and a little past): the software renderer's coordinates
+            // are 16 bits, and a long text's whole card scrolled far down ran past them (a panic, "Overflow").
+            property <length> page-top: flick.content-y + page.y;
+            Rectangle {
+                x: page.x;
+                width: page.width;
+                y: max(parent.page-top, -24px);
+                height: max(0px, min(parent.page-top + page.height, flick.height + 24px) - self.y);
+                border-radius: Theme.radius;
+                background: Theme.field;
+                border-width: 1px;
+                border-color: Theme.divider;
+            }
+            flick := Flickable {
+                width: parent.width;
+                height: parent.height;
+                content-height: page.height + 48px;
+                // The page: the preview's box, larger, in a column that reads well (its card is drawn above).
+                page := Rectangle {
+                    x: max(24px, (flick.width - self.width) / 2);
+                    y: 24px;
+                    width: min(760px, flick.width - 48px);
+                    height: column.preferred-height;
+                    column := VerticalLayout {
+                        padding: 22px;
+                        padding-top: 18px;
+                        spacing: 8px;
+                        // Why it was found.
+                        if root.why != "": HorizontalLayout {
+                            spacing: 10px;
+                            Text {
+                                text: root.why;
+                                font-size: 12.5px;
+                                color: Theme.text-2;
+                                vertical-alignment: center;
+                                horizontal-stretch: 0;
+                            }
+                            if root.strength >= 0: Rectangle {
+                                width: 72px;
+                                Bar {
+                                    y: (parent.height - self.height) / 2;
+                                    width: parent.width;
+                                    height: 4px;
+                                    progress: root.strength;
+                                }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        if root.has-words: StyledText {
+                            text: root.words;
+                            default-color: Theme.text-2;
+                            default-font-size: 12.5px;
+                            default-font-family: Theme.font;
+                        }
+                        if root.why != "" || root.has-words: Rectangle { height: 1px; background: Theme.divider; }
+                        // The pieces one under the other, as the text's own lines.
+                        VerticalLayout {
+                            spacing: 0px;
+                            for piece[index] in root.pieces: VerticalLayout {
+                                spacing: 4px;
+                                // The match in view is in this piece: it's scrolled to, and marked beside.
+                                property <bool> here: root.current >= 0 && root.current >= piece.first && root.current < piece.first + piece.matches;
+                                init => {
+                                    if (self.here) {
+                                        root.scroll-to(parent.y + self.y + 24px);
+                                    }
+                                }
+                                changed here => {
+                                    if (self.here) {
+                                        root.scroll-to(parent.y + self.y + 24px);
+                                    }
+                                }
+                                if piece.label != "": Text {
+                                    text: piece.label;
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                    color: Theme.text-3;
+                                }
+                                if piece.gap: Text {
+                                    text: "⋯";
+                                    font-size: 13px;
+                                    color: Theme.text-3;
+                                }
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    if piece.time != "": Text {
+                                        text: piece.time;
+                                        width: 44px;
+                                        font-family: Theme.mono-font;
+                                        font-size: 11.5px;
+                                        color: Theme.text-3;
+                                        vertical-alignment: top;
+                                    }
+                                    Rectangle {
+                                        width: 3px;
+                                        border-radius: 1.5px;
+                                        background: here ? Theme.accent : transparent;
+                                    }
+                                    Rectangle {
+                                        horizontal-stretch: 1;
+                                        min-height: measure.preferred-height;
+                                        measure := Text {
+                                            width: parent.width;
+                                            text: piece.plain;
+                                            wrap: word-wrap;
+                                            font-size: 13px;
+                                            font-family: Theme.font;
+                                            opacity: 0;
+                                        }
+                                        StyledText {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            text: piece.text;
+                                            default-color: Theme.text;
+                                            default-font-size: 13px;
+                                            default-font-family: Theme.font;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // How far down it is.
+            if flick.content-height > flick.height + 1px: Rectangle {
+                x: parent.width - 7px;
+                width: 4px;
+                height: max(24px, parent.height * flick.height / flick.content-height);
+                y: -flick.content-y * (parent.height - self.height) / max(1px, flick.content-height - flick.height);
+                border-radius: 2px;
+                background: Theme.stroke-strong;
+            }
+        }
+        Rectangle { height: 1px; background: Theme.divider; }
+        HorizontalLayout {
+            height: 36px;
+            padding-left: 18px;
+            padding-right: 16px;
+            spacing: 16px;
+            if root.matches > 1: Hint { key: "F3"; action: "Next match"; }
+            Rectangle { horizontal-stretch: 1; }
+            Hint { key: "↑↓"; action: "Next"; }
+            Hint { key: "Enter"; action: "Open"; }
+            Hint { key: "Esc"; action: "Back to results"; }
+        }
+    }
+}
+
+// The places a result's copies are, opened from its "+3 copies": each with its preview, name and folder.
+component CopiesList inherits Rectangle {
+    in property <string> title;
+    in property <[CopyRow]> rows;
+    in property <int> selected;
+    callback pick(int);
+    callback activated(int, string);
+    property <length> row-height: 44px;
+    height: 34px + min(6, root.rows.length) * root.row-height + 36px;
+    border-radius: 10px;
+    background: Theme.popover;
+    border-width: 1px;
+    border-color: Theme.stroke-strong;
+    drop-shadow-blur: 18px;
+    drop-shadow-color: #00000040;
+    drop-shadow-offset-y: 4px;
+    // (A click inside isn't one outside.)
+    TouchArea { }
+    VerticalLayout {
+        padding: 6px;
+        Text {
+            height: 28px;
+            x: 8px;
+            text: root.title;
+            font-size: 12px;
+            color: Theme.text-2;
+            vertical-alignment: center;
+        }
+        copies-list := ListView {
+            height: min(6, root.rows.length) * root.row-height;
+            for copy[index] in root.rows: Rectangle {
+                height: root.row-height;
+                border-radius: 7px;
+                background: index == root.selected ? Theme.selected : copy-touch.has-hover ? Theme.hover : transparent;
+                accessible-role: button;
+                accessible-label: copy.name + ", " + copy.folder;
+                accessible-action-default => { root.activated(index, "open"); }
+                copy-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.pick(index); }
+                    double-clicked => { root.activated(index, "open"); }
+                }
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 10px;
+                    spacing: 10px;
+                    Rectangle {
+                        width: 30px;
+                        Image {
+                            source: copy.icon;
+                            visible: copy.has-icon;
+                            width: 30px;
+                            height: 30px;
+                            image-fit: contain;
+                            image-rendering: smooth;
+                        }
+                        Rectangle {
+                            visible: !copy.has-icon;
+                            width: 24px;
+                            height: 28px;
+                            border-radius: 4px;
+                            background: Theme.hover;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 1px;
+                        Text { text: copy.name; font-size: 13px; color: Theme.text; overflow: elide; }
+                        Text { text: copy.folder; font-size: 11.5px; color: Theme.text-3; overflow: elide; }
+                    }
+                    if copy.online: VerticalLayout {
+                        alignment: center;
+                        Glyph {
+                            width: 14px;
+                            height: 14px;
+                            commands: "M6.5 18a4.5 4.5 0 0 1 -.5 -8.97a6 6 0 0 1 11.64 1.47a3.75 3.75 0 0 1 -.39 7.5z";
+                            stroke: Theme.text-3;
+                        }
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            height: 30px;
+            padding-left: 8px;
+            spacing: 14px;
+            alignment: start;
+            Hint { key: "Enter"; action: "Open"; }
+            Hint { key: "Ctrl+Enter"; action: "Show in folder"; }
+            Hint { key: "Esc"; action: "Close"; }
+        }
+    }
+
+    public function reveal(index: int) {
+        if (index * root.row-height + copies-list.content-y < 0) {
+            copies-list.content-y = -index * root.row-height;
+        } else if ((index + 1) * root.row-height + copies-list.content-y > copies-list.visible-height) {
+            copies-list.content-y = copies-list.visible-height - (index + 1) * root.row-height;
+        }
+    }
+}
+
 export component Popup inherits Window {
     title: "Excavate";
     no-frame: true;
@@ -885,6 +1577,35 @@ export component Popup inherits Window {
     in-out property <string> query;
     in property <[Row]> rows;
     in-out property <int> selected: 0;
+    // The result being renamed (-1: none), its name as it is, and where its extension starts (bytes).
+    in-out property <int> renaming: -1;
+    // Several results selected: which rows, and how many (0 when it's one or none).
+    in property <[bool]> marks;
+    in property <int> marked-count;
+    // Where the selection was before Shift+arrow moved it (the start of the range).
+    property <int> selected-before;
+    // Ctrl+click "toggle", Shift+click or Shift+arrows "range", "clear"; and the result selected before.
+    callback mark(int, string, int);
+    callback drag-out(int);
+    // Filters made from typed words, as chips in the field ("PDF", "Last week").
+    in property <[string]> typed-chips;
+    callback chip-back();
+    callback chip-removed(int);
+    // Why the selected result came up: open (ⓘ hovered, or Ctrl+Shift+I) and its lines.
+    in-out property <bool> why-open;
+    in property <[string]> why-lines;
+    callback why-asked(int);
+    // An Office file's preview window: where it goes (from the pane), and whether anything covers it now.
+    callback office-area(length, length, length, length, bool);
+    // Searches pinned (Ctrl+D) and recent ones, for the popup with nothing typed.
+    in property <[string]> pinned;
+    in property <[string]> recent;
+    callback pin-search(string);
+    // The shortcut sheet is showing (? with nothing typed, or F1).
+    in-out property <bool> shortcuts-open;
+    in property <string> rename-name;
+    in property <int> rename-select;
+    callback rename-done(int, string);
     in property <[string]> filters;
     in-out property <int> filter: 0;
     in property <string> section;
@@ -892,6 +1613,8 @@ export component Popup inherits Window {
     in property <string> timing;
     in property <string> banner;
     in property <string> banner-action;
+    // A second, quieter choice beside it ("Not now").
+    in property <string> banner-dismiss;
     // Something's wrong (the warning's color), rather than worth knowing (the theme's).
     in property <bool> banner-warning;
     in property <string> sort-label: "Best match";
@@ -917,6 +1640,19 @@ export component Popup inherits Window {
     in property <bool> enlarged-sharp-ready;
     in property <int> enlarged-width;
     in property <int> enlarged-height;
+    // The preview's text ("Where it matched", "Text in this image") over the whole popup (EnlargedText).
+    in-out property <bool> text-open;
+    in property <[TextPiece]> text-pieces;
+    in property <string> text-why;
+    in property <float> text-strength: -1;
+    in property <styled-text> text-words;
+    in property <bool> text-has-words;
+    in property <int> text-matches;
+    in-out property <int> text-match: -1;
+    // PageDown or PageUp in it: which way, and a count that changes each time.
+    property <int> text-page-by;
+    property <int> text-paged;
+    property <bool> can-expand: root.preview.has-text && root.preview.text-label != "";
     in property <string> more-label;
     in property <string> empty-title;
     in property <string> empty-detail;
@@ -960,14 +1696,47 @@ export component Popup inherits Window {
     callback enlarged-changed(bool);
     callback enlarged-zoomed(bool);
     callback enlarged-move(int);
+    callback text-open-changed(bool);
+    callback text-move(int);
     callback show-more();
     callback banner-clicked();
+    callback banner-dismissed();
     callback escape();
     callback settings-clicked();
     callback reveal();
     callback preview-toggled(bool);
     // The preview's video or recording was clicked.
     callback preview-media();
+
+    // A result's copies, opened from its "+3 copies" (copies-clicked: which result), and what's done with one.
+    in-out property <bool> copies-open;
+    in property <string> copies-title;
+    in property <[CopyRow]> copies-rows;
+    in-out property <int> copies-selected;
+    in-out property <length> copies-y;
+    callback copies-clicked(int);
+    callback copies-activated(int, string);
+
+    public function close-copies() {
+        root.copies-open = false;
+    }
+
+    function copies-move(by: int) {
+        root.copies-selected = max(0, min(root.copies-rows.length - 1, root.copies-selected + by));
+        copies-panel.reveal(root.copies-selected);
+    }
+
+    // A pinned or recent search chosen: in the field, searched as if typed, the caret at its end.
+    function search-chosen(text: string) {
+        root.query = text;
+        root.edited(text);
+        field.focus();
+        field.set-selection-offsets(root.text-bytes(text), root.text-bytes(text));
+    }
+
+    public function caret-to-end() {
+        field.set-selection-offsets(root.text-bytes(root.query), root.text-bytes(root.query));
+    }
 
     public function focus-field() {
         field.focus();
@@ -976,6 +1745,7 @@ export component Popup inherits Window {
 
     function move(by: int) {
         if (root.rows.length == 0) { return; }
+        root.why-open = false;
         root.selected = max(0, min(root.rows.length - 1, root.selected + by));
         root.reveal-selected();
         root.selection-moved(root.selected);
@@ -990,6 +1760,17 @@ export component Popup inherits Window {
     public function close-enlarged() {
         root.enlarged = false;
         root.enlarged-changed(false);
+    }
+
+    function open-text() {
+        root.text-match = -1;
+        root.text-open = true;
+        root.text-open-changed(true);
+    }
+
+    public function close-text() {
+        root.text-open = false;
+        root.text-open-changed(false);
     }
 
     public function reveal-selected() {
@@ -1040,20 +1821,97 @@ export component Popup inherits Window {
 
         keys := FocusScope {
             capture-key-pressed(event) => {
+                // The shortcut sheet: F1 and ? toggle it, Escape closes it, and any other key closes it and goes on.
+                if (event.text == Key.F1 || (event.text == "?" && root.query == "" && !root.shortcuts-open)) {
+                    root.shortcuts-open = !root.shortcuts-open;
+                    return accept;
+                }
+                if (root.shortcuts-open) {
+                    root.shortcuts-open = false;
+                    if (event.text == Key.Escape || event.text == "?") { return accept; }
+                }
+                // Backspace on an empty search takes the last chip back into words.
+                if (event.text == Key.Backspace && root.query == "" && root.typed-chips.length > 0 && root.renaming < 0) {
+                    root.chip-back();
+                    return accept;
+                }
+                // A result being renamed: its field has the keys; Escape leaves the name as it was.
+                if (root.renaming >= 0) {
+                    if (event.text == Key.Escape) {
+                        root.renaming = -1;
+                        field.focus();
+                        return accept;
+                    }
+                    return reject;
+                }
+                // A result's copies open: the keys go through them, and anything else closes them and goes on as usual.
+                if (root.copies-open) {
+                    if (event.text == Key.Escape) { root.close-copies(); return accept; }
+                    if (event.text == Key.DownArrow) { root.copies-move(1); return accept; }
+                    if (event.text == Key.UpArrow) { root.copies-move(-1); return accept; }
+                    if (event.text == Key.Return) {
+                        root.copies-activated(root.copies-selected, event.modifiers.control ? "reveal" : "open");
+                        return accept;
+                    }
+                    if (event.text == Key.Tab || event.text == Key.Backtab || event.text == Key.LeftArrow || event.text == Key.RightArrow) { return accept; }
+                    root.close-copies();
+                }
+                // The text large: as an image enlarged, and F3 or the page keys go through it.
+                if (root.text-open) {
+                    if (event.text == Key.Escape || (event.modifiers.control && event.text == " ")) { root.close-text(); return accept; }
+                    if (event.text == Key.DownArrow) { root.text-move(1); return accept; }
+                    if (event.text == Key.UpArrow) { root.text-move(-1); return accept; }
+                    if (event.text == Key.F3 && root.text-matches > 0) {
+                        root.text-match = mod(max(0, root.text-match) + (event.modifiers.shift ? -1 : 1) + root.text-matches, root.text-matches);
+                        return accept;
+                    }
+                    if (event.text == Key.PageDown || event.text == Key.PageUp) {
+                        root.text-page-by = event.text == Key.PageDown ? 1 : -1;
+                        root.text-paged += 1;
+                        return accept;
+                    }
+                    // The filters stay as they are while it's open (Left or Right changed them unseen behind it).
+                    if (event.text == Key.Tab || event.text == Key.Backtab || event.text == Key.LeftArrow || event.text == Key.RightArrow) { return accept; }
+                }
                 // Enlarged: Enter and the rest work as usual, and typing goes back to the results (see the field).
                 if (root.enlarged) {
+                    // Ctrl+Shift+Space: from the image to its text.
+                    if (event.modifiers.control && event.modifiers.shift && event.text == " " && root.can-expand) {
+                        root.close-enlarged();
+                        root.open-text();
+                        return accept;
+                    }
                     if (event.text == Key.Escape || (event.modifiers.control && event.text == " ")) { root.close-enlarged(); return accept; }
                     if (event.text == Key.DownArrow) { root.enlarged-move(1); return accept; }
                     if (event.text == Key.UpArrow) { root.enlarged-move(-1); return accept; }
-                    if (event.text == Key.Tab || event.text == Key.Backtab) { return accept; }
+                    // The filters stay as they are while it's open (Left or Right changed them unseen behind it).
+                    if (event.text == Key.Tab || event.text == Key.Backtab || event.text == Key.LeftArrow || event.text == Key.RightArrow) { return accept; }
                 }
-                if (event.modifiers.control && event.text == " " && root.preview.can-enlarge) { root.open-enlarged(); return accept; }
-                if (event.text == Key.DownArrow) { root.move(1); return accept; }
-                if (event.text == Key.UpArrow) { root.move(-1); return accept; }
+                // Ctrl+Space enlarges the image, or with none (a document, a recording), the text; Ctrl+Shift+Space, the text.
+                if (event.modifiers.control && event.text == " ") {
+                    if (root.can-expand && (event.modifiers.shift || !root.preview.can-enlarge)) { root.open-text(); return accept; }
+                    if (root.preview.can-enlarge) { root.open-enlarged(); return accept; }
+                }
+                if (event.text == Key.UpArrow && root.query == "" && root.rows.length == 0 && root.recent.length > 0) {
+                    root.search-chosen(root.recent[0]);
+                    return accept;
+                }
+                if (event.text == Key.DownArrow || event.text == Key.UpArrow) {
+                    if (event.modifiers.shift && root.rows.length > 0) {
+                        root.selected-before = root.selected;
+                        root.move(event.text == Key.DownArrow ? 1 : -1);
+                        root.mark(root.selected, "range", root.selected-before);
+                        return accept;
+                    }
+                    if (root.marked-count > 0) { root.mark(-1, "clear", root.selected); }
+                    root.move(event.text == Key.DownArrow ? 1 : -1);
+                    return accept;
+                }
                 if (event.text == Key.PageDown) { root.move(max(1, floor(list.visible-height / Theme.row-height) - 1)); return accept; }
                 if (event.text == Key.PageUp) { root.move(-max(1, floor(list.visible-height / Theme.row-height) - 1)); return accept; }
                 if (event.modifiers.control && event.text == Key.Home) { root.move(-root.rows.length); return accept; }
                 if (event.modifiers.control && event.text == Key.End) { root.move(root.rows.length); return accept; }
+                if (event.text == Key.Escape && root.marked-count > 0) { root.mark(-1, "clear", root.selected); return accept; }
                 if (event.text == Key.Escape) { root.escape(); return accept; }
                 if (event.text == Key.Tab) { root.filter-chosen(mod(root.filter + 1, root.filters.length)); return accept; }
                 // Left and right go across the chips while the caret rests at the end of the text (Home, a click or
@@ -1075,6 +1933,11 @@ export component Popup inherits Window {
                 }
                 if (event.modifiers.control && !event.modifiers.alt) {
                     // As in Everything.
+                    if (event.modifiers.shift && (event.text == "i" || event.text == "I") && root.rows.length > 0) {
+                        if (!root.why-open) { root.why-asked(root.selected); }
+                        root.why-open = !root.why-open;
+                        return accept;
+                    }
                     if (event.text == "i" || event.text == "I") { root.toggle-chosen(0); return accept; }
                     if (event.text == "b" || event.text == "B") { root.toggle-chosen(1); return accept; }
                     if (event.text == "u" || event.text == "U") { root.toggle-chosen(2); return accept; }
@@ -1089,11 +1952,29 @@ export component Popup inherits Window {
                         return accept;
                     }
                     if (event.text == "o" || event.text == "O") { root.activated(root.selected, "open-with"); return accept; }
+                    if ((event.text == "d" || event.text == "D") && root.query != "") { root.pin-search(root.query); return accept; }
                     if (event.text == ",") { root.settings-clicked(); return accept; }
-                    if (event.text >= "1" && event.text <= "9") {
+                    if (event.text >= "1" && event.text <= "9" && !root.enlarged && !root.text-open) {
                         root.filter-chosen(min(root.filters.length - 1, event.text.to-float() - 1));
                         return accept;
                     }
+                }
+                // Alt+1 to 9 opens the first to ninth result.
+                if (event.modifiers.alt && !event.modifiers.control && event.text >= "1" && event.text <= "9"
+                        && event.text.to-float() <= root.rows.length) {
+                    root.selected = event.text.to-float() - 1;
+                    root.selection-moved(root.selected);
+                    root.activated(root.selected, "open");
+                    return accept;
+                }
+                if (event.text == Key.F2 && root.rows.length > 0) { root.activated(root.selected, "rename"); return accept; }
+                // Delete sends the result to the Recycle Bin when there's nothing in the search to delete (the caret at
+                // its end, nothing selected).
+                if (event.text == Key.Delete && !event.modifiers.shift && root.rows.length > 0
+                        && field.anchor-position-byte-offset == field.cursor-position-byte-offset
+                        && field.cursor-position-byte-offset >= root.text-bytes(root.query)) {
+                    root.activated(root.selected, "delete");
+                    return accept;
                 }
                 if (event.text == Key.Menu || (event.modifiers.shift && event.text == Key.F10)) {
                     root.context-menu(root.selected, 120px, (root.selected + 1) * Theme.row-height + list.content-y);
@@ -1131,6 +2012,39 @@ export component Popup inherits Window {
                                 commands: "M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14z M20 20l-4-4";
                                 stroke: Theme.text-2;
                             }
+                            for chip[index] in root.typed-chips: Rectangle {
+                                height: 26px;
+                                y: (parent.height - self.height) / 2;
+                                width: chip-label.preferred-width + 34px;
+                                horizontal-stretch: 0;
+                                border-radius: 13px;
+                                background: Theme.accent-soft;
+                                accessible-role: button;
+                                accessible-label: chip;
+                                accessible-description: "Filter. Click × to remove it";
+                                chip-label := Text {
+                                    x: 11px;
+                                    text: chip;
+                                    font-size: 13px;
+                                    font-weight: 600;
+                                    color: Theme.accent;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    x: parent.width - 19px;
+                                    text: "×";
+                                    font-size: 14px;
+                                    color: chip-x.has-hover ? Theme.text : Theme.accent;
+                                    vertical-alignment: center;
+                                    chip-x := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => {
+                                            root.chip-removed(index);
+                                            field.focus();
+                                        }
+                                    }
+                                }
+                            }
                             field := TextInput {
                                 text <=> root.query;
                                 font-size: 17px;
@@ -1142,10 +2056,11 @@ export component Popup inherits Window {
                                 vertical-alignment: center;
                                 edited => {
                                     if (root.enlarged) { root.close-enlarged(); }
+                                    if (root.text-open) { root.close-text(); }
                                     root.edited(self.text);
                                 }
                                 Text {
-                                    visible: root.query == "";
+                                    visible: root.query == "" && root.typed-chips.length == 0;
                                     text: "Search apps, files and folders";
                                     font-size: 17px;
                                     font-family: Theme.display-font;
@@ -1274,7 +2189,7 @@ export component Popup inherits Window {
                         for label[index] in root.filters: Chip {
                             label: label;
                             on: index == root.filter;
-                            clicked => { root.filter-chosen(index); }
+                            clicked => { if (!root.enlarged && !root.text-open) { root.filter-chosen(index); } }
                         }
                     }
                 }
@@ -1328,7 +2243,26 @@ export component Popup inherits Window {
                                 for row[index] in root.rows: ResultRow {
                                     data: row;
                                     selected: index == root.selected;
+                                    renaming: index == root.renaming;
+                                    marked: index < root.marks.length && root.marks[index];
+                                    marked-click(mode) => {
+                                        root.mark(index, mode, root.selected);
+                                        root.selected = index;
+                                        root.selection-moved(index);
+                                        field.focus();
+                                    }
+                                    drag-started => { root.drag-out(index); }
+                                    why-hovered(on) => {
+                                        if (on) { root.why-asked(index); }
+                                        root.why-open = on;
+                                    }
+                                    rename-name: root.rename-name;
+                                    rename-select: root.rename-select;
+                                    rename-done(name) => {
+                                        root.rename-done(index, name);
+                                    }
                                     clicked => {
+                                        if (root.marked-count > 0) { root.mark(-1, "clear", root.selected); }
                                         root.selected = index;
                                         root.selection-moved(index);
                                         keys.focus();
@@ -1340,10 +2274,18 @@ export component Popup inherits Window {
                                         root.selection-moved(index);
                                         root.context-menu(index, self.absolute-position.x + x, self.absolute-position.y + y);
                                     }
+                                    copies-clicked(bottom) => {
+                                        root.selected = index;
+                                        root.selection-moved(index);
+                                        root.copies-y = bottom;
+                                        root.copies-clicked(index);
+                                        field.focus();
+                                    }
                                 }
                             }
 
-                            if root.rows.length == 0 && root.empty-title != "": VerticalLayout {
+                            if root.rows.length == 0 && root.empty-title != "" && !root.shortcuts-open
+                                    && !(root.query == "" && (root.pinned.length > 0 || root.recent.length > 0)): VerticalLayout {
                                 alignment: center;
                                 spacing: 6px;
                                 Text {
@@ -1362,10 +2304,128 @@ export component Popup inherits Window {
                                     wrap: word-wrap;
                                 }
                             }
+
+                            // Opened with nothing typed: the pinned searches, then the recent ones. A click searches it.
+                            if root.query == "" && root.rows.length == 0 && !root.shortcuts-open
+                                    && (root.pinned.length > 0 || root.recent.length > 0): VerticalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                padding-top: 12px;
+                                spacing: 2px;
+                                alignment: start;
+                                if root.pinned.length > 0: SearchesHeading { text: "Pinned"; }
+                                for text in root.pinned: SearchLine {
+                                    text: text;
+                                    pinned: true;
+                                    clicked => { root.search-chosen(text); }
+                                    pin-clicked => { root.pin-search(text); }
+                                }
+                                if root.recent.length > 0: SearchesHeading {
+                                    text: "Recent";
+                                    hint: "Ctrl+D pins a search";
+                                }
+                                for text in root.recent: SearchLine {
+                                    text: text;
+                                    clicked => { root.search-chosen(text); }
+                                    pin-clicked => { root.pin-search(text); }
+                                }
+                            }
+                            // Why the selected result came up: under its row, at the right.
+                            if root.why-open && root.rows.length > 0 && !root.shortcuts-open: Rectangle {
+                                property <length> below: (root.selected + 1) * Theme.row-height + list.content-y + 4px;
+                                width: min(parent.width - 24px, 380px);
+                                height: why-lines-box.preferred-height + 24px;
+                                x: parent.width - self.width - 14px;
+                                y: self.below + self.height <= parent.height ? self.below : max(0px, self.below - Theme.row-height - self.height - 8px);
+                                border-radius: 10px;
+                                background: Theme.popover;
+                                border-width: 1px;
+                                border-color: Theme.stroke;
+                                drop-shadow-blur: 14px;
+                                drop-shadow-color: #00000030;
+                                why-lines-box := VerticalLayout {
+                                    padding: 12px;
+                                    spacing: 6px;
+                                    Text { text: "Why it came up"; font-size: 12px; font-weight: 600; color: Theme.text-2; }
+                                    for line in root.why-lines: Text {
+                                        text: line;
+                                        font-size: 13px;
+                                        color: Theme.text;
+                                        wrap: word-wrap;
+                                    }
+                                }
+                            }
+                            // ? with nothing typed, or F1: the shortcuts and the search syntax. Any key closes it.
+                            if root.shortcuts-open: Rectangle {
+                                background: Theme.base;
+                                TouchArea { clicked => { root.shortcuts-open = false; } }
+                                VerticalLayout {
+                                    padding-left: 22px;
+                                    padding-right: 22px;
+                                    padding-top: 16px;
+                                    spacing: 9px;
+                                    alignment: start;
+                                    Text {
+                                        text: "Shortcuts";
+                                        font-size: 15px;
+                                        font-family: Theme.display-font;
+                                        font-weight: 600;
+                                        color: Theme.text;
+                                        accessible-role: text;
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 28px;
+                                        alignment: start;
+                                        VerticalLayout {
+                                            spacing: 9px;
+                                            Hint { key: "Enter"; action: "Open"; }
+                                            Hint { key: "Ctrl+Enter"; action: "Show in folder"; }
+                                            Hint { key: "Alt+1 … 9"; action: "Open the first to ninth"; }
+                                            Hint { key: "Ctrl+O"; action: "Open with"; }
+                                            Hint { key: "Alt+Enter"; action: "Properties"; }
+                                            Hint { key: "Ctrl+Shift+Enter"; action: "Open as administrator"; }
+                                        }
+                                        VerticalLayout {
+                                            spacing: 9px;
+                                            Hint { key: "Ctrl+C"; action: "Copy"; }
+                                            Hint { key: "Ctrl+Shift+C"; action: "Copy path"; }
+                                            Hint { key: "F2"; action: "Rename"; }
+                                            Hint { key: "Del"; action: "Recycle Bin"; }
+                                            Hint { key: "Shift+F10"; action: "More"; }
+                                            Hint { key: "Ctrl+Shift+I"; action: "Why it came up"; }
+                                        }
+                                        VerticalLayout {
+                                            spacing: 9px;
+                                            Hint { key: "Tab"; action: "Filters"; }
+                                            Hint { key: "Ctrl+1 … 9"; action: "A filter"; }
+                                            Hint { key: "Ctrl+P"; action: "Preview"; }
+                                            Hint { key: "Ctrl+Space"; action: "Larger preview"; }
+                                            Hint { key: "Ctrl+,"; action: "Settings"; }
+                                            Hint { key: "Ctrl+D"; action: "Pin the search"; }
+                                        }
+                                    }
+                                    Rectangle { height: 4px; }
+                                    Text {
+                                        text: "Search syntax";
+                                        font-size: 12.5px;
+                                        font-weight: 600;
+                                        color: Theme.text-2;
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        alignment: start;
+                                        Keycap { label: "ext:pdf"; }
+                                        Keycap { label: "dm:today"; }
+                                        Keycap { label: "size:>10mb"; }
+                                        Keycap { label: "path:Work"; }
+                                        Keycap { label: "\"exact words\""; }
+                                    }
+                                }
+                            }
                         }
                     }
 
-                    if root.show-preview && root.preview.visible: Rectangle {
+                    if root.show-preview && root.preview.visible && !root.shortcuts-open: Rectangle {
                         width: 1px;
                         background: edge.pressed || edge.has-hover ? Theme.accent : Theme.divider;
                         // The handle reaches over the results (whatever comes later is on top of it on the right).
@@ -1394,13 +2454,16 @@ export component Popup inherits Window {
                             }
                         }
                     }
-                    if root.show-preview && root.preview.visible: PreviewPane {
+                    if root.show-preview && root.preview.visible && !root.shortcuts-open: PreviewPane {
                         width: root.preview-shown;
                         // Never taller than its room, whatever it holds: the footer stays in the window.
                         min-height: 0px;
                         clip: true;
                         image-most: root.preview-image;
                         image-dragged <=> root.preview-image-dragged;
+                        office-area(x, y, width, height) => {
+                            root.office-area(x, y, width, height, !root.enlarged && !root.text-open && !root.why-open);
+                        }
                         corner-taken(x) => { root.preview-grab = x + root.preview-shown; }
                         corner-moved(x) => { root.preview-dragged = clamp(root.preview-grab - x, 220px, max(220px, root.width / 2)); }
                         corner-reset => { root.preview-dragged = 0px; }
@@ -1413,6 +2476,7 @@ export component Popup inherits Window {
                         reveal => { root.activated(root.selected, "reveal"); }
                         reveal-secrets => { root.reveal(); }
                         enlarge => { root.open-enlarged(); }
+                        expand-text => { root.open-text(); }
                         media-clicked => { root.preview-media(); }
                     }
                 }
@@ -1441,7 +2505,23 @@ export component Popup inherits Window {
                             reading-touch := TouchArea { mouse-cursor: pointer; clicked => { root.reading-clicked(); } }
                         }
 
-                        if root.banner != "": HorizontalLayout {
+                        if root.marked-count > 1: HorizontalLayout {
+                            spacing: 14px;
+                            horizontal-stretch: 0;
+                            Text {
+                                text: root.marked-count + " selected";
+                                font-size: 11.5px;
+                                font-weight: 600;
+                                color: Theme.text;
+                                vertical-alignment: center;
+                            }
+                            FooterAction { text: "Copy"; clicked => { root.activated(root.selected, "copy"); } }
+                            FooterAction { text: "Show in folder"; clicked => { root.activated(root.selected, "reveal"); } }
+                            FooterAction { text: "Delete"; clicked => { root.activated(root.selected, "delete"); } }
+                            Text { text: "Esc clears"; font-size: 11.5px; color: Theme.text-3; vertical-alignment: center; }
+                        }
+
+                        if root.banner != "" && root.marked-count < 2: HorizontalLayout {
                             spacing: 8px;
                             horizontal-stretch: 0;
                             Rectangle {
@@ -1455,12 +2535,25 @@ export component Popup inherits Window {
                                 font-weight: 600;
                                 color: Theme.accent;
                                 vertical-alignment: center;
+                                accessible-role: button;
+                                accessible-label: root.banner-action;
+                                accessible-action-default => { root.banner-clicked(); }
                                 TouchArea { mouse-cursor: pointer; clicked => { root.banner-clicked(); } }
+                            }
+                            if root.banner-dismiss != "": Text {
+                                text: root.banner-dismiss;
+                                font-size: 11.5px;
+                                color: dismiss-touch.has-hover ? Theme.text-2 : Theme.text-3;
+                                vertical-alignment: center;
+                                accessible-role: button;
+                                accessible-label: root.banner-dismiss;
+                                accessible-action-default => { root.banner-dismissed(); }
+                                dismiss-touch := TouchArea { mouse-cursor: pointer; clicked => { root.banner-dismissed(); } }
                             }
                         }
 
                         Text {
-                            text: root.status;
+                            text: root.marked-count > 1 ? "" : root.status;
                             font-size: 11.5px;
                             color: Theme.text-3;
                             vertical-alignment: center;
@@ -1484,11 +2577,12 @@ export component Popup inherits Window {
                         horizontal-stretch: 0;
                     }
                     Rectangle { horizontal-stretch: 1; }
-                    Hint { key: "Enter"; action: "Open"; }
-                    Hint { key: "Ctrl+Enter"; action: "Show in folder"; }
+                    // With a long status (reading and listing at once) these give way too, so the cog stays in view.
+                    if root.hints-room >= 90px: Hint { key: "Enter"; action: "Open"; }
+                    if root.hints-room >= 240px: Hint { key: "Ctrl+Enter"; action: "Show in folder"; }
                     if root.hints-room >= 318px: Hint { key: "Ctrl+C"; action: "Copy"; }
-                    if root.hints-room >= 431px && root.preview.can-enlarge: Hint { key: "Ctrl+Space"; action: "Enlarge"; }
-                    if root.hints-room >= (root.preview.can-enlarge ? 513px : 400px): Hint { key: "Tab"; action: "Filter"; }
+                    if root.hints-room >= 431px && (root.preview.can-enlarge || root.can-expand): Hint { key: "Ctrl+Space"; action: "Enlarge"; }
+                    if root.hints-room >= (root.preview.can-enlarge || root.can-expand ? 513px : 400px): Hint { key: "Tab"; action: "Filter"; }
                     // Settings (also Ctrl+,). It stays when the window narrows: the keys give way first.
                     Rectangle {
                         width: 28px;
@@ -1527,6 +2621,22 @@ export component Popup inherits Window {
             media-clicked => { root.preview-media(); }
         }
 
+        if root.text-open: EnlargedText {
+            paged: root.text-paged;
+            page-by: root.text-page-by;
+            preview: root.preview;
+            pieces: root.text-pieces;
+            why: root.text-why;
+            strength: root.text-strength;
+            words: root.text-words;
+            has-words: root.text-has-words;
+            matches: root.text-matches;
+            current <=> root.text-match;
+            position: root.selected + 1;
+            count: root.rows.length;
+            close => { root.close-text(); }
+        }
+
         // Last, so it's above what's under the field.
         if root.tip-shown: Rectangle {
             x: min(root.tip-x - self.width / 2, parent.width - self.width - 8px);
@@ -1547,6 +2657,24 @@ export component Popup inherits Window {
                 Text { text: root.tip; font-size: 12px; color: Theme.text; vertical-alignment: center; }
                 if root.tip-key != "": Text { text: root.tip-key; font-size: 11.5px; color: Theme.text-3; vertical-alignment: center; }
             }
+        }
+
+        // A result's copies, under its row (above it when there's no room below), with a click anywhere else closing them.
+        TouchArea {
+            visible: root.copies-open;
+            clicked => { root.close-copies(); }
+        }
+        copies-panel := CopiesList {
+            visible: root.copies-open;
+            property <length> below: root.copies-y - parent.absolute-position.y + 2px;
+            x: list.absolute-position.x - parent.absolute-position.x + 52px;
+            width: min(480px, list.width - 72px);
+            y: self.below + self.height <= parent.height - 12px ? self.below : max(8px, self.below - Theme.row-height - self.height - 4px);
+            title: root.copies-title;
+            rows: root.copies-rows;
+            selected: root.copies-selected;
+            pick(index) => { root.copies-selected = index; }
+            activated(index, action) => { root.copies-activated(index, action); }
         }
     }
 }

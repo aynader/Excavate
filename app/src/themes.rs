@@ -322,7 +322,7 @@ pub fn tray_artwork(palette: &Palette, size: u32) -> Option<winsys::tray::Artwor
         let mark = mark(dark, palette, size as usize).ok().filter(|mark| mark.size as u32 == size)?;
         let mut pixels = vec![0u8; (size * size * 4) as usize];
         mark.still(&mut pixels);
-        for pixel in pixels.chunks_exact_mut(4) {
+        for pixel in pixels.as_chunks_mut::<4>().0 {
             let alpha = f32::from(pixel[3]) / 255.0;
             if alpha > 0.0 {
                 for channel in &mut pixel[..3] {

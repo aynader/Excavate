@@ -127,6 +127,12 @@ pub struct Index {
     /// or after this, and `settle` looks only from there: a folder made and deleted a moment ago costs a few entries,
     /// not a pass over millions.
     low_water: Option<u32>,
+    /// Where entries made while it's followed begin (`None`: not known, as in an index being built). A folder from
+    /// here on has everything inside it after it, unless a folder was renamed or moved after it was made (a moved
+    /// folder's contents keep their numbers and its new entry comes after them): each such move raises this past the
+    /// moved folder's new entry. So a temporary folder deleted, or listed, costs the entries after it, not a pass
+    /// over millions (`settle`, `walk::reconcile_many`).
+    fresh_from: Option<u32>,
     /// How often each byte comes in names (ASCII lowercased), sampled once: which word of a query is rarest.
     frequency: std::sync::OnceLock<Box<[u32; 256]>>,
     /// The saved file the arrays are mapped from (`open`), if they are; and whether it's as the file says (its
@@ -168,12 +174,47 @@ impl Drop for Busy {
     }
 }
 
-/// When Windows last started, in seconds since 1970 (to within a second or two).
+/// When Windows last started, in seconds since 1970. Only roughly: it moves with every correction of the clock since
+/// (17 minutes off was seen), so it's what's recorded only where the boot counter can't be read.
 fn booted_at() -> u64 {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
     // SAFETY: no arguments.
     let up = unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() } / 1000;
     now.saturating_sub(up)
+}
+
+/// The top bit of the header's boot field: set, the rest is Windows' boot counter; clear, a start time (older files).
+const BOOT_COUNTER: u64 = 1 << 63;
+
+/// Windows' boot counter (`BootId`, one more at every start), read once.
+fn boot_id() -> Option<u32> {
+    static ID: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *ID.get_or_init(|| {
+        use windows_sys::Win32::System::Registry::{HKEY_LOCAL_MACHINE, RRF_RT_REG_DWORD, RegGetValueW};
+        let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+        let key = wide(r"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters");
+        let name = wide("BootId");
+        let (mut value, mut size) = (0u32, 4u32);
+        // SAFETY: NUL-terminated strings and a 4-byte buffer that outlive the call.
+        let status = unsafe {
+            RegGetValueW(HKEY_LOCAL_MACHINE, key.as_ptr(), name.as_ptr(), RRF_RT_REG_DWORD, std::ptr::null_mut(),
+                         (&mut value as *mut u32).cast(), &mut size)
+        };
+        (status == 0).then_some(value)
+    })
+}
+
+/// Which start of Windows this is, for the header: the boot counter where it can be read, else the start time.
+fn this_boot() -> u64 {
+    boot_id().map_or_else(booted_at, |id| BOOT_COUNTER | u64::from(id))
+}
+
+/// Whether a header's boot field is this start of Windows. A start time (from an older file) is compared as before.
+fn same_boot(saved: u64) -> bool {
+    if saved & BOOT_COUNTER != 0 {
+        return boot_id().is_some_and(|id| BOOT_COUNTER | u64::from(id) == saved);
+    }
+    saved.abs_diff(booted_at()) <= 5
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -808,6 +849,7 @@ impl Index {
             self.path_ranked = 0;
             // What's inside it (after `origin`) now has a folder that comes after it.
             self.low_water = self.low_water.map(|low| low.min(origin));
+            self.fresh_from = self.fresh_from.map(|from| from.max(new + 1));
         }
         // Out of the table while its name can still be hashed, then gone, then the new entry in.
         let table = !self.slots.is_empty();
@@ -847,21 +889,37 @@ impl Index {
             return;
         }
         let _busy = self.changing();
-        let low = match self.low_water {
-            Some(low) => low,
-            None => {
-                let low = self.lowest_before_folder();
-                self.low_water = Some(low);
-                low
-            }
+        // Folders made while it's followed (a program's temporary folders) have what's inside them after them.
+        let from = if self.fresh(self.pending_low) {
+            self.pending_low
+        } else {
+            let low = match self.low_water {
+                Some(low) => low,
+                None => {
+                    let low = self.lowest_before_folder();
+                    self.low_water = Some(low);
+                    low
+                }
+            };
+            self.pending_low.min(low)
         };
-        let from = self.pending_low.min(low);
         self.pending_dirs = 0;
         let doomed = self.inside_from(from, |index, e| index.flags[e as usize] & DEAD != 0 && index.flags[e as usize] & FORWARD == 0);
         for e in doomed {
             self.remove(e);
         }
         self.pending_dirs = 0;
+    }
+
+    /// Parents were set directly, in any order (from a drive's file table): no folder is known to come before what's
+    /// inside it.
+    pub(crate) fn unordered(&mut self) {
+        self.fresh_from = None;
+    }
+
+    /// Whether everything inside `folder` comes after it (see `fresh_from`).
+    pub fn fresh(&self, folder: u32) -> bool {
+        self.fresh_from.is_some_and(|from| folder >= from)
     }
 
     /// The lowest entry whose folder, followed through renames, comes after it (`len` when none does).
@@ -880,18 +938,21 @@ impl Index {
 
     /// `inside`, looking only at entries from `from` on (and their folders).
     fn inside_from(&self, from: u32, marked: impl Fn(&Index, u32) -> bool) -> Vec<u32> {
-        // 0 unknown, 1 outside, 2 inside.
-        let mut state = vec![0u8; self.len()];
+        // 0 unknown, 1 outside, 2 inside: kept from `base` on (from `from` when that's a small part of the index, as
+        // for a temporary folder near the end; folders before it are walked through again, a few steps each).
+        let base = if (self.len() - from as usize) * 8 < self.len() { from } else { 0 };
+        let mut state = vec![0u8; self.len() - base as usize];
+        let at_state = |state: &Vec<u8>, e: u32| if e >= base { state[(e - base) as usize] } else { 0 };
         let mut chain = Vec::new();
         let mut found = Vec::new();
         for e in from..self.len() as u32 {
-            if state[e as usize] != 0 {
+            if at_state(&state, e) != 0 {
                 continue;
             }
             chain.clear();
             let mut at = e;
             let verdict = loop {
-                let s = state[at as usize];
+                let s = at_state(&state, at);
                 if s != 0 {
                     break s;
                 }
@@ -911,11 +972,18 @@ impl Index {
                 at = parent;
             };
             for &c in &chain {
-                state[c as usize] = verdict;
+                if c >= base {
+                    state[(c - base) as usize] = verdict;
+                }
                 if verdict == 2 && self.flags[c as usize] & DEAD == 0 {
                     found.push(c);
                 }
             }
+        }
+        if base > 0 {
+            // (A folder before `base` can be met on more than one walk.)
+            found.sort_unstable();
+            found.dedup();
         }
         found
     }
@@ -1455,6 +1523,7 @@ impl Index {
         self.dead = 0;
         self.pending_dirs = 0;
         self.low_water = None;
+        self.fresh_from = Some(self.len() as u32);
         self.path_rank = Vec::new();
         self.path_ranked = 0;
         self.path_stale = false;
@@ -1499,6 +1568,7 @@ impl Index {
         if !self.slots.is_empty() {
             out.build_table();
         }
+        out.fresh_from = Some(out.len() as u32);
         (out, map)
     }
 
@@ -1636,7 +1706,7 @@ impl Index {
         header[V5_CLEAN] = 1;
         header[V6_IDS] = ids.0.width() as u8;
         header[V6_IDS + 1] = ids.1.width() as u8;
-        header[V5_BOOT..V5_BOOT + 8].copy_from_slice(&booted_at().to_le_bytes());
+        header[V5_BOOT..V5_BOOT + 8].copy_from_slice(&this_boot().to_le_bytes());
         let mut at = V5_HEADER;
         let mut fields: Vec<u64> = self.v5_scalars().to_vec();
         let mut places = Vec::new();
@@ -1698,13 +1768,26 @@ impl Index {
         if version == 6 {
             widths[2] = bytes[V6_IDS] as usize;
             widths[3] = bytes[V6_IDS + 1] as usize;
+            // 3 or 4 bytes, nothing else: a damaged header is a file to build again, not one to read.
+            if !matches!(widths[2], 3 | 4) || !matches!(widths[3], 3 | 4) {
+                return Err(bad());
+            }
         }
         // Not saved cleanly: trusted only when it was left between two changes and Windows hasn't restarted since (it
         // wrote every changed page itself); after a restart it may have been a power cut, with only some written.
         if bytes[V5_CLEAN] != 1 {
             let boot = u64::from_le_bytes(bytes[V5_BOOT..V5_BOOT + 8].try_into().unwrap());
-            if bytes[V5_BUSY] != 0 || bytes[V5_BEHIND] != 0 || boot.abs_diff(booted_at()) > 5 {
-                return Err(std::io::Error::other("the index wasn't saved cleanly"));
+            let why = if bytes[V5_BUSY] != 0 {
+                "it was ended in the middle of a change"
+            } else if bytes[V5_BEHIND] != 0 {
+                "it was ended with changes not written yet"
+            } else if !same_boot(boot) {
+                "Windows restarted since it was last written"
+            } else {
+                ""
+            };
+            if !why.is_empty() {
+                return Err(std::io::Error::other(format!("the index wasn't saved cleanly: {why}")));
             }
         }
         let field = |i: usize| u64::from_le_bytes(bytes[V5_FIELDS + i * 8..V5_FIELDS + 8 + i * 8].try_into().unwrap()) as usize;
@@ -1771,8 +1854,9 @@ impl Index {
         index.name_slots = slots_for(&index.names, &index.starts, index.sorted as usize, index.unsorted() * 100 / 60).into();
         (index.pending_dirs, index.pending_low) = (pending_dirs, pending_low as u32);
         index.low_water = (low_water as u64 != u64::MAX).then_some(low_water as u32);
+        index.fresh_from = Some(index.len() as u32);
         let (small_at, small_len) = (field(V5_SCALARS + count * 3), field(V5_SCALARS + count * 3 + 1));
-        let mut small = bytes.get(small_at..small_at + small_len).ok_or_else(bad)?;
+        let mut small = small_at.checked_add(small_len).and_then(|end| bytes.get(small_at..end)).ok_or_else(bad)?;
         let mut take = |len: usize| -> std::io::Result<&[u8]> {
             let (head, rest) = small.split_at_checked(len).ok_or_else(bad)?;
             small = rest;
@@ -1782,7 +1866,11 @@ impl Index {
         let next = |read: &mut dyn FnMut(usize) -> std::io::Result<Vec<u8>>| -> std::io::Result<u64> {
             Ok(u64::from_le_bytes(read(8)?.try_into().unwrap()))
         };
+        // (Counts from the file are checked before anything is set aside for them: a damaged one fails here.)
         let exts = next(&mut read)? as usize;
+        if exts > u8::MAX as usize {
+            return Err(bad());
+        }
         let mut ext_names = Vec::with_capacity(exts);
         for _ in 0..exts {
             let len = read(1)?[0] as usize;
@@ -1802,7 +1890,7 @@ impl Index {
             index.origins.insert(k, v);
         }
         let roots = next(&mut read)? as usize;
-        index.roots = pod(&read(roots * 4)?);
+        index.roots = pod(&read(roots.checked_mul(4).ok_or_else(bad)?)?);
         index.times_filled = next(&mut read)? != 0;
         match v5_attrs {
             Some(attrs) => {
@@ -1812,7 +1900,7 @@ impl Index {
             }
             None => {
                 let values = next(&mut read)? as usize;
-                let values: Vec<u16> = pod(&read(values * 2)?);
+                let values: Vec<u16> = pod(&read(values.checked_mul(2).ok_or_else(bad)?)?);
                 let mut rare = HashMap::new();
                 for _ in 0..next(&mut read)? {
                     let (k, v) = (next(&mut read)? as u32, next(&mut read)? as u16);
@@ -1869,7 +1957,7 @@ impl Index {
         self.edits.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let Some(map) = &self.map else { return Busy { mark: std::ptr::null_mut(), depth: std::ptr::null(), index: std::ptr::null() } };
         if self.clean.swap(false, std::sync::atomic::Ordering::SeqCst) {
-            map.bytes_mut(V5_BOOT, 8).copy_from_slice(&booted_at().to_le_bytes());
+            map.bytes_mut(V5_BOOT, 8).copy_from_slice(&this_boot().to_le_bytes());
             map.bytes_mut(V5_CLEAN, 1)[0] = 0;
             let _ = map.flush(0, V5_HEADER);
         }
@@ -2110,11 +2198,10 @@ pub fn ext_key(ext: &[u8]) -> Vec<u8> {
 fn name_hash(name: &[u8]) -> u64 {
     const K: u64 = 0x9E37_79B9_7F4A_7C15;
     let mut h = (name.len() as u64).wrapping_mul(K) ^ 0x2545_F491_4F6C_DD1D;
-    let mut chunks = name.chunks_exact(8);
-    for chunk in &mut chunks {
-        h = (h.rotate_left(5) ^ u64::from_le_bytes(chunk.try_into().unwrap())).wrapping_mul(K);
+    let (chunks, rest) = name.as_chunks::<8>();
+    for chunk in chunks {
+        h = (h.rotate_left(5) ^ u64::from_le_bytes(*chunk)).wrapping_mul(K);
     }
-    let rest = chunks.remainder();
     if !rest.is_empty() {
         let mut w = [0u8; 8];
         w[..rest.len()].copy_from_slice(rest);
@@ -2210,6 +2297,46 @@ mod tests {
 
     fn meta(size: Option<u64>, modified: i64) -> Meta {
         Meta { size, modified, flags: 0 }
+    }
+
+    #[test]
+    fn this_start_of_windows_is_told_by_the_boot_counter_and_old_files_by_the_time() {
+        // Recorded now: the same start, however the clock has been corrected since.
+        assert!(same_boot(this_boot()));
+        // An older file's start time, as before: within 5 seconds.
+        assert!(same_boot(booted_at()));
+        assert!(!same_boot(booted_at().saturating_sub(60)));
+        if let Some(id) = boot_id() {
+            assert_eq!(this_boot(), BOOT_COUNTER | u64::from(id));
+            assert!(!same_boot(BOOT_COUNTER | u64::from(id.wrapping_sub(1))));
+        }
+    }
+
+    #[test]
+    fn new_folders_settle_from_themselves_and_moves_into_them_still_go() {
+        let dir = Meta { size: None, modified: 0, flags: DIR };
+        let mut index = Index::new();
+        let root = index.push(NONE, "C:", dir);
+        let old = index.push(root, "old", dir);
+        let inside = index.push(old, "a.txt", meta(Some(1), 0));
+        // As loaded: what's made from here on is new.
+        index.fresh_from = Some(index.len() as u32);
+        let temporary = index.push(root, "tmp", dir);
+        let file = index.push(temporary, "b.txt", meta(Some(1), 0));
+        assert!(index.fresh(temporary) && !index.fresh(old));
+        index.remove(temporary);
+        index.settle();
+        assert!(index.flags[file as usize] & DEAD != 0);
+        assert!(index.flags[inside as usize] & DEAD == 0);
+        // An old folder moved into a new one: its contents come before the new folder, which isn't new any more.
+        let made = index.push(root, "made", dir);
+        let moved = index.rename(old, made, "old");
+        assert!(!index.fresh(made) && !index.fresh(moved));
+        let later = index.push(root, "later", dir);
+        assert!(index.fresh(later));
+        index.remove(made);
+        index.settle();
+        assert!(index.flags[inside as usize] & DEAD != 0);
     }
 
     #[test]
@@ -2321,6 +2448,23 @@ mod tests {
         assert_eq!(&file[V6_IDS..V6_IDS + 2], &[3, 3]);
         let loaded = Index::load_from(&file).unwrap();
         assert_eq!((loaded.name_of.width(), loaded.parents.width()), (3, 3));
+        // Any header byte damaged, or the file cut short: refused or read, never a panic.
+        for at in 0..V5_HEADER.min(file.len()) {
+            for value in [0u8, 1, 0x7f, 0xff] {
+                let mut damaged = file.clone();
+                damaged[at] = value;
+                let _ = Index::load_from(&damaged);
+            }
+        }
+        for len in (0..file.len()).step_by(97) {
+            let _ = Index::load_from(&file[..len]);
+        }
+        // A damaged width is refused, never read.
+        for (at, width) in [(V6_IDS, 0u8), (V6_IDS, 9), (V6_IDS + 1, 2)] {
+            let mut damaged = file.clone();
+            damaged[at] = width;
+            assert!(Index::load_from(&damaged).is_err(), "width {width} at {at}");
+        }
         let after: Vec<(String, u32)> = (0..loaded.len() as u32).map(|e| (loaded.path(e), loaded.parent(e))).collect();
         assert_eq!(after, before);
         assert_eq!(loaded.parent(root), NONE);

@@ -270,6 +270,91 @@ fn lister_thread() {
     }
 }
 
+/// Puts this lister in or out of background priority, when it isn't already (`now` is where it is): a paced walk
+/// follows the speed control's changes between two folders.
+fn lister_mode(want: bool, now: &mut bool) {
+    if want == *now {
+        return;
+    }
+    use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_MODE_BACKGROUND_BEGIN, THREAD_MODE_BACKGROUND_END};
+    let mode = if want { THREAD_MODE_BACKGROUND_BEGIN } else { THREAD_MODE_BACKGROUND_END };
+    unsafe { SetThreadPriority(GetCurrentThread(), mode) };
+    *now = want;
+}
+
+/// How long a waiting lister sleeps before it looks at `stop` again (stopping doesn't wake it; a speed change does).
+const LOOK_AGAIN: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// How many listers a paced walk (`reconcile_paced`) may use now, and whether they list at background priority.
+/// Excavate's speed control sets it at any time (`set_pace`); a walk going on follows between two folders: the
+/// listers above the count wait (they aren't ended), and go on when it rises again.
+pub struct Pace {
+    listers: std::sync::Mutex<usize>,
+    background: std::sync::atomic::AtomicBool,
+    changed: std::sync::Condvar,
+}
+
+impl Pace {
+    pub const fn new(listers: usize, background: bool) -> Pace {
+        Pace { listers: std::sync::Mutex::new(listers), background: std::sync::atomic::AtomicBool::new(background),
+               changed: std::sync::Condvar::new() }
+    }
+
+    /// At least one lister always lists.
+    pub fn set(&self, listers: usize, background: bool) {
+        self.background.store(background, std::sync::atomic::Ordering::Relaxed);
+        *self.lock() = listers.max(1);
+        self.changed.notify_all();
+    }
+
+    pub fn listers(&self) -> usize {
+        *self.lock()
+    }
+
+    pub fn background(&self) -> bool {
+        self.background.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, usize> {
+        self.listers.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Waits while lister `place` (from 0) is above the count: true when its turn comes, false once `over` says the
+    /// walk ended or was stopped.
+    fn turn(&self, place: usize, over: impl Fn() -> bool) -> bool {
+        let mut listers = self.lock();
+        loop {
+            if over() {
+                return false;
+            }
+            if place < *listers {
+                return true;
+            }
+            listers = self.changed.wait_timeout(listers, LOOK_AGAIN).unwrap_or_else(|poisoned| poisoned.into_inner()).0;
+        }
+    }
+
+    /// Wakes the waiting listers to look at `over` again (a walk ended). Under the lock, so none misses it.
+    fn wake(&self) {
+        let _listers = self.lock();
+        self.changed.notify_all();
+    }
+}
+
+/// The pace of Bedrock's catch-up walks: 2 listers in the background until Excavate says otherwise.
+pub static PACE: Pace = Pace::new(2, true);
+
+/// Sets the pace of catch-up walks, going on or to come (`Pace`).
+pub fn set_pace(listers: usize, background: bool) {
+    PACE.set(listers, background);
+}
+
+/// The most listers a paced walk starts: up to 8, and one thread fewer than the processor has (at least 1). Those
+/// above the pace's count only wait, so starting them all costs a few idle threads.
+pub fn most_listers() -> usize {
+    std::thread::available_parallelism().map_or(4, |n| n.get()).saturating_sub(1).clamp(1, 8)
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct Reconciled {
     pub folders: usize,
@@ -296,6 +381,13 @@ pub fn reconcile_until(lock: &std::sync::RwLock<Index>, top: u32, path: &str, de
     reconcile_many(lock, vec![(path.to_string(), top, deep)], threads, stop)
 }
 
+/// `reconcile_until` at `pace`: up to `most` listers, as many listing as the pace allows at each moment, at its
+/// priority (when listing in the background at all: `set_background`).
+pub fn reconcile_paced(lock: &std::sync::RwLock<Index>, top: u32, path: &str, deep: bool, most: usize, pace: &Pace,
+                       stop: &std::sync::atomic::AtomicBool) -> Reconciled {
+    reconcile_with(lock, vec![(path.to_string(), top, deep)], most, Some(pace), stop)
+}
+
 /// `reconcile` for many folders at once, each `(path, entry, deep)`: listed in parallel, and a folder that appears in
 /// one of them (new, or moved there) is listed with everything inside. What wasn't listed goes in one pass at the end:
 /// an entry from before whose folder was listed and didn't have it. (Inside a folder that couldn't be listed, nothing
@@ -303,33 +395,60 @@ pub fn reconcile_until(lock: &std::sync::RwLock<Index>, top: u32, path: &str, de
 /// is taken out.
 pub fn reconcile_many(lock: &std::sync::RwLock<Index>, folders: Vec<(String, u32, bool)>, threads: usize,
                       stop: &std::sync::atomic::AtomicBool) -> Reconciled {
+    reconcile_with(lock, folders, threads, None, stop)
+}
+
+/// `reconcile_many`, at `pace` when there's one (`reconcile_paced`).
+fn reconcile_with(lock: &std::sync::RwLock<Index>, folders: Vec<(String, u32, bool)>, threads: usize, pace: Option<&Pace>,
+                  stop: &std::sync::atomic::AtomicBool) -> Reconciled {
     use std::sync::atomic::Ordering::Relaxed;
-    let before = lock.read().unwrap().len();
+    // Folders made while the index is followed (a program's new folder, listed as it arrived) have everything inside
+    // them after them: only the entries from the lowest of them on are looked at, not the whole index. (Only this
+    // thread changes the index, and listing renames nothing that would undo it: a name's case changing is a new entry
+    // after the folder, with its contents still after the folder too.)
+    let (before, base) = {
+        let index = lock.read().unwrap();
+        let lowest = folders.iter().map(|(_, entry, _)| index.current(*entry)).min().unwrap_or(0);
+        (index.len(), if index.fresh(lowest) { lowest as usize } else { 0 })
+    };
     let bit = |set: &mut Vec<u64>, e: u32| {
-        if (e as usize) < before {
-            set[e as usize / 64] |= 1 << (e % 64);
+        let e = e as usize;
+        if e >= base && e < before {
+            set[(e - base) / 64] |= 1 << ((e - base) % 64);
         }
     };
-    let has = |set: &Vec<u64>, e: u32| (e as usize) < before && set[e as usize / 64] >> (e % 64) & 1 != 0;
+    let has = |set: &Vec<u64>, e: u32| {
+        let e = e as usize;
+        e >= base && e < before && set[(e - base) / 64] >> ((e - base) % 64) & 1 != 0
+    };
     // Entries seen in a listing, and folders listed whole (their entries from before that weren't seen go).
-    let mut seen = vec![0u64; before.div_ceil(64)];
-    let mut listed_ok = vec![0u64; before.div_ceil(64)];
+    let mut seen = vec![0u64; (before - base).div_ceil(64)];
+    let mut listed_ok = vec![0u64; (before - base).div_ceil(64)];
     let mut done = Reconciled::default();
     if folders.is_empty() {
         return done;
     }
     let (job_tx, job_rx) = crossbeam_channel::unbounded::<(String, u32, bool)>();
     let (done_tx, done_rx) = crossbeam_channel::unbounded::<(String, u32, bool, Result<Vec<Found>, u32>, Option<Meta>)>();
+    // Set when the walk is over (done or stopped), for listers waiting their turn.
+    let finished = &std::sync::atomic::AtomicBool::new(false);
     std::thread::scope(|scope| {
-        for _ in 0..threads.max(1) {
+        for place in 0..threads.max(1) {
             let jobs = job_rx.clone();
             let out = done_tx.clone();
             scope.spawn(move || {
-                lister_thread();
-                for (path, entry, deep) in jobs {
+                let mut background = false;
+                loop {
+                    if let Some(pace) = pace {
+                        if !pace.turn(place, || stop.load(Relaxed) || finished.load(Relaxed)) {
+                            break;
+                        }
+                    }
+                    let Ok((path, entry, deep)) = jobs.recv() else { break };
                     if stop.load(Relaxed) {
                         break;
                     }
+                    lister_mode(BACKGROUND.load(Relaxed) && pace.is_none_or(Pace::background), &mut background);
                     let listed = list(&path);
                     // A folder listed on its own: its own date changed with what's in it, and its folder isn't listed.
                     let own = if deep { None } else { stat(&path) };
@@ -351,7 +470,12 @@ pub fn reconcile_many(lock: &std::sync::RwLock<Index>, folders: Vec<(String, u32
                 done.stopped = true;
                 break;
             }
-            let Ok((folder_path, folder, deep, listed, own)) = done_rx.recv() else { break };
+            // Not waiting for good: a lister that saw `stop` ends without its folder, and the others wait for jobs.
+            let (folder_path, folder, deep, listed, own) = match done_rx.recv_timeout(LOOK_AGAIN) {
+                Ok(listed) => listed,
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => continue,
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
+            };
             pending -= 1;
             done.folders += 1;
             let mut index = lock.write().unwrap();
@@ -414,12 +538,16 @@ pub fn reconcile_many(lock: &std::sync::RwLock<Index>, folders: Vec<(String, u32
             }
         }
         drop(job_tx);
+        finished.store(true, Relaxed);
+        if let Some(pace) = pace {
+            pace.wake();
+        }
     });
     if done.stopped {
         return done;
     }
     let mut index = lock.write().unwrap();
-    for e in 0..before as u32 {
+    for e in base as u32..before as u32 {
         if index.flags[e as usize] & crate::store::DEAD != 0 || has(&seen, e) {
             continue;
         }
@@ -431,4 +559,113 @@ pub fn reconcile_many(lock: &std::sync::RwLock<Index>, folders: Vec<(String, u32
     }
     index.settle();
     done
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+
+    /// Long enough to see that a waiting lister doesn't go (it would within microseconds).
+    const A_MOMENT: Duration = Duration::from_millis(50);
+    /// Far longer than a lister takes to go once it may (only reached when the test fails).
+    const AT_MOST: Duration = Duration::from_secs(5);
+
+    #[test]
+    fn listers_above_the_pace_wait_and_go_on_when_it_rises() {
+        let pace = Pace::new(2, true);
+        let over = AtomicBool::new(false);
+        let (turns, taken) = crossbeam_channel::unbounded();
+        std::thread::scope(|scope| {
+            // Listers 0, 2 and 5, each asking for its turn before each folder, as a paced walk's do; the test says when
+            // each has listed its folder and asks again.
+            let asks: Vec<_> = [0, 2, 5].into_iter().map(|place| {
+                let (ask, asked) = crossbeam_channel::unbounded::<()>();
+                let (pace, over, turns) = (&pace, &over, turns.clone());
+                scope.spawn(move || loop {
+                    let went = pace.turn(place, || over.load(Ordering::Relaxed));
+                    turns.send((place, went)).unwrap();
+                    if !went || asked.recv().is_err() {
+                        return;
+                    }
+                });
+                ask
+            }).collect();
+            let next = || taken.recv_timeout(AT_MOST).unwrap();
+            let none = || taken.recv_timeout(A_MOMENT).is_err();
+            // At 2 (Gentle, Normal): 0 lists, 2 and 5 wait.
+            assert_eq!(next(), (0, true));
+            assert!(none(), "nothing above 2 lists");
+            // Raised to 4 (Fast): 2 goes on, 5 still waits.
+            pace.set(4, true);
+            assert_eq!(next(), (2, true));
+            assert!(none(), "5 waits at 4");
+            // Raised to 8 (Full, at normal priority): 5 goes on too.
+            pace.set(8, false);
+            assert_eq!(next(), (5, true));
+            assert!(!pace.background());
+            // Lowered to nothing, which is 1: after their folder, 2 and 5 wait; 0 still lists.
+            pace.set(0, true);
+            assert_eq!(pace.listers(), 1);
+            asks[1].send(()).unwrap();
+            asks[2].send(()).unwrap();
+            assert!(none(), "nothing above 1 lists");
+            asks[0].send(()).unwrap();
+            assert_eq!(next(), (0, true));
+            // Raised to 3: 2 goes on, 5 waits.
+            pace.set(3, true);
+            assert_eq!(next(), (2, true));
+            assert!(none(), "5 waits at 3");
+            // The walk ends: 5 stops waiting, and the others end when asked again.
+            over.store(true, Ordering::Relaxed);
+            pace.wake();
+            assert_eq!(next(), (5, false));
+            drop(asks);
+        });
+    }
+
+    #[test]
+    fn a_paced_walk_lists_everything_while_the_pace_changes() {
+        let dir = std::env::temp_dir().join(format!("engine-paced-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for a in 0..20 {
+            for b in 0..5 {
+                std::fs::create_dir_all(dir.join(format!("a{a}")).join(format!("b{b}"))).unwrap();
+                std::fs::write(dir.join(format!("a{a}")).join(format!("b{b}")).join("f.txt"), b"x").unwrap();
+            }
+        }
+        let root = dir.display().to_string();
+        let mut index = Index::new();
+        walk(&mut index, &root, 2);
+        let top = index.roots()[0];
+        let before = index.live();
+        // Added since: listed again at a pace of 1 that rises and falls while it goes.
+        for a in 0..20 {
+            std::fs::write(dir.join(format!("a{a}")).join("new.txt"), b"x").unwrap();
+        }
+        let lock = std::sync::RwLock::new(index);
+        let pace = Pace::new(1, false);
+        let (stop, done) = (AtomicBool::new(false), AtomicBool::new(false));
+        let listed = std::thread::scope(|scope| {
+            scope.spawn(|| {
+                for listers in [8, 1, 4, 2].into_iter().cycle() {
+                    if done.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    pace.set(listers, false);
+                    std::thread::yield_now();
+                }
+            });
+            let listed = reconcile_paced(&lock, top, &root, true, 8, &pace, &stop);
+            done.store(true, Ordering::Relaxed);
+            listed
+        });
+        assert_eq!((listed.added, listed.removed, listed.refused, listed.stopped), (20, 0, 0, false));
+        assert_eq!(lock.read().unwrap().live(), before + 20);
+        // Stopped: it ends, its waiting listers with it.
+        stop.store(true, Ordering::Relaxed);
+        assert!(reconcile_paced(&lock, top, &root, true, 8, &pace, &stop).stopped);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -1,0 +1,89 @@
+# Builds and tests every push and pull request on Windows. Releases are not made here: they're built, packed and
+# signed on the maintainer's PC (docs/RELEASING.md).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # The workspace's rust-version (Cargo.toml): the oldest Rust it promises to build with.
+  RUSTUP_TOOLCHAIN: "1.98"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust
+        run: |
+          rustup toolchain install $env:RUSTUP_TOOLCHAIN --profile minimal --component clippy
+          rustc --version
+          cargo clippy --version
+
+      - uses: Swatinem/rust-cache@v2
+
+      # PDFium and ONNX Runtime with DirectML, which the build copies beside the executables. The same files, sources
+      # and SHA-256 as scripts/fetch-pdfium.sh and scripts/fetch-onnxruntime.sh: change them together.
+      - name: Cache the libraries in vendor/
+        id: vendor
+        uses: actions/cache@v4
+        with:
+          path: |
+            vendor/pdfium
+            vendor/onnxruntime
+          key: vendor-${{ hashFiles('scripts/fetch-pdfium.sh', 'scripts/fetch-onnxruntime.sh') }}
+
+      - name: Fetch the libraries
+        if: steps.vendor.outputs.cache-hit != 'true'
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          function Get-Checked($url, $file, $sha256) {
+            Invoke-WebRequest -Uri $url -OutFile $file
+            $actual = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLower()
+            if ($actual -ne $sha256) { throw "$file has SHA-256 $actual, expected $sha256" }
+          }
+          function Expand-Entry($zip, $entry, $to) {
+            $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $zip).Path)
+            try { [System.IO.Compression.ZipFileExtensions]::ExtractToFile($archive.GetEntry($entry), $to, $true) }
+            finally { $archive.Dispose() }
+          }
+
+          New-Item -ItemType Directory -Force vendor/pdfium | Out-Null
+          Get-Checked "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F7881/pdfium-win-x64.tgz" `
+            vendor/pdfium/pdfium-win-x64.tgz 73cc0de638ac2095e7445bf56a38200a5b7c7ca0e9f4ba144598f2457377ac08
+          & "$env:SystemRoot\System32\tar.exe" -xzf vendor/pdfium/pdfium-win-x64.tgz -C vendor/pdfium bin/pdfium.dll LICENSE VERSION
+          if ($LASTEXITCODE -ne 0) { throw "tar failed" }
+
+          $onnx = "vendor/onnxruntime"
+          New-Item -ItemType Directory -Force $onnx | Out-Null
+          Get-Checked "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.24.4/microsoft.ml.onnxruntime.directml.1.24.4.nupkg" `
+            "$onnx/onnxruntime.nupkg" 57e9f11b73437bef7a309496135d4c1f96b1a8e9ddba60013fa27bfc1d788681
+          Get-Checked "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg" `
+            "$onnx/directml.nupkg" 4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9
+          Expand-Entry "$onnx/onnxruntime.nupkg" "runtimes/win-x64/native/onnxruntime.dll" "$PWD/$onnx/onnxruntime.dll"
+          Expand-Entry "$onnx/directml.nupkg" "bin/x64-win/DirectML.dll" "$PWD/$onnx/DirectML.dll"
+          Remove-Item "$onnx/*.nupkg", vendor/pdfium/pdfium-win-x64.tgz
+          Get-ChildItem vendor/pdfium/bin/pdfium.dll, "$onnx/onnxruntime.dll", "$onnx/DirectML.dll"
+
+      - name: Build
+        run: cargo build --workspace --release --locked
+
+      - name: Test
+        run: cargo test --workspace --release --locked
+
+      # Every target, and a warning fails it (the few lints this code's style allows are in Cargo.toml).
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings

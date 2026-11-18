@@ -1,4 +1,4 @@
-# Packs a release for GitHub: Excavate-<version>-windows-x64.zip (the programs and the libraries beside them), its
+﻿# Packs a release for GitHub: Excavate-<version>-windows-x64.zip (the programs and the libraries beside them), its
 # signature (.zip.sig: ECDSA P-256 over the zip's SHA-256, as hex, with the key scripts/release-key.ps1 made) and
 # SHA256SUMS.txt. Attach all three to a GitHub release tagged v<version>; Excavate's updates (app/src/update.rs) take
 # the latest release, check its signature, and use it at the next start. Build the release first (cargo build
@@ -13,7 +13,7 @@ $ErrorActionPreference = "Stop"
 if (-not $Version) {
   $Version = (Select-String -Path "$PSScriptRoot\..\Cargo.toml" -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
 }
-$files = "excavate.exe", "excavate-indexer.exe", "excavate-helper.exe", "pdfium.dll", "onnxruntime.dll", "DirectML.dll"
+$files = "excavate.exe", "excavate-indexer.exe", "excavate-helper.exe", "excavate-bedrock.exe", "pdfium.dll", "onnxruntime.dll", "DirectML.dll"
 # Microsoft's C++ runtime, beside the programs (a fresh Windows may not have it; Microsoft allows this copy): from
 # Visual Studio's redistributable folder, the newest.
 $runtime = "msvcp140.dll", "msvcp140_1.dll", "vcruntime140.dll", "vcruntime140_1.dll"
@@ -52,5 +52,22 @@ $ecdsa.Dispose(); $cng.Dispose()
 $hex = ($signature | ForEach-Object { "{0:x2}" -f $_ }) -join ""
 [IO.File]::WriteAllText("$zip.sig", $hex)
 $sum = ($hash | ForEach-Object { "{0:x2}" -f $_ }) -join ""
-[IO.File]::WriteAllText((Join-Path $Out "SHA256SUMS.txt"), "$sum  $(Split-Path $zip -Leaf)`n")
+# The setup: one file to download, the zip at the end of excavate-setup.exe (indexer/src/setup.rs), signed the same way.
+$setup = Join-Path $Out "Excavate-$Version-setup.exe"
+$stub = [IO.File]::ReadAllBytes((Get-Item (Join-Path $From "excavate-setup.exe")).FullName)
+$setupBytes = New-Object byte[] ($stub.Length + $bytes.Length)
+[Array]::Copy($stub, 0, $setupBytes, 0, $stub.Length)
+[Array]::Copy($bytes, 0, $setupBytes, $stub.Length, $bytes.Length)
+[IO.File]::WriteAllBytes($setup, $setupBytes)
+$blob = [IO.File]::ReadAllBytes($Key)
+$cng = [System.Security.Cryptography.CngKey]::Import($blob, [System.Security.Cryptography.CngKeyBlobFormat]::EccPrivateBlob)
+[Array]::Clear($blob, 0, $blob.Length)
+$ecdsa = New-Object System.Security.Cryptography.ECDsaCng($cng)
+$setupHash = [System.Security.Cryptography.SHA256]::Create().ComputeHash($setupBytes)
+$setupSignature = $ecdsa.SignHash($setupHash)
+$ecdsa.Dispose(); $cng.Dispose()
+[IO.File]::WriteAllText("$setup.sig", (($setupSignature | ForEach-Object { "{0:x2}" -f $_ }) -join ""))
+$setupSum = ($setupHash | ForEach-Object { "{0:x2}" -f $_ }) -join ""
+[IO.File]::WriteAllText((Join-Path $Out "SHA256SUMS.txt"), "$sum  $(Split-Path $zip -Leaf)`n$setupSum  $(Split-Path $setup -Leaf)`n")
 "$zip ($([math]::Round($bytes.Length / 1MB, 1)) MB), signed; SHA-256 $sum"
+"$setup ($([math]::Round($setupBytes.Length / 1MB, 1)) MB), signed; SHA-256 $setupSum"

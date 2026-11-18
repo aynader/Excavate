@@ -49,6 +49,10 @@ export component Button inherits Rectangle {
     border-width: root.primary ? 0px : 1px;
     border-color: Theme.stroke;
     animate background { duration: Theme.quick; }
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if (root.enabled) { root.clicked(); } }
     label-text := Text {
         x: (parent.width - self.width - (root.chevron ? 16px : 0px)) / 2;
         text: root.label;
@@ -71,11 +75,45 @@ export component Button inherits Rectangle {
     @children
 }
 
+// A button that asks for administrator rights: Windows' shield before its label.
+export component ShieldButton inherits Rectangle {
+    in property <string> label;
+    callback clicked();
+    height: 32px;
+    width: row.preferred-width;
+    border-radius: 7px;
+    background: touch.pressed ? Theme.accent.darker(15%) : touch.has-hover ? Theme.accent.brighter(8%) : Theme.accent;
+    animate background { duration: Theme.quick; }
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+    row := HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 16px;
+        spacing: 7px;
+        alignment: center;
+        Glyph {
+            width: 14px;
+            height: 14px;
+            y: (parent.height - self.height) / 2;
+            // Windows' shield: this asks for administrator rights.
+            commands: "M12 3l7 3v5c0 4.6-3 8.3-7 10c-4-1.7-7-5.4-7-10V6z";
+            stroke: Theme.on-accent;
+        }
+        Text { text: root.label; font-size: 13px; font-weight: 600; color: Theme.on-accent; vertical-alignment: center; }
+    }
+}
+
 export component Link inherits Text {
     callback clicked();
     font-size: 12.5px;
     font-weight: 600;
     color: link-touch.has-hover ? Theme.text : Theme.accent;
+    // A link is pressed like a button by screen readers and keyboard tools (UI Automation's Invoke).
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { root.clicked(); }
     link-touch := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }

@@ -2,6 +2,8 @@
 //! taskbar is, the theme, the tray icon and the global hotkey. Everything here is plain Win32/COM through the `windows`
 //! crate, so there is no runtime besides Windows itself.
 
+pub mod actions;
+pub mod preview_host;
 pub mod audio;
 pub mod dialog;
 pub mod display;
@@ -13,8 +15,10 @@ pub mod icons;
 pub mod imaging;
 pub mod layered;
 pub mod load;
+pub mod media;
 pub mod menu;
 pub mod pdf;
+pub mod power;
 pub mod process;
 pub mod registry;
 pub mod shell;

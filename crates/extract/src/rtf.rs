@@ -83,11 +83,10 @@ pub fn to_text(rtf: &[u8]) -> String {
                     "u" => {
                         if let Some(code) = number {
                             let code = if code < 0 { code + 65536 } else { code } as u32;
-                            if !skipping {
-                                if let Some(c) = char::from_u32(code) {
+                            if !skipping
+                                && let Some(c) = char::from_u32(code) {
                                     out.push(c);
                                 }
-                            }
                             pending_skip = unicode_skip;
                         }
                     }

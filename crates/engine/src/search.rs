@@ -178,7 +178,7 @@ fn page_of(root: &Node, index: &Index, within: Option<u32>, sort: Sort, descendi
     let plain = by_name || word;
     let check = |e: u32, start: usize, cache: &mut Cache| -> bool {
         index.flags[e as usize] & DEAD == 0
-            && within.map_or(true, |root| under(index, e, root))
+            && within.is_none_or(|root| under(index, e, root))
             && (plain || {
                 let mut c = Cand { index, e, start, hay: None, path: None };
                 eval(&q, &mut c, cache)
@@ -203,7 +203,7 @@ fn page_of(root: &Node, index: &Index, within: Option<u32>, sort: Sort, descendi
         }, &order, keep, unders),
         // Made only of name words, extensions and files or folders: whole words of a bitset at a time.
         Driver::Every => match bits_of(&q, index) {
-            Some(bits) => each_set(index, &bits, threads, &|e| within.map_or(true, |root| under(index, e, root)), &order, keep),
+            Some(bits) => each_set(index, &bits, threads, &|e| within.is_none_or(|root| under(index, e, root)), &order, keep),
             // Every name checked once, then their entries.
             None if by_name => {
                 let names = every_name(index, &keep_name);
@@ -461,22 +461,22 @@ fn eval(q: &Q, c: &mut Cand, cache: &mut Cache) -> bool {
             if t.path {
                 let (folded, raw) = c.path(cache);
                 find(folded, &t.folded, t.anchor, t.whole_word)
-                    && t.exact.as_ref().map_or(true, |exact| find(raw.as_bytes(), exact, t.anchor, t.whole_word))
+                    && t.exact.as_ref().is_none_or(|exact| find(raw.as_bytes(), exact, t.anchor, t.whole_word))
                     && t.accents_in(raw.as_bytes())
             } else {
                 let name = c.name();
                 find(c.hay(), &t.folded, t.anchor, t.whole_word)
-                    && t.exact.as_ref().map_or(true, |exact| find(name, exact, t.anchor, t.whole_word))
+                    && t.exact.as_ref().is_none_or(|exact| find(name, exact, t.anchor, t.whole_word))
                     && t.accents_in(name)
             }
         }
         Q::Glob(pattern, exact, path) => {
             if *path {
                 let (folded, raw) = c.path(cache);
-                glob(pattern, folded) && exact.map_or(true, |exact| glob(exact, raw.as_bytes()))
+                glob(pattern, folded) && exact.is_none_or(|exact| glob(exact, raw.as_bytes()))
             } else {
                 let name = c.name();
-                glob(pattern, c.hay()) && exact.map_or(true, |exact| glob(exact, name))
+                glob(pattern, c.hay()) && exact.is_none_or(|exact| glob(exact, name))
             }
         }
         Q::Regex(regex, path) => {
@@ -691,10 +691,10 @@ fn eval_name_with(q: &Q, id: u32, name: &[u8], folded: &[u8]) -> bool {
                     return true;
                 }
             }
-            find(folded, &t.folded, t.anchor, t.whole_word) && t.exact.as_ref().map_or(true, |exact| find(name, exact, t.anchor, t.whole_word))
+            find(folded, &t.folded, t.anchor, t.whole_word) && t.exact.as_ref().is_none_or(|exact| find(name, exact, t.anchor, t.whole_word))
                 && t.accents_in(name)
         }
-        Q::Glob(pattern, exact, _) => glob(pattern, folded) && exact.map_or(true, |exact| glob(exact, name)),
+        Q::Glob(pattern, exact, _) => glob(pattern, folded) && exact.is_none_or(|exact| glob(exact, name)),
         Q::Regex(regex, _) => regex.is_match(name),
         Q::Len(from, to) => (*from..=*to).contains(&(name.iter().filter(|&&b| b & 0xC0 != 0x80).count() as u64)),
         _ => unreachable!("name_only"),
@@ -747,7 +747,7 @@ fn boundary_before(hay: &[u8], at: usize) -> bool {
     while from > 0 && hay[from] & 0xC0 == 0x80 {
         from -= 1;
     }
-    std::str::from_utf8(&hay[from..at]).ok().and_then(|s| s.chars().next()).map_or(true, |c| !in_word(c))
+    std::str::from_utf8(&hay[from..at]).ok().and_then(|s| s.chars().next()).is_none_or(|c| !in_word(c))
 }
 
 /// What a whole word (`ww:`) can't be next to: letters, digits and `_`, as Everything has it (`ww:config` 128,844
@@ -761,7 +761,7 @@ fn boundary_after(hay: &[u8], at: usize) -> bool {
         return true;
     }
     let len = match hay[at] { 0xF0.. => 4, 0xE0.. => 3, 0xC0.. => 2, _ => 1 };
-    std::str::from_utf8(&hay[at..(at + len).min(hay.len())]).ok().and_then(|s| s.chars().next()).map_or(true, |c| !in_word(c))
+    std::str::from_utf8(&hay[at..(at + len).min(hay.len())]).ok().and_then(|s| s.chars().next()).is_none_or(|c| !in_word(c))
 }
 
 /// The folder at an absolute path, by its names, from the root that holds it (a drive, or a folder walked).
@@ -775,7 +775,7 @@ pub fn resolve(index: &Index, path: &str) -> Option<u32> {
         }
         let name = index.name(root).trim_end_matches('\\').to_ascii_lowercase();
         let fits = wanted == name || wanted.starts_with(&format!("{name}\\"));
-        if fits && best.map_or(true, |(_, len)| name.len() > len) {
+        if fits && best.is_none_or(|(_, len)| name.len() > len) {
             best = Some((root, name.len()));
         }
     }

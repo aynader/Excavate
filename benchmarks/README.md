@@ -135,9 +135,12 @@ first-run steps show those times.
   measure reading --excavate <release> --data <corpus> --kind image-shown --choice balanced --files 300
   measure reading --excavate <release> --data <corpus> --kind image-shown --choice balanced --files 0 --runs 1 --keep <home>
   measure finding --home <home> --excavate <release>
+  measure memory --home <home> --excavate <release>
   ```
 
-  `measure` alone lists the options and kinds.
+  `measure` alone lists the options and kinds. `measure memory` is the check that memory hasn't crept back: Excavate,
+  its reader and its search helper at rest and while searching, on the kept home. It fails when one is over its limit
+  (`--max-app`, `--max-reader`, `--max-helper`, `--max-searching`, in MB).
 - **The graphics card**:
 
   ```bash
@@ -148,7 +151,10 @@ first-run steps show those times.
 
 ## Results
 
-Excavate 0.1.0, 10-11 November 2026. Raw files in [results/laptop](results/laptop) (the everyday PC) and [results/vm](results/vm) (the virtual machine); the tables below are made from them by [results_tables.py](results_tables.py).
+Excavate 0.1.0, 10-11 November 2026. Not measured again since. Later versions made Excavate a good deal lighter (at
+rest, the reader went from 140 MB to 27 MB and the search helper from 44 MB to 15 MB, and reading text in images on the
+graphics card settles around 2.8 GB instead of 7 GB or more), and faster at full speed, so today's Excavate should
+feel at least as quick as these figures say. Raw files in [results/laptop](results/laptop) (the everyday PC) and [results/vm](results/vm) (the virtual machine); the tables below are made from them by [results_tables.py](results_tables.py).
 
 ### On the everyday PC
 
@@ -166,7 +172,7 @@ Excavate 0.1.0, 10-11 November 2026. Raw files in [results/laptop](results/lapto
 | Size on disk | ~340 MB | ~340 MB |
 | A new file found | 6.2 ms | 926 ms |
 | Processor time per change (20,000 changes, 5 times) | 102 µs | 426 µs |
-| Processor time when idle, over 60 s | 0.69 s | 0.14 s |
+| Processor time when idle, over 60 s | 0.69 s. Re-measured 2026-11-14 after a fix, the service alone on a busy PC (load 39-50%, 2,500-7,100 changes a minute; medians of 7 windows run side by side): 1.11 s before, 0.78 s after; over a folder left alone, no wake-ups (before: one every 30 s, to write its own file again). | 0.14 s (not measured again) |
 
 The 44 searches, 30 times each, until the first 100 results sorted by name are in hand: the median of their medians is 7.0 ms for Bedrock and 27.5 ms for Everything. Bedrock is faster on 33 of 44; Everything by a few milliseconds on searches by date or size and on those with hundreds of thousands of results. The counts differ by a few files changing while the run went on, except where Bedrock finds more (`ext:mp4`, `*.jp*g`, `size:>1gb`): files in folders this PC's Everything is set to leave out.
 

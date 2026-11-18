@@ -48,6 +48,28 @@ pub fn running(part: &str) -> Option<String> {
     }
 }
 
+/// The processes `parent` started that still run (their ids).
+pub fn children(parent: u32) -> Vec<u32> {
+    let mut found = Vec::new();
+    // SAFETY: a snapshot of the process list, walked and closed here.
+    unsafe {
+        let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else { return found };
+        let mut entry = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        if Process32FirstW(snapshot, &mut entry).is_ok() {
+            loop {
+                if entry.th32ParentProcessID == parent && entry.th32ProcessID != parent {
+                    found.push(entry.th32ProcessID);
+                }
+                if Process32NextW(snapshot, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = CloseHandle(snapshot);
+    }
+    found
+}
+
 /// Every running process: its id and its file's name ("python.exe").
 pub fn all() -> Vec<(u32, String)> {
     let mut all = Vec::new();
@@ -136,23 +158,48 @@ pub fn run_in_background() {
     efficiency_mode(false);
 }
 
-/// "Read everything now": behind what the person does still, but ahead of what's merely in the background.
-pub fn in_a_hurry(on: bool) {
-    use windows::Win32::System::Threading::{BELOW_NORMAL_PRIORITY_CLASS, IDLE_PRIORITY_CLASS};
-    // SAFETY: our own process's priority.
-    unsafe {
-        let _ = SetPriorityClass(GetCurrentProcess(), if on { BELOW_NORMAL_PRIORITY_CLASS } else { IDLE_PRIORITY_CLASS });
+/// How far ahead of other programs this process (or one of its model servers) runs: idle (behind everything the
+/// person does: Normal), below normal (ahead of what's merely in the background: Fast), or normal (alongside the
+/// person's apps: Full speed).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Priority {
+    Idle,
+    BelowNormal,
+    Normal,
+}
+
+impl Priority {
+    fn class(self) -> windows::Win32::System::Threading::PROCESS_CREATION_FLAGS {
+        use windows::Win32::System::Threading::{BELOW_NORMAL_PRIORITY_CLASS, IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS};
+        match self {
+            Priority::Idle => IDLE_PRIORITY_CLASS,
+            Priority::BelowNormal => BELOW_NORMAL_PRIORITY_CLASS,
+            Priority::Normal => NORMAL_PRIORITY_CLASS,
+        }
     }
 }
 
-/// `in_a_hurry` for another process of Excavate's (the listener): below normal when `on`, else idle. False when its
-/// priority couldn't be changed.
-pub fn hurry_process(process_id: u32, on: bool) -> bool {
-    use windows::Win32::System::Threading::{BELOW_NORMAL_PRIORITY_CLASS, IDLE_PRIORITY_CLASS, PROCESS_SET_INFORMATION};
+/// This process's priority, and its memory's: at normal priority the pages it reads are kept like any app's, else
+/// they're the first to make room (`run_in_background`).
+pub fn set_priority(priority: Priority) {
+    use windows::Win32::System::Threading::{MEMORY_PRIORITY_INFORMATION, MEMORY_PRIORITY_LOW, MEMORY_PRIORITY_NORMAL, ProcessMemoryPriority};
+    let memory = MEMORY_PRIORITY_INFORMATION { MemoryPriority: if priority == Priority::Normal { MEMORY_PRIORITY_NORMAL } else { MEMORY_PRIORITY_LOW } };
+    // SAFETY: our own process's priorities, from well-formed structs.
+    unsafe {
+        let _ = SetPriorityClass(GetCurrentProcess(), priority.class());
+        let _ = SetProcessInformation(GetCurrentProcess(), ProcessMemoryPriority, &memory as *const _ as *const _,
+                                      std::mem::size_of::<MEMORY_PRIORITY_INFORMATION>() as u32);
+    }
+}
+
+/// The same for another process of Excavate's (a model's server, the listener). False when its priority couldn't be
+/// changed.
+pub fn set_process_priority(process_id: u32, priority: Priority) -> bool {
+    use windows::Win32::System::Threading::PROCESS_SET_INFORMATION;
     // SAFETY: a handle opened, used and closed here.
     unsafe {
         let Ok(process) = OpenProcess(PROCESS_SET_INFORMATION, false, process_id) else { return false };
-        let done = SetPriorityClass(process, if on { BELOW_NORMAL_PRIORITY_CLASS } else { IDLE_PRIORITY_CLASS }).is_ok();
+        let done = SetPriorityClass(process, priority.class()).is_ok();
         let _ = windows::Win32::Foundation::CloseHandle(process);
         done
     }
@@ -160,10 +207,15 @@ pub fn hurry_process(process_id: u32, on: bool) -> bool {
 
 /// Lowest CPU and I/O priority for the calling thread (one that mostly reads files).
 pub fn background_thread() {
-    use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_MODE_BACKGROUND_BEGIN};
+    background_thread_as(true);
+}
+
+/// The calling thread in Windows' background mode (lowest disk and memory priority) or out of it again.
+pub fn background_thread_as(on: bool) {
+    use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_MODE_BACKGROUND_BEGIN, THREAD_MODE_BACKGROUND_END};
     // SAFETY: our own thread.
     unsafe {
-        let _ = SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
+        let _ = SetThreadPriority(GetCurrentThread(), if on { THREAD_MODE_BACKGROUND_BEGIN } else { THREAD_MODE_BACKGROUND_END });
     }
 }
 
@@ -331,9 +383,9 @@ pub fn wait_any(events: &[&Event], timeout: Option<std::time::Duration>) -> Opti
 #[cfg(test)]
 mod tests {
 
-    /// Another process's priority, below normal and back to idle.
+    /// Another process's priority, below normal, normal and back to idle.
     #[test]
-    fn hurrying_another_process() {
+    fn another_process_priority() {
         use std::os::windows::process::CommandExt;
         use windows::Win32::System::Threading::{GetPriorityClass, PROCESS_QUERY_LIMITED_INFORMATION};
         let mut child = std::process::Command::new("ping").args(["-n", "30", "127.0.0.1"]).creation_flags(0x0800_0040)
@@ -345,9 +397,11 @@ mod tests {
             class
         };
         assert_eq!(class(child.id()), 0x40, "idle to start with");
-        assert!(super::hurry_process(child.id(), true));
+        assert!(super::set_process_priority(child.id(), super::Priority::BelowNormal));
         assert_eq!(class(child.id()), 0x4000, "below normal");
-        assert!(super::hurry_process(child.id(), false));
+        assert!(super::set_process_priority(child.id(), super::Priority::Normal));
+        assert_eq!(class(child.id()), 0x20, "normal");
+        assert!(super::set_process_priority(child.id(), super::Priority::Idle));
         assert_eq!(class(child.id()), 0x40, "idle again");
         let _ = child.kill();
         let _ = child.wait();
@@ -375,6 +429,18 @@ mod tests {
         assert!(signal(&name));
         assert_eq!(wait_any(&[&event, &other], None), Some(0));
         assert!(!signal(r"Local\Excavate.Test.Nobody"));
+    }
+
+    /// What `run_elevated` waits with: the exit code once it ends, nothing while it's still running.
+    #[test]
+    fn waits_for_a_process() {
+        use std::os::windows::io::IntoRawHandle;
+        let handle = |child: std::process::Child| HANDLE(child.into_raw_handle());
+        let ended = std::process::Command::new("cmd").args(["/c", "exit 3"]).spawn().unwrap();
+        assert_eq!(wait_and_close(handle(ended), 30_000), Some(3));
+        // (It ends by itself a second later.)
+        let running = std::process::Command::new("cmd").args(["/c", "ping -n 2 127.0.0.1 >nul"]).spawn().unwrap();
+        assert_eq!(wait_and_close(handle(running), 0), None);
     }
 
     #[test]
@@ -411,33 +477,54 @@ pub enum Elevated {
 /// Starts `exe` with `args` through Windows' administrator prompt (UAC) and waits for it to end (call it off the UI
 /// thread). Nothing is elevated without the person saying yes at Windows' own prompt.
 pub fn run_elevated(exe: &str, args: &str) -> Elevated {
-    use windows::Win32::System::Threading::{GetExitCodeProcess, INFINITE, WaitForSingleObject};
-    use windows::Win32::UI::Shell::{SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW};
-    use windows::Win32::UI::WindowsAndMessaging::SW_HIDE;
+    use windows::Win32::System::Threading::INFINITE;
+    match start_elevated(exe, args, false) {
+        Err(error) => {
+            let code = (error.code().0 as u32) & 0xFFFF;
+            if code == ERROR_CANCELLED { Elevated::Declined } else { Elevated::Failed(code) }
+        }
+        Ok(None) => Elevated::Failed(0),
+        Ok(Some(process)) => Elevated::Ended(wait_and_close(process, INFINITE).unwrap_or(0)),
+    }
+}
+
+/// Windows' error when the person said "No" at its prompt.
+pub(crate) const ERROR_CANCELLED: u32 = 1223;
+
+/// Starts `exe` with `args` through Windows' administrator prompt: `shown`, in a window of its own, the call waiting
+/// until Windows has handed it over (an installer); else hidden. Its process, when Windows gives one back, to
+/// `wait_and_close`.
+pub(crate) fn start_elevated(exe: &str, args: &str, shown: bool) -> windows::core::Result<Option<HANDLE>> {
+    use windows::Win32::UI::Shell::{SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW};
+    use windows::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_SHOWNORMAL};
     let (verb, file, parameters) = (wide("runas"), wide(exe), wide(args));
-    let mut info = SHELLEXECUTEINFOW {
+    let info = &mut SHELLEXECUTEINFOW {
         cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
-        fMask: SEE_MASK_NOCLOSEPROCESS,
+        fMask: if shown { SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC } else { SEE_MASK_NOCLOSEPROCESS },
         lpVerb: PCWSTR(verb.as_ptr()),
         lpFile: PCWSTR(file.as_ptr()),
         lpParameters: PCWSTR(parameters.as_ptr()),
-        nShow: SW_HIDE.0,
+        nShow: if shown { SW_SHOWNORMAL.0 } else { SW_HIDE.0 },
         ..Default::default()
     };
-    // SAFETY: strings that outlive the call; the process handle it returns is waited on and closed here.
+    // SAFETY: every string outlives the call; the process handle it returns is the caller's to wait on and close.
+    unsafe { ShellExecuteExW(info)? };
+    Ok((!info.hProcess.is_invalid()).then_some(info.hProcess))
+}
+
+/// Waits up to `milliseconds` (`INFINITE`: for as long as it takes) for a process to end, and closes its handle: its
+/// exit code, or None when it's still running.
+pub(crate) fn wait_and_close(process: HANDLE, milliseconds: u32) -> Option<u32> {
+    use windows::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
+    // SAFETY: the handle is ours, waited on and closed here.
     unsafe {
-        if let Err(error) = ShellExecuteExW(&mut info) {
-            let code = (error.code().0 as u32) & 0xFFFF;
-            // ERROR_CANCELLED: "No" at the prompt.
-            return if code == 1223 { Elevated::Declined } else { Elevated::Failed(code) };
+        if WaitForSingleObject(process, milliseconds) == WAIT_TIMEOUT {
+            let _ = CloseHandle(process);
+            return None;
         }
-        if info.hProcess.is_invalid() {
-            return Elevated::Failed(0);
-        }
-        WaitForSingleObject(info.hProcess, INFINITE);
         let mut code = 0u32;
-        let _ = GetExitCodeProcess(info.hProcess, &mut code);
-        let _ = CloseHandle(info.hProcess);
-        Elevated::Ended(code)
+        let _ = GetExitCodeProcess(process, &mut code);
+        let _ = CloseHandle(process);
+        Some(code)
     }
 }

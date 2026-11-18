@@ -1,17 +1,20 @@
 //! The onboarding and settings window's behavior: filling it from the settings, applying each change as it's made
 //! (saved at once, and passed to the indexer when it concerns reading), counting what's in the chosen folders through
 //! Everything (or by walking them), estimating how long reading images takes on this PC, and following the indexer's
-//! progress.
+//! progress: what the indexer says is read and built into a view off the UI thread (`activity`), and applied here
+//! when it changes (`apply_snapshot`).
 
+use common::grouped as group;
 use crate::app::App;
 use crate::settings::{Reading, Schedule, Settings, log};
 use crate::themes::{self, Palette};
-use crate::{CardWay, FolderItem, MenuRow, NowRow, PickerRow, ProblemRow, ReadingCard, SettingsWindow, StagePart, StageRow, TagRow, Theme, ThemeTile, with_app};
+use crate::{ActivityHeader, ReadBar, ReadSpan, CardWay, FixCard, FolderItem, KindRow, MenuRow, PickerRow, PrivacyCount, ProblemGroup, ProblemRow, ReadingCard, SettingsWindow, StagePart, StageRow, StuckCard, TagRow,
+            Theme, ThemeTile, with_app};
 use config::status::Status;
 use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 use winsys::files::Known;
@@ -47,23 +50,23 @@ struct Setup {
     /// Per folder (lowercased): the images in the first sweep. Counted after the rest: it takes a listing of them all.
     first_sweep: HashMap<String, u64>,
     status: Option<Status>,
-    timer: slint::Timer,
+    /// The index's size on disk, as last measured (off the UI thread, every half minute while the window is open).
+    index_size: Option<u64>,
     /// Telling the indexer waits a moment, so several changes in a row restart it once.
     indexer_timer: slint::Timer,
     /// The hotkey before recording a new one (restored on cancel).
     hotkey_before: Option<String>,
     /// Reading has started (the last step of onboarding, or settings): folders show how far along they are.
     reading_started: bool,
-    /// Recent (when, files read, images Deep has read): how fast each read is going, for the time left.
-    pace: VecDeque<(Instant, u64, u64)>,
     /// Everything's installer is running.
     installing: Cell<bool>,
     /// What the folder rows show, changed in place: rows that aren't touched stay (and don't play their entrance again).
     folders: Rc<VecModel<FolderItem>>,
     reading_folders: Rc<VecModel<FolderItem>>,
-    stages: Rc<VecModel<StageRow>>,
-    now: Rc<VecModel<NowRow>>,
-    problems: Rc<VecModel<ProblemRow>>,
+    /// Activity: a row a kind, and what couldn't be read by why, changed in place; the view they were last made from.
+    kinds: Rc<VecModel<KindRow>>,
+    problem_groups: Rc<VecModel<ProblemGroup>>,
+    view: Option<crate::activity::View>,
     /// The monitors "Open Excavate on" last listed, after its first row.
     screens: Vec<winsys::display::Screen>,
     /// The Workshop is open: the window shows the theme being made, until it's saved or cancelled.
@@ -89,6 +92,11 @@ thread_local! {
 
 fn with_setup<R>(f: impl FnOnce(&mut Setup) -> R) -> Option<R> {
     SETUP.with(|setup| setup.borrow_mut().as_mut().map(f))
+}
+
+/// The settings window, while it's open (found.rs).
+pub fn with_window(f: impl FnOnce(&SettingsWindow)) {
+    with_setup(|setup| f(&setup.window));
 }
 
 /// Switches Bedrock, Excavate's own index, on or off: the indexer starts again (with it on, it walks the folders it
@@ -129,9 +137,11 @@ fn first_run_choices(app: &App) {
 pub fn open(app: &App, onboarding: bool) {
     if onboarding {
         first_run_choices(app);
+    } else {
+        privacy_counts(app);
     }
-    if let Some(window) = SETUP.with(|setup| setup.borrow().as_ref().map(|setup| setup.window.clone_strong())) {
-        if window.get_onboarding() == onboarding || !onboarding {
+    if let Some(window) = SETUP.with(|setup| setup.borrow().as_ref().map(|setup| setup.window.clone_strong()))
+        && (window.get_onboarding() == onboarding || !onboarding) {
             let _ = window.show();
             style(&window);
             if let Some(handle) = handle() {
@@ -139,7 +149,6 @@ pub fn open(app: &App, onboarding: bool) {
             }
             return;
         }
-    }
     let (place, size) = create(app, onboarding);
     let _ = slint::invoke_from_event_loop(move || bring_in(place, size));
 }
@@ -166,22 +175,24 @@ fn bring_in(place: slint::PhysicalPosition, size: Option<slint::LogicalSize>) {
 }
 
 fn uncloak() {
-    if CLOAKED.with(|cloaked| cloaked.replace(false)) {
-        if let Some(handle) = handle() {
+    if CLOAKED.with(|cloaked| cloaked.replace(false))
+        && let Some(handle) = handle() {
             winsys::window::cloak(handle, false);
         }
-    }
 }
 
 /// Creates the window, out of sight: only a window that exists can be kept off the screen while it draws. Where it goes, and
 /// how large.
 fn create(app: &App, onboarding: bool) -> (slint::PhysicalPosition, Option<slint::LogicalSize>) {
+    let mut timing = Timing::new();
     crate::CREATING_SETTINGS.with(|creating| creating.set(true));
     let window = SettingsWindow::new().expect("the settings window");
     crate::CREATING_SETTINGS.with(|creating| creating.set(false));
+    timing.mark("new");
     let settings = app.settings.borrow().clone();
     let choices = choices(&settings);
     window.set_onboarding(onboarding);
+    window.set_everything_installed(everything_installed());
     // For screenshots and tests: open on a given step (onboarding) or page (settings), and tab ("2.1").
     if let Ok(asked) = std::env::var("EXCAVATE_SETUP_STEP") {
         let (step, tab) = asked.split_once('.').unwrap_or((&asked, "0"));
@@ -200,15 +211,12 @@ fn create(app: &App, onboarding: bool) -> (slint::PhysicalPosition, Option<slint
     let place = centered(&monitor, size.unwrap_or(slint::LogicalSize::new(940.0, 700.0)));
     window.window().set_position(slint::PhysicalPosition::new(-32_000, -32_000));
     wire(&window);
-    let timer = slint::Timer::default();
-    timer.start(slint::TimerMode::Repeated, Duration::from_secs(1), || with_app(|app| poll(app)));
     let (folders, reading_folders) = (Rc::new(VecModel::default()), Rc::new(VecModel::default()));
     window.set_folders(ModelRc::from(folders.clone()));
     window.set_reading_folders(ModelRc::from(reading_folders.clone()));
-    let (stages, now, problems) = (Rc::new(VecModel::default()), Rc::new(VecModel::default()), Rc::new(VecModel::default()));
-    window.set_stages(ModelRc::from(stages.clone()));
-    window.set_now(ModelRc::from(now.clone()));
-    window.set_problems(ModelRc::from(problems.clone()));
+    let (kinds, problem_groups) = (Rc::new(VecModel::default()), Rc::new(VecModel::default()));
+    window.set_kinds(ModelRc::from(kinds.clone()));
+    window.set_problem_groups(ModelRc::from(problem_groups.clone()));
     window.set_leave_out_info(info(&[
         "**A name** leaves out every folder or file called that: `node_modules`",
         "**A wildcard**: `*` matches anything and `?` one character. `*.log`, or with a path, `C:\\temp\\*.log`",
@@ -227,34 +235,75 @@ fn create(app: &App, onboarding: bool) -> (slint::PhysicalPosition, Option<slint
             kind_tips: KIND_NAMES,
             first_sweep: HashMap::new(),
             status: None,
-            timer,
+            index_size: None,
             indexer_timer: slint::Timer::default(),
             hotkey_before: None,
             reading_started: !onboarding,
-            pace: VecDeque::new(),
             installing: Cell::new(false),
             folders,
             reading_folders,
-            stages,
-            now,
-            problems,
+            kinds,
+            problem_groups,
+            view: None,
             screens: Vec::new(),
             workshop: None,
         })
     });
     apply_theme(app);
+    timing.mark("theme");
     fill(app);
+    timing.mark("fill");
     count_folders(app, false);
+    timing.mark("count");
     check_everything(app);
-    poll(app);
+    timing.mark("everything");
+    // What's known already, at once (the worker keeps a view ready while the window is closed); then a fresh one
+    // every half second while it's open.
+    crate::activity::start(app.paths.clone());
+    crate::activity::open(true);
+    show_latest(app);
+    timing.mark("latest");
     page_shown(app);
     let _ = window.show();
+    timing.mark("show");
     if let Some(size) = size {
         window.window().set_size(size);
     }
     style(&window);
     crate::living::attach(&window, onboarding, themes::current(&settings));
+    timing.mark("living");
+    log(&format!("settings window created: {}", timing.text()));
     (place, size)
+}
+
+/// How long each part of opening the window took, for the log.
+struct Timing {
+    started: Instant,
+    last: Instant,
+    parts: Vec<(&'static str, Duration)>,
+}
+
+impl Timing {
+    fn new() -> Timing {
+        let now = Instant::now();
+        Timing { started: now, last: now, parts: Vec::new() }
+    }
+
+    fn mark(&mut self, part: &'static str) {
+        let now = Instant::now();
+        self.parts.push((part, now - self.last));
+        self.last = now;
+    }
+
+    fn text(&self) -> String {
+        let parts: Vec<String> = self.parts.iter().map(|(part, took)| format!("{part} {:.1}", took.as_secs_f64() * 1000.0)).collect();
+        format!("{:.1} ms ({} ms)", self.started.elapsed().as_secs_f64() * 1000.0, parts.join(", "))
+    }
+}
+
+/// For measuring (`EXCAVATE_SETTINGS_CYCLE`): closes the window as its close button does.
+pub fn close_for_measuring() {
+    close();
 }
 
 /// Larger than its smallest comfortable size where the screen has room: what's on the pages scales with it. In logical
@@ -262,7 +311,8 @@ fn create(app: &App, onboarding: bool) -> (slint::PhysicalPosition, Option<slint
 fn opening_size(monitor: &winsys::display::Monitor) -> Option<slint::LogicalSize> {
     let margin = 48.0;
     let width = 1040.0f32.min(monitor.work.width() as f32 / monitor.scale - margin);
-    let height = 800.0f32.min(monitor.work.height() as f32 / monitor.scale - margin);
+    // (880: the Indexers step whole, with its helper card and its bars, where the screen has room.)
+    let height = 880.0f32.min(monitor.work.height() as f32 / monitor.scale - margin);
     (width >= 940.0 && height >= 700.0).then(|| slint::LogicalSize::new(width, height))
 }
 
@@ -368,12 +418,11 @@ fn style(window: &SettingsWindow) {
     let window = window.as_weak();
     // The native window exists once the event loop has run after show().
     let _ = slint::invoke_from_event_loop(move || {
-        if window.upgrade().is_some() {
-            if let Some(handle) = handle() {
+        if window.upgrade().is_some()
+            && let Some(handle) = handle() {
                 let ([r, g, b], [tr, tg, tb]) = (themes::base(dark, surfaces), themes::ink(dark, surfaces));
                 winsys::window::style_titlebar(handle, dark, (r, g, b), (tr, tg, tb));
             }
-        }
     });
 }
 
@@ -426,24 +475,12 @@ fn choices(settings: &Settings) -> Vec<Choice> {
     choices
 }
 
-fn group(number: u64) -> String {
-    let digits = number.to_string();
-    let mut out = String::new();
-    for (index, c) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index) % 3 == 0 {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
-}
-
 fn plural(count: u64, one: &str, many: &str) -> String {
     format!("{} {}", group(count), if count == 1 { one } else { many })
 }
 
 /// Everything shown, from the settings and what's known.
-fn fill(app: &App) {
+pub fn fill(app: &App) {
     fill_about(app);
     let settings = app.settings.borrow().clone();
     with_setup(|setup| {
@@ -472,6 +509,11 @@ fn fill(app: &App) {
         window.set_new_search(settings.new_search_each_time);
         window.set_typed_toggles(settings.typed_toggles);
         window.set_own_index(settings.own_index);
+        let (helper, why) = crate::bedrock_helper::state();
+        window.set_helper_state(helper.into());
+        window.set_helper_error(why.into());
+        window.set_helper_drives(crate::bedrock_helper::drives() as i32);
+        window.set_journals_large(crate::own_index::large_journals().join(" and ").into());
         window.set_theme_choice(match settings.theme.as_str() {
             "light" => 1,
             "dark" => 2,
@@ -481,6 +523,7 @@ fn fill(app: &App) {
         let window = &setup.window;
         window.set_blur_secrets(settings.blur_secrets);
         window.set_blur_sharing(settings.blur_when_sharing);
+        window.set_recent_searches(settings.recent_searches.len() as i32);
         window.set_read_on_battery(settings.read_on_battery);
         window.set_reading(chosen_reading(&settings).name().into());
         window.set_pictures_on(settings.pictures_on);
@@ -593,7 +636,6 @@ fn fill_gpu(window: &SettingsWindow, settings: &Settings) {
         note: best.as_ref().map_or("the processor".to_string(), |best| best.name.clone()).into(),
         checked: chosen.is_empty(),
         line: true,
-        ..MenuRow::default()
     }];
     rows.extend(cards.iter().map(|card| MenuRow { label: card.name.as_str().into(), note: kind(card).into(), checked: card.name == chosen, ..MenuRow::default() }));
     rows.push(MenuRow { label: "None".into(), note: "the processor only".into(), checked: chosen == "none", ..MenuRow::default() });
@@ -649,19 +691,6 @@ fn fill_look_all(setup: &Setup, settings: &Settings) {
     }.into());
 }
 
-/// Activity's "Full speed": the three "Read everything now" at once (images and their text, what images and videos
-/// show, what's said), while reading has work left; on while any of them is going.
-fn fill_full_speed(setup: &Setup, settings: &Settings) {
-    let status = setup.status.as_ref();
-    let now = crate::app::now();
-    let going = |at: i64, all: bool| at > 0 && (all || now - at < 20);
-    let on = status.is_some_and(|status| going(settings.read_all_at, status.reading_all) || going(settings.look_all_at, status.seeing_all)
-        || going(settings.listen_all_at, status.listen_all));
-    let working = status.is_some_and(|status| status.state == "reading");
-    setup.window.set_full_speed(on);
-    setup.window.set_full_speed_shown(working && !settings.paused(now));
-}
-
 /// "Read everything now": whether it's going, and how long it takes.
 fn fill_read_all(setup: &Setup, settings: &Settings) {
     let status = setup.status.as_ref();
@@ -705,6 +734,7 @@ pub fn preview_changed(app: &App) {
 pub fn pause_changed(app: &App) {
     let settings = app.settings.borrow();
     with_setup(|setup| fill_pause(&setup.window, &settings));
+    crate::activity::settings_changed();
 }
 
 /// The card that's chosen, whether text in images is read right now or not.
@@ -784,7 +814,10 @@ fn fill_folders(setup: &Setup) {
             let off = setup.folder_kinds.get(&config::folder_key(&choice.path));
             let kinds: Vec<bool> = config::FOLDER_KINDS.iter().map(|kind| off.is_none_or(|off| !off.iter().any(|left| left == kind))).collect();
             let mut done = false;
+            let missing = reading.is_some_and(|folder| folder.missing);
             let (detail, progress) = match (reading, setup.counts.get(&key)) {
+                // Not there (deleted, moved, its drive unplugged): its counts are of nothing.
+                _ if missing => ("Folder not found".to_string(), -1.0),
                 // The step it's on while it's read, "Reading · 640 of 1,000" (or Seeing,
                 // Listening); then "✓ All read · 322 files" (All seen, All listened to when that's all it does).
                 (Some(folder), Some(&(counted, _))) if setup.reading_started && (counted > 0 || folder.files + folder.heard + folder.to_hear > 0) => {
@@ -847,11 +880,32 @@ A lot: leave out data and project folders to read the rest sooner");
                 kinds: ModelRc::new(VecModel::from(kinds)),
                 kinds_anywhere: ModelRc::new(VecModel::from(setup.kinds_anywhere.to_vec())),
                 kind_tips: ModelRc::new(VecModel::from(setup.kind_tips.iter().map(|tip| SharedString::from(*tip)).collect::<Vec<_>>())),
+                missing,
             }
         })
         .collect();
-    update_rows(&setup.reading_folders, folders.iter().filter(|folder| folder.on).cloned().collect());
-    update_rows(&setup.folders, folders);
+    update_folders(&setup.reading_folders, folders.iter().filter(|folder| folder.on).cloned().collect());
+    update_folders(&setup.folders, folders);
+}
+
+/// Brings folder rows up to date: a row is set again only when something in it changed (its toggles compared by what
+/// they hold: each row is made with models of its own, which would otherwise always differ).
+fn update_folders(model: &VecModel<FolderItem>, rows: Vec<FolderItem>) {
+    if model.row_count() != rows.len() {
+        model.set_vec(rows);
+        return;
+    }
+    let same = |a: &ModelRc<bool>, b: &ModelRc<bool>| a.iter().eq(b.iter());
+    let same_tips = |a: &ModelRc<SharedString>, b: &ModelRc<SharedString>| a.iter().eq(b.iter());
+    for (index, row) in rows.into_iter().enumerate() {
+        let Some(old) = model.row_data(index) else { continue };
+        let unchanged = old.path == row.path && old.name == row.name && old.detail == row.detail && old.on == row.on && old.progress == row.progress
+            && old.done == row.done && old.custom == row.custom && old.missing == row.missing && same(&old.kinds, &row.kinds)
+            && same(&old.kinds_anywhere, &row.kinds_anywhere) && same_tips(&old.kind_tips, &row.kind_tips);
+        if !unchanged {
+            model.set_row_data(index, row);
+        }
+    }
 }
 
 /// Deep's read, per image, on a PC in use. Alone on the graphics card it takes 0.7 s (median); on a PC in
@@ -944,7 +998,7 @@ fn image_ways(chosen: &str, gpu: bool, on_gpu: (&str, &str, &str), on_cpu: &str,
 
 /// Where each model runs fastest on this PC (measured by the indexer the first time each ran): nothing measured
 /// with another graphics card or driver counts.
-fn measured_here() -> config::devices::Measured {
+pub(crate) fn measured_here() -> config::devices::Measured {
     let measured = config::devices::Measured::load(&config::Paths::new());
     let adapter = winsys::gpu::capable().map(|gpu| gpu.identity()).unwrap_or_default();
     if measured.adapter == adapter { measured } else { config::devices::Measured::default() }
@@ -1680,11 +1734,23 @@ fn changed(app: &App, reading: bool) {
             if setup.onboarding {
                 return;
             }
+            app.indexer.settings_changed_soon();
             setup.indexer_timer.start(slint::TimerMode::SingleShot, Duration::from_millis(1200), || {
-                with_app(|app| app.indexer.settings_changed());
+                with_app(|app| app.indexer.tell_pending());
             });
         });
     }
+}
+
+/// The pace changed (Full speed, a kind's "everything now"): saved and told at once, as a pause is. The indexer takes
+/// it in as it reads, without starting over, and Bedrock as it lists.
+fn pace_changed(app: &App) {
+    app.settings.borrow().save(&app.paths);
+    crate::own_index::pace(app);
+    if app.settings.borrow().setup_done {
+        app.indexer.settings_changed();
+    }
+    crate::activity::settings_changed();
 }
 
 fn save_folders(app: &App) {
@@ -2098,17 +2164,20 @@ fn wire(window: &SettingsWindow) {
         }
         set_own_index(app, on);
     }));
-    // The Indexers step's "Continue": Bedrock or Everything, as chosen there; Bedrock with nothing built yet asks
-    // first, and the next step comes once it's answered.
+    // Excavate Bedrock, the helper: the Indexers step's consent card and Settings' row.
+    window.on_helper_allow(|| crate::bedrock_helper::change(true));
+    window.on_helper_remove(|| crate::bedrock_helper::change(false));
+    // "Back to Windows' size" for the record of changes "Fix this" made larger.
+    window.on_journals_to_default(|| {
+        let drives = crate::own_index::large_journals();
+        log(&format!("journal: back to Windows' size on {}", drives.join(", ")));
+        crate::own_index::journal_to_default(drives);
+    });
+    // The Indexers step's "Continue": Bedrock or Everything, as chosen there. (The helper's card on the step is the
+    // question about administrator rights: with it, Bedrock reads every drive's file table; without, it lists the
+    // folders itself.)
     window.on_indexers_continue(|bedrock| with_app(|app| {
         let own = app.settings.borrow().own_index;
-        if bedrock && !own && crate::own_index::from_nothing(app) {
-            with_setup(|setup| {
-                setup.after_admin_ask = Some(setup.window.get_step() + 1);
-                setup.window.set_admin_ask(true);
-            });
-            return;
-        }
         if !bedrock {
             crate::popup::EVERYTHING_CHOSEN.set(true);
         }
@@ -2171,7 +2240,7 @@ fn wire(window: &SettingsWindow) {
                 settings.paused_until = 0;
             }
         }
-        changed(app, true);
+        pace_changed(app);
         crate::popup::refresh_tray_menu(app);
         fill(app);
     }));
@@ -2258,21 +2327,123 @@ fn wire(window: &SettingsWindow) {
         changed(app, true);
         with_setup(|setup| setup.window.set_seeing_schedule_note("Looking at new images now.".into()));
     }));
+    // Skip: let go at once on screen (the row and the stuck card stop offering it); the indexer follows.
     window.on_skip_file(|path| with_app(|app| {
         app.indexer.skip(&app.paths, &path);
+        let skipped = path.to_string();
+        with_setup(|setup| {
+            for index in 0..setup.kinds.row_count() {
+                if let Some(mut row) = setup.kinds.row_data(index).filter(|row| row.skip == path) {
+                    row.skip = SharedString::new();
+                    row.line = format!("Skipping {}…", file_name(&skipped)).into();
+                    setup.kinds.set_row_data(index, row);
+                }
+            }
+            if setup.window.get_stuck().path == path {
+                setup.window.set_stuck(StuckCard::default());
+            }
+        });
+        crate::activity::mark(|marks| marks.skipped.push(skipped));
     }));
-    window.on_full_speed_chosen(|on| with_app(|app| {
+    // The speed control: a level that stays until it's moved. It replaces any kind's "everything now" still going.
+    window.on_speed_chosen(|stop| with_app(|app| {
+        let speed = config::Speed::ALL[stop.clamp(0, 3) as usize];
+        with_setup(|setup| setup.window.set_activity_speed(stop.clamp(0, 3)));
         {
             let mut settings = app.settings.borrow_mut();
-            let at = if on { crate::app::now() } else { 0 };
-            (settings.read_all_at, settings.look_all_at, settings.listen_all_at) = (at, at, at);
-            if on {
-                settings.paused_until = 0;
+            if settings.speed() == speed && !settings.speed.is_empty() {
+                return;
             }
+            settings.speed = speed.name().into();
+            (settings.read_all_at, settings.look_all_at, settings.listen_all_at) = (0, 0, 0);
         }
-        changed(app, true);
-        crate::popup::refresh_tray_menu(app);
-        fill(app);
+        log(&format!("speed: {}", speed.name()));
+        pace_changed(app);
+        with_setup(|setup| {
+            let settings = app.settings.borrow();
+            fill_read_all(setup, &settings);
+            fill_look_all(setup, &settings);
+            fill_listen_all(setup, &settings);
+        });
+    }));
+    // A kind paused or resumed on its own: shown at once, taken in by the indexer as it reads.
+    window.on_kind_pause(|kind| with_app(|app| {
+        let paused = {
+            let mut settings = app.settings.borrow_mut();
+            let paused = !settings.kind_paused(&kind);
+            settings.set_kind_paused(&kind, paused);
+            paused
+        };
+        log(&format!("{kind}: {}", if paused { "paused" } else { "resumed" }));
+        with_setup(|setup| {
+            for index in 0..setup.kinds.row_count() {
+                if let Some(mut row) = setup.kinds.row_data(index).filter(|row| row.pause == kind && row.state != 2) {
+                    (row.state, row.chip) = if paused { (4, "Paused".into()) } else { (0, "Working".into()) };
+                    if paused {
+                        row.line = "Paused".into();
+                        row.skip = SharedString::new();
+                        row.left = SharedString::new();
+                    }
+                    setup.kinds.set_row_data(index, row);
+                }
+            }
+        });
+        pace_changed(app);
+    }));
+    // A problem card's fix: try again now (reading starts afresh, the failed download or start first), or move that
+    // reader to the processor (its card's choice, as on Images or Audio).
+    window.on_fix_action(|id| with_app(|app| {
+        log(&format!("Activity: fix {id}"));
+        match id.as_str() {
+            "images-cpu" => {
+                let choice = app.settings.borrow().reading.clone();
+                app.settings.borrow_mut().reading_devices.insert(choice, "cpu".into());
+                changed(app, true);
+            }
+            "listen-cpu" => {
+                let choice = app.settings.borrow().listening.clone();
+                app.settings.borrow_mut().listening_devices.insert(choice, "cpu".into());
+                changed(app, true);
+            }
+            _ => app.indexer.restart(),
+        }
+    }));
+    // "Restart reading": the indexer ended and started again (its session begins anew: listed, then read); the card
+    // goes at once.
+    window.on_restart_reading(|| with_app(|app| {
+        with_setup(|setup| setup.window.set_stuck(StuckCard::default()));
+        log("Activity: restart reading");
+        app.indexer.restart();
+    }));
+    // "Leave it": no more card for this item (the next one stuck has its own).
+    window.on_stuck_left(|| {
+        let Some(card) = with_setup(|setup| {
+            let card = setup.window.get_stuck();
+            setup.window.set_stuck(StuckCard::default());
+            card
+        }) else { return };
+        let since = with_setup(|setup| setup.view.as_ref().and_then(|view| view.stuck.as_ref().map(|stuck| stuck.since))).flatten().unwrap_or(0);
+        crate::activity::mark(|marks| marks.left_alone.push((card.path.to_string(), since)));
+    });
+    // "Download and read", "Try again", "Read again": the indexer clears what kept them and reads them; the button
+    // says it's asked at once.
+    window.on_problem_action(|why| with_app(|app| {
+        let why = why.to_string();
+        let count = with_setup(|setup| setup.view.as_ref().and_then(|view| view.problems.iter().find(|group| group.why == why).map(|group| group.count))).flatten().unwrap_or(0);
+        log(&format!("read again: {why} ({count} files)"));
+        app.indexer.retry(&app.paths, &[config::Retry { why: why.clone(), path: None }]);
+        with_setup(|setup| {
+            for index in 0..setup.problem_groups.row_count() {
+                if let Some(mut row) = setup.problem_groups.row_data(index).filter(|row| row.why == why.as_str()) {
+                    row.asked = true;
+                    row.action = if why == config::why::ONLINE { "Downloading…" } else { "Reading again…" }.into();
+                    setup.problem_groups.set_row_data(index, row);
+                }
+            }
+        });
+        crate::activity::mark(|marks| {
+            marks.asked.insert(why, (count, crate::app::now()));
+        });
     }));
     window.on_look_all(|on| with_app(|app| {
         {
@@ -2282,7 +2453,7 @@ fn wire(window: &SettingsWindow) {
                 settings.paused_until = 0;
             }
         }
-        changed(app, true);
+        pace_changed(app);
         fill(app);
     }));
     window.on_look_battery_toggled(|on| with_app(|app| {
@@ -2308,6 +2479,37 @@ fn wire(window: &SettingsWindow) {
     window.on_blur_secrets_toggled(|on| with_app(|app| {
         app.settings.borrow_mut().blur_secrets = on;
         changed(app, false);
+        fill(app);
+    }));
+    // "Check everything again": the indexer looks through what it has read for secrets anew (`config::why::SECRETS`).
+    window.on_privacy_check_again(|| with_app(|app| {
+        log("Privacy: check everything again");
+        app.indexer.retry(&app.paths, &[config::Retry { why: config::why::SECRETS.into(), path: None }]);
+        with_setup(|setup| setup.window.set_privacy_check_asked(true));
+    }));
+    // A kind of secret clicked: what was found of it, after Windows Hello (found.rs).
+    window.on_privacy_kind_clicked(|kind| with_app(|app| {
+        log(&format!("Privacy: viewer asked for {kind}"));
+        with_setup(|setup| crate::found::open(app, &setup.window, kind.to_string()));
+    }));
+    window.on_found_pick(|index| with_app(|app| crate::found::pick(app, index.max(0) as usize)));
+    window.on_found_show_toggled(|| with_app(|app| crate::found::show_toggled(app)));
+    window.on_found_dismissed(|| with_app(|app| crate::found::dismissed(app)));
+    window.on_found_closed(crate::found::close);
+    window.on_found_open_file(|| {
+        if let Some(path) = crate::found::selected_path() {
+            let _ = winsys::shell::open(0, &path);
+        }
+    });
+    window.on_found_show_folder(|| {
+        if let Some(path) = crate::found::selected_path() {
+            let _ = winsys::shell::reveal(&path);
+        }
+    });
+    window.on_recent_cleared(|| with_app(|app| {
+        app.settings.borrow_mut().recent_searches.clear();
+        changed(app, false);
+        app.show_searches();
         fill(app);
     }));
     window.on_blur_sharing_toggled(|on| with_app(|app| {
@@ -2494,7 +2696,7 @@ fn wire(window: &SettingsWindow) {
                 settings.paused_until = 0;
             }
         }
-        changed(app, true);
+        pace_changed(app);
         fill(app);
     }));
     window.on_listen_schedule_chosen(|index| with_app(|app| {
@@ -2535,8 +2737,8 @@ fn wire(window: &SettingsWindow) {
         cancel_recording();
         with_app(|app| {
             page_shown(app);
-            // (The Activity page is filled only while it's open: at once, then.)
-            poll(app);
+            // (What shows how reading goes on the page now on screen: from what's known, at once.)
+            show_latest(app);
         });
     });
     // "Start reading": the indexer starts, and the window stays to show how it goes.
@@ -2551,7 +2753,8 @@ fn wire(window: &SettingsWindow) {
             fill_folders(setup);
         });
         page_shown(app);
-        poll(app);
+        show_latest(app);
+        crate::activity::wake();
         app.update_status();
     }));
     window.on_done(|| with_app(|app| {
@@ -2595,6 +2798,20 @@ fn wire(window: &SettingsWindow) {
     window.on_open_index_folder(|| with_app(|app| {
         let _ = winsys::shell::open(0, &app.paths.local.display().to_string());
     }));
+    window.on_copy_diagnostics(|| {
+        let mut copied = false;
+        with_app(|app| {
+            let text = crate::diagnostics::gather(app);
+            match winsys::shell::copy_text(handle().unwrap_or(0), &text) {
+                Ok(()) => {
+                    log(&format!("copied diagnostics: {} lines", text.lines().count()));
+                    copied = true;
+                }
+                Err(error) => log(&format!("couldn't copy diagnostics: {error}")),
+            }
+        });
+        copied
+    });
     window.window().on_close_requested(|| {
         cancel_recording();
         // Closed, not just hidden: the window and its timers are dropped once the event loop is done with it.
@@ -2615,10 +2832,12 @@ fn close() {
     crate::demo::stop();
     crate::living::detach();
     let setup = SETUP.with(|setup| setup.borrow_mut().take());
+    crate::activity::open(false);
     if let Some(setup) = setup {
-        setup.timer.stop();
         let _ = setup.window.hide();
     }
+    // A change made just before closing: told now, as its timer went with the window.
+    with_app(|app| app.indexer.tell_pending());
 }
 
 /// Whether Everything is on this PC. `EXCAVATE_NO_EVERYTHING` shows the "not installed" state on a PC that has it (for
@@ -2672,11 +2891,11 @@ fn install_everything(app: &App) {
     });
 }
 
-const IMAGE_EXTENSIONS: [&str; 10] = ["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff", "gif", "heic", "heif"];
+const IMAGE_EXTENSIONS: &[&str] = common::kinds::PICTURES;
 
 /// What's in a folder (files a reader handles, and images among them), without Everything: walking it.
-const AUDIO_EXTENSIONS: [&str; 12] = ["mp3", "m4a", "m4b", "wav", "wma", "flac", "aac", "ogg", "opus", "amr", "aiff", "aif"];
-const VIDEO_EXTENSIONS: [&str; 12] = ["mp4", "m4v", "mov", "mkv", "avi", "wmv", "webm", "mpg", "mpeg", "3gp", "mts", "m2ts"];
+const AUDIO_EXTENSIONS: &[&str] = common::kinds::RECORDINGS;
+const VIDEO_EXTENSIONS: &[&str] = common::kinds::VIDEOS;
 
 /// What a folder holds: files a reader handles, images among them, recordings and videos.
 type Counted = [u64; 4];
@@ -2953,6 +3172,7 @@ fn check_everything(app: &App) {
                 };
                 setup.window.set_everything_state(state.into());
                 setup.window.set_everything_detail(detail.into());
+                setup.window.set_everything_installed(!pretend_missing && (status.available || status.installed.is_some()));
             });
         });
     });
@@ -2981,14 +3201,45 @@ pub fn check_trial(app: &App, status: &Status) {
     });
 }
 
-fn poll(app: &App) {
-    let status = Status::load(&app.paths);
+/// The latest view and status the worker has, applied now (no files read here): for a window or a page that's just
+/// come on screen.
+fn show_latest(app: &App) {
+    // (Whatever changed since it was built, it's what there is: a fresh one follows in a moment.)
+    if let Some((view, status, _)) = crate::activity::latest() {
+        apply_snapshot(app, crate::activity::Snapshot { view, status: Some(status), index_size: None, generation: crate::activity::generation() });
+    }
+}
+
+/// A view of reading, built off the UI thread (`activity`): applied here, touching only what changed. The status it
+/// came with (when it changed) goes to every page that shows how reading goes.
+pub fn apply_snapshot(app: &App, snapshot: crate::activity::Snapshot) {
+    // Built before a change made here since: what's on screen shows the change already, and a newer view is on its way.
+    if snapshot.generation < crate::activity::generation() {
+        return;
+    }
+    let mut timing = Timing::new();
+    app.indexer.watch();
+    if let Some(size) = snapshot.index_size {
+        with_setup(|setup| setup.index_size = Some(size));
+    }
+    if let Some(status) = snapshot.status {
+        apply_status(app, status);
+        timing.mark("status");
+    }
+    with_setup(|setup| apply_view(setup, snapshot.view));
+    timing.mark("view");
+    if crate::ui_timing().is_some() {
+        log(&format!("view applied: {}", timing.text()));
+    }
+}
+
+/// The indexer's status, as it changed, on the pages that show it.
+fn apply_status(app: &App, status: Option<Status>) {
     if let Some(status) = &status {
         check_trial(app, status);
     }
     let note = app.settings.borrow().seeing_note.clone();
     let setup_done = app.settings.borrow().setup_done;
-    let index_size = folder_size(&app.paths.index());
     with_setup(|setup| {
         setup.status = status.clone();
         let progress = status.as_ref().map(seeing_progress).unwrap_or_default();
@@ -3003,31 +3254,144 @@ fn poll(app: &App) {
             let measured = status.picture_ms.map(|ms| format!(
                 "An image takes about {:.2} s on this PC with {}.", ms / 1000.0, if status.engine.is_empty() { "the chosen reader" } else { &status.engine }
             ));
-            if let Some(measured) = measured {
-                if !setup.window.get_measured().starts_with("Your images") {
+            if let Some(measured) = measured
+                && !setup.window.get_measured().starts_with("Your images") {
                     setup.window.set_measured(measured.into());
                 }
-            }
-            setup.window.set_index_summary(format!(
-                "{} searchable by their contents · {} on disk",
-                plural(status.documents, "file", "files"),
-                crate::format::size(index_size)
-            ).into());
+            let size = setup.index_size.map(|size| format!(" · {} on disk", crate::format::size(size))).unwrap_or_default();
+            setup.window.set_index_summary(format!("{} searchable by their contents{size}", plural(status.documents, "file", "files")).into());
         }
         fill_folders(setup);
         fill_schedule_note(setup, &app.settings.borrow());
         fill_progress(setup);
-        fill_activity(setup);
         fill_read_all(setup, &app.settings.borrow());
         fill_look_all(setup, &app.settings.borrow());
         fill_listen_all(setup, &app.settings.borrow());
-        fill_full_speed(setup, &app.settings.borrow());
         setup.window.set_listen_progress(setup.status.as_ref().map(listen_progress).unwrap_or_default().into());
         setup.window.set_video_progress(setup.status.as_ref().map(video_progress).unwrap_or_default().into());
         fill_pause(&setup.window, &app.settings.borrow());
-        fill_names_missing(setup, &app.settings.borrow());
     });
     crate::living::reading(status.as_ref().is_some_and(|status| matches!(status.state.as_str(), "listing" | "reading")));
+}
+
+/// Activity, from the view: each part set only when it differs from what's shown.
+fn apply_view(setup: &mut Setup, view: crate::activity::View) {
+    let window = setup.window.clone_strong();
+    let last = setup.view.take();
+    let header = ActivityHeader {
+        title: view.title.as_str().into(),
+        left: view.left.as_str().into(),
+        counts: view.counts.as_str().into(),
+        beat: match view.beat {
+            crate::activity::Beat::Still => 0,
+            crate::activity::Beat::Alive => 1,
+            crate::activity::Beat::Quiet => 2,
+        },
+        last_finished: view.last_finished as i32,
+        progress: view.fraction,
+        longest: view.longest.as_str().into(),
+        active: view.active,
+    };
+    if window.get_activity_header() != header {
+        window.set_activity_header(header);
+    }
+    if window.get_activity_speed() != view.speed as i32 {
+        window.set_activity_speed(view.speed as i32);
+    }
+    // The rows: changed in place while the same kinds are listed.
+    let rows: Vec<KindRow> = view.kinds.iter().map(|kind| KindRow {
+        id: kind.id.into(),
+        pause: kind.pause.into(),
+        name: kind.name.into(),
+        state: kind.state.number(),
+        chip: kind.chip.as_str().into(),
+        count: kind.count.as_str().into(),
+        left: kind.left.as_str().into(),
+        progress: kind.fraction,
+        spark: kind.spark.as_str().into(),
+        line: kind.line.as_str().into(),
+        skip: kind.skip.as_str().into(),
+        can_pause: kind.can_pause,
+    }).collect();
+    update_rows(&setup.kinds, rows);
+    let stuck = view.stuck.as_ref().map(|stuck| StuckCard { shown: true, text: stuck.text.as_str().into(), path: stuck.path.as_str().into(), can_skip: stuck.can_skip,
+                                                            can_restart: stuck.can_restart })
+        .unwrap_or_default();
+    if window.get_stuck() != stuck {
+        window.set_stuck(stuck);
+    }
+    // What couldn't be read: a group's files only made again when that group changed.
+    let title = if view.problems_total > 0 { format!("Couldn't be read · {}", plural(view.problems_total, "file", "files")) } else { String::new() };
+    if window.get_problems_title() != title.as_str() {
+        window.set_problems_title(title.into());
+        let summary: Vec<String> = view.problems.iter().map(|group| format!("{} {}", group.label, common::grouped(group.count))).collect();
+        window.set_problems_summary(summary.join(" · ").into());
+    }
+    let groups_changed = last.as_ref().is_none_or(|last| last.problems != view.problems);
+    if groups_changed {
+        let same_groups = setup.problem_groups.row_count() == view.problems.len()
+            && view.problems.iter().enumerate().all(|(index, group)| setup.problem_groups.row_data(index).is_some_and(|row| row.why == group.why));
+        let row_of = |group: &crate::activity::Group| ProblemGroup {
+            why: group.why.into(),
+            label: group.label.into(),
+            count: common::grouped(group.count).into(),
+            action: group.action.as_str().into(),
+            asked: group.asked,
+            files: ModelRc::new(VecModel::from(group.files.iter().map(|(name, path, why)| ProblemRow { name: name.as_str().into(), path: path.as_str().into(), why: why.as_str().into() })
+                .collect::<Vec<_>>())),
+            more: if group.count > group.files.len() as u64 { format!("and {} more", common::grouped(group.count - group.files.len() as u64)) } else { String::new() }.into(),
+        };
+        if same_groups {
+            for (index, group) in view.problems.iter().enumerate() {
+                let before = last.as_ref().and_then(|last| last.problems.get(index));
+                if before != Some(group) {
+                    setup.problem_groups.set_row_data(index, row_of(group));
+                }
+            }
+        } else {
+            setup.problem_groups.set_vec(view.problems.iter().map(row_of).collect::<Vec<_>>());
+        }
+    }
+    if last.as_ref().is_none_or(|last| last.bedrock != view.bedrock) {
+        apply_bedrock(&window, view.bedrock.as_ref());
+    }
+    if last.as_ref().is_none_or(|last| last.fixes != view.fixes) {
+        let cards: Vec<FixCard> = view.fixes.iter().map(|fix| {
+            let action = |at: usize| fix.actions.get(at).copied().unwrap_or(("", ""));
+            FixCard { title: fix.title.as_str().into(), line: fix.line.as_str().into(), first_label: action(0).0.into(), first_id: action(0).1.into(),
+                      second_label: action(1).0.into(), second_id: action(1).1.into() }
+        }).collect();
+        window.set_fixes(ModelRc::new(VecModel::from(cards)));
+    }
+    if last.as_ref().is_none_or(|last| last.today != view.today) {
+        let today = view.today.clone().unwrap_or_default();
+        let spans: Vec<ReadSpan> = today.spans.iter().map(|span| ReadSpan {
+            choice: span.choice.into(), kind: span.kind.into(), big: span.big.as_str().into(), when: span.when.as_str().into(),
+            total: span.total.as_str().into(), busiest: span.busiest.as_str().into(), unit: span.unit.into(), seen: span.seen.as_str().into(),
+            average: span.average,
+            bars: ModelRc::new(VecModel::from(span.bars.iter().map(|bar| ReadBar {
+                share: bar.share, label: bar.label.as_str().into(), name: bar.name.as_str().into(), read: bar.read.as_str().into(), seen: bar.seen.as_str().into(),
+            }).collect::<Vec<_>>())),
+        }).collect();
+        window.set_read_spans(ModelRc::new(VecModel::from(spans)));
+        window.set_today_parts(today.parts.into());
+    }
+    setup.view = Some(view);
+}
+
+/// Activity's Bedrock card, from the view.
+fn apply_bedrock(window: &SettingsWindow, card: Option<&crate::activity::Bedrock>) {
+    let Some(card) = card else {
+        window.set_bedrock_shown(false);
+        return;
+    };
+    window.set_bedrock_shown(true);
+    window.set_bedrock_fix(card.fix);
+    window.set_journal_ask_line(card.ask.as_str().into());
+    window.set_bedrock_title(card.title.as_str().into());
+    window.set_bedrock_line(card.line.as_str().into());
+    window.set_bedrock_progress(card.progress);
+    window.set_bedrock_count(card.count.as_str().into());
 }
 
 /// Whether what shows how far along reading is, is on screen: the last onboarding step, or the Activity page.
@@ -3035,16 +3399,33 @@ fn progress_shown(setup: &Setup) -> bool {
     setup.reading_started && (setup.onboarding || setup.window.get_page() == ACTIVITY)
 }
 
-/// How long each read has left (ms), at the pace it's really going once that's known: the first read's, and Deep's.
-fn times_left(status: &Status, progress: &Progress, pace: &VecDeque<(Instant, u64, u64)>) -> (f64, f64) {
-    let moved = |count: fn(&(Instant, u64, u64)) -> u64| -> Option<f64> {
-        let (first, last) = (pace.front()?, pace.back()?);
-        let seconds = last.0.duration_since(first.0).as_secs_f64();
-        (seconds > 10.0 && count(last) > count(first)).then(|| (count(last) - count(first)) as f64 / seconds)
+/// How long each lane has left (ms): what it has to go at its own pace lately (`Status::paces`: the indexer's, over
+/// the time it was working, so waits and pauses don't count), or, before that's known, at what an item was measured
+/// to take. Text in images', Thorough's, and everything's: the longest of the lanes, which go side by side (not their
+/// sum). What waits for its schedule isn't counted.
+fn times_left(status: &Status) -> (f64, f64, f64) {
+    let later = status.queued_later.min(status.queued_pictures);
+    let waiting = if status.pictures_wait { status.queued_pictures } else { later };
+    let scheduled = if status.pictures_wait { status.queued_pictures } else { 0 };
+    let lane = |name: &str, left: u64, each_ms: Option<f64>| -> f64 {
+        if left == 0 {
+            return 0.0;
+        }
+        status.paces.get(name).and_then(|pace| pace.time_for(left)).or_else(|| each_ms.map(|ms| left as f64 * ms)).unwrap_or(0.0)
     };
-    let first_rate = moved(|entry| entry.1).or_else(|| status.picture_ms.map(|ms| 1000.0 / ms.max(1.0))).unwrap_or(1000.0 / picture_ms(Some(status), Reading::Balanced));
-    let deep_rate = moved(|entry| entry.2).or_else(|| status.deep_pace_ms.map(|ms| 1000.0 / ms.max(1.0))).unwrap_or(1000.0 / DEEP_MS);
-    (progress.first_left as f64 / first_rate * 1000.0, progress.deep_left as f64 / deep_rate * 1000.0)
+    let images = lane("images", status.queued_pictures - waiting, Some(status.picture_ms.unwrap_or_else(|| picture_ms(Some(status), Reading::Balanced))));
+    let deep = if status.deep { lane("deep", status.deep_queued + status.queued_pictures - scheduled, Some(status.deep_pace_ms.unwrap_or(DEEP_MS))) } else { 0.0 };
+    let documents = lane("documents", status.queued_text, None);
+    let (shown, meaning) = match status.looking.first() {
+        Some(looking) if !status.seeing_wait => (lane("shown", looking.queued + looking.videos_queued, looking.ms), lane("meaning", looking.documents_queued, None)),
+        _ => (0.0, 0.0),
+    };
+    let said = match &status.listening {
+        Some(listening) if !status.listen_wait => lane("said", listening.queued + listening.videos_queued, None),
+        _ => 0.0,
+    };
+    let all = [documents, images, deep, shown, meaning, said].into_iter().fold(0.0, f64::max);
+    (images, deep, all)
 }
 
 /// "About 45 min left". They run side by side, so the slower read decides.
@@ -3068,16 +3449,11 @@ fn fill_progress(setup: &mut Setup) {
     let progress = progress(&status);
     window.set_reading_summary(progress.summary.as_str().into());
     window.set_reading_progress(progress.fraction);
-    // How fast it's going, over the last two minutes.
-    setup.pace.push_back((Instant::now(), status.read + status.failed, status.deep_done));
-    while setup.pace.len() > 120 {
-        setup.pace.pop_front();
-    }
-    let (first, deep) = times_left(&status, &progress, &setup.pace);
+    let (first, deep, left) = times_left(&status);
     let all = stages(&status, first, deep);
     window.set_reading_images(all.iter().find(|stage| stage.split).cloned().unwrap_or_default());
     window.set_reading_videos(all.into_iter().find(|stage| stage.name == "Videos").unwrap_or_default());
-    window.set_reading_left(if matches!(status.state.as_str(), "reading") && first + deep > 0.0 { left_text(first.max(deep)).into() } else { SharedString::new() });
+    window.set_reading_left(if matches!(status.state.as_str(), "reading") && left > 0.0 { left_text(left).into() } else { SharedString::new() });
     let model = &status.model;
     if model.state == "downloading" && model.total > 0 {
         window.set_reading_model(format!("Getting {}: {} of {}", model.name, crate::format::size(model.received), crate::format::size(model.total)).into());
@@ -3102,112 +3478,6 @@ fn file_name(path: &str) -> &str {
 /// Settings' pages filled again (from elsewhere: a background job ended).
 pub fn refill(app: &App) {
     fill(app);
-}
-
-/// Activity's Bedrock card: a drive listed whole again, now or last, and "Fix this" when its record of
-/// changes was too small for the time Excavate was closed.
-fn fill_bedrock(setup: &Setup) {
-    let window = &setup.window;
-    // A sandbox shows the card as it looks a third of the way through C: (`EXCAVATE_PRETEND_RELIST`).
-    let pretend = std::env::var_os("EXCAVATE_PRETEND_RELIST").is_some();
-    let state = crate::own_index::state();
-    enum Shown {
-        Now { drive: String, done: usize, total: usize, overwritten: bool },
-        Done { drive: String, took: Duration, overwritten: bool },
-    }
-    let shown = if pretend {
-        Some(Shown::Now { drive: r"C:\".into(), done: 3_100_000, total: 9_100_000, overwritten: true })
-    } else {
-        state.as_ref().and_then(|state| match (&state.relisting, &state.relisted) {
-            (Some(now), _) => Some(Shown::Now { drive: now.drive.clone(), done: engine::walk::listed().saturating_sub(now.from), total: now.total, overwritten: now.overwritten }),
-            (None, Some(last)) => Some(Shown::Done { drive: last.drive.clone(), took: last.took, overwritten: last.overwritten }),
-            _ => None,
-        })
-    };
-    let Some(shown) = shown else {
-        window.set_bedrock_shown(false);
-        return;
-    };
-    let (drive, overwritten) = match &shown {
-        Shown::Now { drive, overwritten, .. } | Shown::Done { drive, overwritten, .. } => (drive.clone(), *overwritten),
-    };
-    let letter = drive.trim_end_matches('\\').to_string();
-    let size = engine::journal::size(&drive).unwrap_or(0);
-    let fixed = crate::own_index::journal_fixed(&drive);
-    let fixable = overwritten && !fixed && size < crate::own_index::JOURNAL_SIZE / 2;
-    let why = if overwritten {
-        format!("Windows' record of changes on {letter} ran out while Excavate was closed")
-    } else {
-        format!("Windows couldn't say what changed on {letter} while Excavate was closed")
-    };
-    window.set_bedrock_shown(true);
-    window.set_bedrock_fix(fixable);
-    window.set_journal_ask_line(format!(
-        "Windows keeps a record of what changes on each drive, so Bedrock catches up in a moment after Excavate was closed. On {letter} it holds about {} MB, and it ran out.",
-        (size >> 20).max(1)
-    ).into());
-    match shown {
-        Shown::Now { done, total, .. } => {
-            let done = done.min(total);
-            window.set_bedrock_title(format!("Bedrock is catching up on {letter}").into());
-            window.set_bedrock_line(format!("{why}, so {letter} is listed again. Search works meanwhile.").into());
-            window.set_bedrock_progress(if total > 0 { done as f32 / total as f32 } else { -1.0 });
-            let count = if total >= 1_000_000 {
-                format!("{:.1} of {:.1} million files", done as f64 / 1e6, total as f64 / 1e6)
-            } else {
-                format!("{done} of {}", plural(total as u64, "file", "files"))
-            };
-            window.set_bedrock_count(format!("{count} · going gently").into());
-        }
-        Shown::Done { took, .. } => {
-            let minutes = took.as_secs_f64() / 60.0;
-            let took = if minutes >= 1.5 { format!("about {} minutes", minutes.round()) } else { format!("{} seconds", took.as_secs()) };
-            window.set_bedrock_title(format!("Bedrock caught up on {letter}").into());
-            window.set_bedrock_line(if fixed {
-                format!("It took {took}. Windows now keeps about 1 GB of changes on {letter}, so this shouldn't happen again.")
-            } else {
-                format!("It took {took}, because {why}.")
-            }.into());
-            window.set_bedrock_progress(-1.0);
-            window.set_bedrock_count("".into());
-        }
-    }
-}
-
-/// The Activity page, only while it's open.
-fn fill_activity(setup: &mut Setup) {
-    if setup.onboarding || setup.window.get_page() != ACTIVITY {
-        return;
-    }
-    fill_bedrock(setup);
-    let Some(status) = setup.status.clone() else {
-        setup.stages.set_vec(Vec::new());
-        return;
-    };
-    let progress = progress(&status);
-    let (first, deep) = times_left(&status, &progress, &setup.pace);
-    update_rows(&setup.stages, stages(&status, first, deep));
-    update_rows(&setup.now, now_rows(&status));
-    let more = if status.failed > status.errors.len() as u64 { format!(", the latest {} here", status.errors.len()) } else { String::new() };
-    setup.window.set_problems_title(format!("Couldn't be read: {}{more}", plural(status.failed.max(status.errors.len() as u64), "file", "files")).into());
-    update_rows(&setup.problems, status.errors.iter().map(|(path, why)| ProblemRow {
-        name: file_name(path).into(),
-        path: path.as_str().into(),
-        why: plain_why(why).into(),
-    }).collect());
-}
-
-/// Why a file couldn't be read, in plain words where the reader's message isn't.
-fn plain_why(why: &str) -> &str {
-    if why.contains("PasswordError") {
-        "It's protected by a password"
-    } else if why.contains("FormatError") {
-        "It's damaged, or it isn't really a PDF"
-    } else if why.contains("component cannot be found") {
-        "It's damaged, or Windows can't open this kind of image"
-    } else {
-        why
-    }
 }
 
 /// A stage's state, for the page.
@@ -3380,6 +3650,7 @@ fn video_stage(status: &Status, listing: bool) -> Option<StageRow> {
 }
 
 /// What reading is made of, each with how it's going. `first` and `deep`: the time each read has left (ms).
+/// `first` and `deep`: the time left of text in images and of Thorough's second read (`times_left`).
 fn stages(status: &Status, first: f64, deep: f64) -> Vec<StageRow> {
     let listing = status.state == "listing";
     let later = status.queued_later.min(status.queued_pictures);
@@ -3514,69 +3785,6 @@ fn stages(status: &Status, first: f64, deep: f64) -> Vec<StageRow> {
     stages
 }
 
-/// What's being read this moment, and with what.
-fn now_rows(status: &Status) -> Vec<NowRow> {
-    if !matches!(status.state.as_str(), "reading" | "paused") {
-        return Vec::new();
-    }
-    let mut rows = Vec::new();
-    let later = status.queued_later.min(status.queued_pictures);
-    let waiting = if status.pictures_wait { status.queued_pictures } else { later };
-    let memory = status.memory_mb;
-    // (While its model is still downloading, it isn't reading yet.)
-    let getting = status.model.state == "downloading";
-    if status.queued_pictures > waiting && !status.engine.is_empty() && note_state(&status.waits[1]) != WAITING && !getting {
-        let what = if status.deep { "First read" } else { "Reading images" };
-        let device = if status.reading_gpu { "Graphics card" } else { "Processor" };
-        rows.push(now_row(format!("{what} · {} · {device} · {memory} MB", status.engine), &status.current, false));
-    } else if status.queued_text > 0 && note_state(&status.waits[0]) != WAITING {
-        rows.push(now_row(format!("Reading documents and code · Processor · {memory} MB"), &status.current, false));
-    }
-    if status.deep_running && note_state(&status.waits[2]) != WAITING {
-        rows.push(now_row("Thorough read · PaddleOCR-VL-1.5 · Graphics card · about 1.9 GB of its memory".into(), &status.deep_current, false));
-    }
-    // The text videos show (after the images, in their lane).
-    if let Some(reading) = status.video_text.as_ref().filter(|reading| !reading.current.is_empty()) {
-        rows.push(now_row(format!("Reading the text a video shows · {}", if status.engine.is_empty() { "PP-OCRv6" } else { status.engine.as_str() }), &reading.current, true));
-    }
-    // What images and videos show, and what documents mean: each model at work.
-    for looking in status.looking.iter().filter(|looking| looking.running && !looking.current.is_empty()) {
-        let video = is_video(&looking.current);
-        let what = if video { "Looking at what a video shows" } else if is_image(&looking.current) { "Looking at what an image shows" } else { "Looking at what a document means" };
-        rows.push(now_row(format!("{what} · {}", crate::format::model_name(&looking.engine)), &looking.current, video));
-    }
-    // What's said in recordings and videos.
-    if let Some(listening) = status.listening.as_ref().filter(|listening| listening.running && !listening.current.is_empty()) {
-        let device = if listening.device.is_empty() { String::new() } else { format!(" · {}", listening.device) };
-        rows.push(now_row(format!("Listening to what's said · {}{device}", ear_name(&listening.engine)), &listening.current, true));
-    }
-    rows
-}
-
-/// A "Right now" row: what's at work, on which file (its name shown, its path kept for "Skip").
-fn now_row(what: String, path: &str, skip: bool) -> NowRow {
-    NowRow { what: what.into(), file: file_name(path).into(), path: path.into(), skip: skip && !path.is_empty() }
-}
-
-fn is_video(path: &str) -> bool {
-    search::filter::extension(path).is_some_and(|extension| search::filter::VIDEO.contains(&extension.to_ascii_lowercase().as_str()))
-}
-
-fn is_image(path: &str) -> bool {
-    search::filter::extension(path).is_some_and(|extension| ["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff", "gif", "heic", "heif"]
-        .contains(&extension.to_ascii_lowercase().as_str()))
-}
-
-/// The listener's model, by the name the status gives it.
-fn ear_name(engine: &str) -> &str {
-    match engine {
-        "whisper-turbo" => "Whisper large-v3-turbo",
-        "whisper-large" => "Whisper large-v3",
-        "parakeet" => "Parakeet",
-        other => other,
-    }
-}
-
 /// How much longer an image takes Deep than a file takes the first read, for the bar. Measured with 835 files: 5.6 min for
 /// all of them, then 3.3 s an image.
 const DEEP_WEIGHT: f64 = 8.0;
@@ -3595,10 +3803,6 @@ pub struct Progress {
     pub summary: String,
     /// All of reading's work, 0 to 1, or below 0 when there's no measure yet.
     pub fraction: f32,
-    /// What each read still has to do now: files, and images (with those the first read hasn't reached, which may have
-    /// text too).
-    pub first_left: u64,
-    pub deep_left: u64,
     /// Whether it's working (or paused, with work left).
     pub active: bool,
 }
@@ -3646,11 +3850,11 @@ pub fn progress_of(status: &Status) -> Progress {
         };
         if sweeping { format!("{text} in the first sweep") } else { text }
     };
-    let working = |summary: String| Progress { summary, fraction, first_left: first_pass_left + later - scheduled.min(later), deep_left: deep_queued + deep_ahead, active: true };
+    let working = |summary: String| Progress { summary, fraction, active: true };
     let model = &status.model;
     let looking_model = status.looking.iter().map(|looking| &looking.model).find(|model| model.state == "downloading" && model.total > 0);
     match status.state.as_str() {
-        "listing" => Progress { summary: "Looking through your folders…".into(), fraction: -1.0, first_left: 0, deep_left: 0, active: true },
+        "listing" => Progress { summary: "Looking through your folders…".into(), fraction: -1.0, active: true },
         "reading" if first_pass_left == 0 && model.state == "downloading" && model.total > 0 => {
             working(format!("Getting {}: {} of {}", model.name, crate::format::size(model.received), crate::format::size(model.total)))
         }
@@ -3688,9 +3892,9 @@ pub fn progress_of(status: &Status) -> Progress {
         "reading" if first_pass_left == 0 && sweeping => working(format!("{} read in the first sweep, {} more to come", plural(done, "file", "files"), group(later))),
         "reading" => working(reading()),
         "paused" => working(status.detail.clone()),
-        "idle" => Progress { summary: format!("Up to date · {}", plural(status.documents, "file", "files")), fraction: 1.0, first_left: 0, deep_left: 0, active: false },
-        "stopped" if !status.detail.is_empty() => Progress { summary: format!("Stopped: {}", status.detail), fraction, first_left: 0, deep_left: 0, active: false },
-        _ => Progress { summary: String::new(), fraction: -1.0, first_left: 0, deep_left: 0, active: false },
+        "idle" => Progress { summary: format!("Up to date · {}", plural(status.documents, "file", "files")), fraction: 1.0, active: false },
+        "stopped" if !status.detail.is_empty() => Progress { summary: format!("Stopped: {}", status.detail), fraction, active: false },
+        _ => Progress { summary: String::new(), fraction: -1.0, active: false },
     }
 }
 
@@ -3752,9 +3956,63 @@ pub fn describe(status: &Status) -> String {
     progress(status).summary
 }
 
+/// About's updates: the switch, how it's going, and the button beside it.
+pub fn fill_about(app: &App) {
+    use crate::update::Status;
+    let on = app.settings.borrow().auto_update;
+    let ready = crate::update::staged(&app.paths).map(|(version, _)| version);
+    let (line, action) = match (crate::update::status(), ready) {
+        (Status::NotPublished, _) => ("Updates will come from Excavate's GitHub page once it's published.".to_string(), ""),
+        (_, Some(version)) | (Status::Ready(version), None) => (format!("Version {version} is ready. It's used the next time Excavate starts."), "Restart now"),
+        (Status::Checking, None) => ("Looking for a newer version…".to_string(), ""),
+        (Status::Downloading(version, part), None) => (format!("Downloading version {version}… {}%", (part * 100.0).round() as u32), ""),
+        (Status::Latest, None) => ("You have the latest version.".to_string(), "Check now"),
+        (Status::Failed(error), None) => (format!("Couldn't look for updates: {error}."), "Try again"),
+        (Status::Idle, None) => (String::new(), "Check now"),
+    };
+    with_setup(|setup| {
+        setup.window.set_auto_update(on);
+        setup.window.set_update_line(line.into());
+        setup.window.set_update_action(action.into());
+    });
+}
+
+/// Settings → Privacy's "Found and hidden": how many files have each kind of secret, counted off the interface's thread
+/// (every file kept is looked at) and shown when it's done. Only the kinds, never the values.
+fn privacy_counts(app: &App) {
+    let index = app.paths.index();
+    let _ = std::thread::Builder::new().name("privacy counts".into()).spawn(move || {
+        let counts = content::Reader::open(&index).map(|reader| reader.secret_counts()).unwrap_or_default();
+        let rows = privacy_rows(&counts);
+        let _ = slint::invoke_from_event_loop(move || {
+            with_setup(|setup| {
+                let rows: Vec<PrivacyCount> = rows.into_iter().map(|(kind, name, count)| PrivacyCount { kind: kind.into(), name: name.into(), count: count.into() }).collect();
+                setup.window.set_privacy_found(slint::ModelRc::new(slint::VecModel::from(rows)));
+                setup.window.set_privacy_found_ready(true);
+            });
+        });
+    });
+}
+
+/// The kinds found, in the order they matter, with their counts ("Passwords", "214 files"); kinds not found left out.
+fn privacy_rows(counts: &std::collections::BTreeMap<String, u64>) -> Vec<(String, String, String)> {
+    const NAMES: [(&str, &str); 9] = [("password", "Passwords"), ("code", "One-time and backup codes"), ("key", "API keys and tokens"),
+                                      ("private-key", "Private keys"), ("card", "Card numbers"), ("iban", "IBANs"), ("id", "ID numbers"),
+                                      ("document", "Passports"), ("seed", "Recovery phrases")];
+    NAMES.iter().filter_map(|(kind, name)| counts.get(*kind).filter(|count| **count > 0)
+        .map(|count| (kind.to_string(), name.to_string(), plural(*count, "file", "files")))).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn privacy_counts_in_the_order_they_matter() {
+        let counts = [("card", 2), ("password", 214), ("seed", 0), ("code", 1)].map(|(kind, count)| (kind.to_string(), count)).into();
+        assert_eq!(privacy_rows(&counts), [("password", "Passwords", "214 files"), ("code", "One-time and backup codes", "1 file"), ("card", "Card numbers", "2 files")]
+            .map(|(kind, name, count)| (kind.to_string(), name.to_string(), count.to_string())));
+    }
 
     fn status(state: &str) -> Status {
         Status { state: state.into(), ..Status::default() }
@@ -3765,14 +4023,12 @@ mod tests {
         let reading = Status { files: 100, read: 40, queued_text: 10, queued_pictures: 50, ..status("reading") };
         let progress = progress_of(&reading);
         assert_eq!(progress.summary, "Reading 40 of 100 files");
-        assert_eq!(progress.first_left, 60);
         assert!(progress.active && (progress.fraction - 0.4).abs() < 0.001);
 
         // Images waiting for their schedule aren't work in progress.
         let waiting = Status { files: 100, read: 40, queued_text: 10, queued_pictures: 50, pictures_wait: true, ..status("reading") };
         let progress = progress_of(&waiting);
         assert_eq!(progress.summary, "Reading 40 of 50 files");
-        assert_eq!(progress.first_left, 10);
 
         // The first sweep, then what it set aside: said by stage, one bar for all of it.
         let sweep = Status { files: 100, read: 10, queued_text: 2, queued_pictures: 88, queued_later: 80, ..status("reading") };
@@ -3882,6 +4138,28 @@ mod tests {
         assert!(stages(&alone, 0.0, 0.0).iter().all(|stage| !stage.split));
     }
 
+    /// Each lane's time left is its own, at its own pace; everything's is the longest, not the sum (100,000 documents
+    /// to go said "12 h" on the images' line, and "3 days" overall at Full speed).
+    #[test]
+    fn each_lane_has_its_own_time_left() {
+        let pace = |per_minute: f64| config::status::Pace { per_minute, last_progress: 1, current_since: 0, ..Default::default() };
+        let mut reading = Status { engine: "PP-OCRv6 small".into(), files: 100_500, images: 500, read: 80, images_read: 80, queued_text: 100_000,
+                                   queued_pictures: 420, picture_ms: Some(250.0), ..status("reading") };
+        // Before the paces are known: the images at what one took; the documents not guessed.
+        let (images, deep, all) = times_left(&reading);
+        assert_eq!((images, deep, all), (105_000.0, 0.0, 105_000.0));
+        let line = super::stages(&reading, images, deep).into_iter().find(|stage| stage.name == "Images").expect("an Images stage");
+        assert_eq!(line.note, "0.25 s an image · About 2 min left");
+        // Known: 2,000 documents a minute (50 min) and 120 images a minute (3.5 min); the longest is everything's.
+        reading.paces.insert("documents".into(), pace(2000.0));
+        reading.paces.insert("images".into(), pace(120.0));
+        let (images, _, all) = times_left(&reading);
+        assert_eq!((images, all), (210_000.0, 3_000_000.0));
+        // Waiting for their schedule: not counted.
+        let (images, _, all) = times_left(&Status { pictures_wait: true, queued_text: 0, ..reading });
+        assert_eq!((images, all), (0.0, 0.0));
+    }
+
     #[test]
     fn what_the_activity_page_lists() {
         let names = |stages: &[StageRow]| stages.iter().map(|stage| (stage.name.to_string(), stage.state)).collect::<Vec<_>>();
@@ -3902,8 +4180,8 @@ mod tests {
         // Text in images is off: no such stage.
         assert_eq!(super::stages(&status("idle"), 0.0, 0.0).len(), 2);
         // Why a file couldn't be read: plain words, or the reader's own when it has nothing odd to say.
-        assert_eq!(plain_why("PdfiumLibraryInternalError(FormatError)"), "It's damaged, or it isn't really a PDF");
-        assert_eq!(plain_why("Too large to read"), "Too large to read");
+        assert_eq!(crate::activity::plain_why("PdfiumLibraryInternalError(FormatError)"), "It's damaged, or it isn't really a PDF");
+        assert_eq!(crate::activity::plain_why("Too large to read"), "Too large to read");
     }
 
     #[test]
@@ -3982,29 +4260,3 @@ mod tests {
     }
 }
 
-fn folder_size(folder: &std::path::Path) -> u64 {
-    std::fs::read_dir(folder)
-        .map(|entries| entries.flatten().filter_map(|entry| entry.metadata().ok()).filter(|metadata| metadata.is_file()).map(|metadata| metadata.len()).sum())
-        .unwrap_or(0)
-}
-
-/// About's updates: the switch, how it's going, and the button beside it.
-pub fn fill_about(app: &App) {
-    use crate::update::Status;
-    let on = app.settings.borrow().auto_update;
-    let ready = crate::update::staged(&app.paths).map(|(version, _)| version);
-    let (line, action) = match (crate::update::status(), ready) {
-        (Status::NotPublished, _) => ("Updates will come from Excavate's GitHub page once it's published.".to_string(), ""),
-        (_, Some(version)) | (Status::Ready(version), None) => (format!("Version {version} is ready. It's used the next time Excavate starts."), "Restart now"),
-        (Status::Checking, None) => ("Looking for a newer version…".to_string(), ""),
-        (Status::Downloading(version, part), None) => (format!("Downloading version {version}… {}%", (part * 100.0).round() as u32), ""),
-        (Status::Latest, None) => ("You have the latest version.".to_string(), "Check now"),
-        (Status::Failed(error), None) => (format!("Couldn't look for updates: {error}."), "Try again"),
-        (Status::Idle, None) => (String::new(), "Check now"),
-    };
-    with_setup(|setup| {
-        setup.window.set_auto_update(on);
-        setup.window.set_update_line(line.into());
-        setup.window.set_update_action(action.into());
-    });
-}

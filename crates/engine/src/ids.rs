@@ -30,7 +30,7 @@ impl std::fmt::Debug for Ids {
 impl Ids {
     /// From a column of `width`-byte ids (as the file has them).
     pub fn from_bytes(bytes: Column<u8>, width: usize) -> Option<Ids> {
-        ((width == 3 || width == 4) && bytes.len() % width == 0).then_some(Ids { bytes, width })
+        ((width == 3 || width == 4) && bytes.len().is_multiple_of(width)).then_some(Ids { bytes, width })
     }
 
     /// The ids at `width` bytes each (`write`): 3 when they all fit.
@@ -94,11 +94,11 @@ impl Ids {
         let n = out.len().min(self.len().saturating_sub(from));
         let bytes: &[u8] = &self.bytes;
         if self.width == 4 {
-            for (value, four) in out[..n].iter_mut().zip(bytes[from * 4..(from + n) * 4].chunks_exact(4)) {
-                *value = u32::from_le_bytes(four.try_into().unwrap());
+            for (value, four) in out[..n].iter_mut().zip(bytes[from * 4..(from + n) * 4].as_chunks::<4>().0) {
+                *value = u32::from_le_bytes(*four);
             }
         } else {
-            for (value, three) in out[..n].iter_mut().zip(bytes[from * 3..(from + n) * 3].chunks_exact(3)) {
+            for (value, three) in out[..n].iter_mut().zip(bytes[from * 3..(from + n) * 3].as_chunks::<3>().0) {
                 let id = three[0] as u32 | (three[1] as u32) << 8 | (three[2] as u32) << 16;
                 *value = if id == NONE3 { NONE } else { id };
             }

@@ -1,0 +1,12 @@
+[package]
+name = "common"
+description = "Small things several of Excavate's crates need alike: dates, numbers with commas, writing a file whole."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

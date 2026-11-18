@@ -7,7 +7,11 @@ license.workspace = true
 publish = false
 
 [dependencies]
+common.workspace = true
 everything.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 memchr = "2"
+
+[lints]
+workspace = true

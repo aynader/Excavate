@@ -51,15 +51,15 @@ pub fn in_scope(path: &str, roots: &[String], exclusions: &Exclusions) -> bool {
 }
 
 /// Everything in `root` worth reading: through Everything when it's given (its list kept up to date), else walked. When
-/// Everything has nothing there, the folder is walked too: it may be on a drive Everything leaves out.
-pub fn list(root: &str, exclusions: &Exclusions, pictures: bool, everything: Option<&everything::Everything>) -> Vec<FileInfo> {
-    if let Some(files) = everything.and_then(|everything| list_with_everything(root, exclusions, pictures, everything)) {
-        if !files.is_empty() {
+/// Everything has nothing there, the folder is walked too: it may be on a drive Everything leaves out. `stop` ends a
+/// walk early (the settings changed, or quitting): what it has is then only part, and the caller knows to drop it.
+pub fn list(root: &str, exclusions: &Exclusions, pictures: bool, everything: Option<&everything::Everything>, stop: &dyn Fn() -> bool) -> Vec<FileInfo> {
+    if let Some(files) = everything.and_then(|everything| list_with_everything(root, exclusions, pictures, everything))
+        && !files.is_empty() {
             return files;
         }
-    }
     let mut files = Vec::new();
-    walk(Path::new(root), exclusions, pictures, &mut files);
+    walk(Path::new(root), exclusions, pictures, &mut files, stop);
     files
 }
 
@@ -87,28 +87,28 @@ fn list_with_everything(root: &str, exclusions: &Exclusions, pictures: bool, eve
 }
 
 /// Videos a model can look at frame by frame (what Windows' Media Foundation plays).
-pub const VIDEO_EXTENSIONS: &[&str] = &["mp4", "m4v", "mov", "mkv", "avi", "wmv", "webm", "mpg", "mpeg", "3gp", "mts", "m2ts"];
+pub const VIDEO_EXTENSIONS: &[&str] = common::kinds::VIDEOS;
 
-/// Recordings the model that listens can hear (what Windows' Media Foundation plays; Ogg and Opus with Windows' own
-/// extensions for them).
-pub const AUDIO_EXTENSIONS: &[&str] = &["mp3", "m4a", "m4b", "wav", "wma", "flac", "aac", "ogg", "opus", "amr", "aiff", "aif"];
+/// Recordings the model that listens can hear.
+pub const AUDIO_EXTENSIONS: &[&str] = common::kinds::RECORDINGS;
 
 fn has_extension(name: &str, extensions: &[&str]) -> bool {
     name.rsplit_once('.').is_some_and(|(_, extension)| extensions.contains(&extension.to_ascii_lowercase().as_str()))
 }
 
 /// The videos in `root`, as `list` finds files (Everything, else a walk): (path, size, modified).
-pub fn list_videos(root: &str, exclusions: &Exclusions, everything: Option<&everything::Everything>) -> Vec<(String, u64, i64)> {
-    list_media(root, VIDEO_EXTENSIONS, exclusions, everything, true)
+pub fn list_videos(root: &str, exclusions: &Exclusions, everything: Option<&everything::Everything>, stop: &dyn Fn() -> bool) -> Vec<(String, u64, i64)> {
+    list_media(root, VIDEO_EXTENSIONS, exclusions, everything, true, stop)
 }
 
 /// The recordings in `root`, the same way; with `walk` false, only what Everything has (for looking again later: a walk
 /// costs seconds, Everything's answer milliseconds).
-pub fn list_recordings(root: &str, exclusions: &Exclusions, everything: Option<&everything::Everything>, walk: bool) -> Vec<(String, u64, i64)> {
-    list_media(root, AUDIO_EXTENSIONS, exclusions, everything, walk)
+pub fn list_recordings(root: &str, exclusions: &Exclusions, everything: Option<&everything::Everything>, walk: bool, stop: &dyn Fn() -> bool) -> Vec<(String, u64, i64)> {
+    list_media(root, AUDIO_EXTENSIONS, exclusions, everything, walk, stop)
 }
 
-fn list_media(root: &str, extensions: &[&str], exclusions: &Exclusions, everything: Option<&everything::Everything>, walk: bool) -> Vec<(String, u64, i64)> {
+fn list_media(root: &str, extensions: &[&str], exclusions: &Exclusions, everything: Option<&everything::Everything>, walk: bool,
+              stop: &dyn Fn() -> bool) -> Vec<(String, u64, i64)> {
     let mut folder = root.trim_end_matches('\\').to_string();
     folder.push('\\');
     if let Some(everything) = everything {
@@ -131,27 +131,35 @@ fn list_media(root: &str, extensions: &[&str], exclusions: &Exclusions, everythi
         if has_extension(name, extensions) && !exclusions.excludes(&path) {
             found.push((path, metadata.len(), seconds(metadata)));
         }
-    });
+    }, stop);
     found
 }
 
-/// The folder tree, without hidden and system folders, links (no loops) and what's left out.
-pub fn walk(folder: &Path, exclusions: &Exclusions, pictures: bool, out: &mut Vec<FileInfo>) {
+/// The folder tree, without hidden and system folders, links (no loops) and what's left out. `stop` ends it early.
+pub fn walk(folder: &Path, exclusions: &Exclusions, pictures: bool, out: &mut Vec<FileInfo>, stop: &dyn Fn() -> bool) {
     walk_files(folder, exclusions, &mut |path, name, metadata| {
         if let Some(reader) = wanted(&path, name, exclusions, pictures) {
             out.push(FileInfo { path, name: name.to_string(), size: metadata.len(), modified: seconds(metadata), reader });
         }
-    });
+    }, stop);
 }
 
-/// Each file in the folder tree, as `walk` goes through it: (path, name, its metadata).
-fn walk_files(folder: &Path, exclusions: &Exclusions, each: &mut dyn FnMut(String, &str, &std::fs::Metadata)) {
+/// Each file in the folder tree, as `walk` goes through it: (path, name, its metadata). A folder left out by its path
+/// isn't gone into (a chosen folder's tree left out whole: it was walked file by file, a minute for two million files,
+/// to keep none of them). `stop` is asked before each folder.
+fn walk_files(folder: &Path, exclusions: &Exclusions, each: &mut dyn FnMut(String, &str, &std::fs::Metadata), stop: &dyn Fn() -> bool) {
     use std::os::windows::fs::MetadataExt;
     const HIDDEN: u32 = 0x2;
     const SYSTEM: u32 = 0x4;
     const REPARSE: u32 = 0x400;
     let mut stack = vec![folder.to_path_buf()];
     while let Some(folder) = stack.pop() {
+        if stop() {
+            return;
+        }
+        if exclusions.excludes_folder(&folder.display().to_string()) {
+            continue;
+        }
         let Ok(entries) = std::fs::read_dir(&folder) else { continue };
         for entry in entries.flatten() {
             let Ok(metadata) = entry.metadata() else { continue };
@@ -223,11 +231,40 @@ mod tests {
         std::fs::write(folder.join("a.txt"), "a").unwrap();
         std::fs::write(folder.join("inside").join("b.md"), "b").unwrap();
         std::fs::write(folder.join("c.unknown-kind"), "c").unwrap();
-        let mut names: Vec<String> = list(&folder.display().to_string(), &Exclusions::new(&[]), true, None).into_iter().map(|file| file.name).collect();
+        let mut names: Vec<String> = list(&folder.display().to_string(), &Exclusions::new(&[]), true, None, &|| false).into_iter().map(|file| file.name).collect();
         names.sort();
         assert_eq!(names, ["a.txt", "b.md"]);
         assert!(!online_only(&folder.join("a.txt").display().to_string()));
         assert!(!online_only(&folder.join("gone.txt").display().to_string()));
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    /// A folder left out by its path isn't gone into at all (the walk asks `stop` once per folder it takes up), and a
+    /// stop ends the walk at once.
+    #[test]
+    fn walks_past_what_is_left_out_and_stops_when_asked() {
+        let folder = std::env::temp_dir().join(format!("excavate-scan-out-{}", std::process::id()));
+        for sub in ["kept", "left out\\a", "left out\\b", "left out\\c\\d"] {
+            std::fs::create_dir_all(folder.join(sub)).unwrap();
+            std::fs::write(folder.join(sub).join("note.txt"), "x").unwrap();
+        }
+        let root = folder.display().to_string();
+        let exclusions = Exclusions::new(&[format!("{root}\\Left Out")]);
+        let folders = std::cell::Cell::new(0);
+        let count = || {
+            folders.set(folders.get() + 1);
+            false
+        };
+        let mut files = Vec::new();
+        walk(&folder, &exclusions, true, &mut files, &count);
+        assert_eq!(files.iter().map(|file| file.path.clone()).collect::<Vec<_>>(), [format!("{root}\\kept\\note.txt")]);
+        // The root, "kept", and "left out" (taken up, not gone into): not a, b, c or d.
+        assert_eq!(folders.get(), 3);
+        // Stopped: nothing is listed.
+        let mut files = Vec::new();
+        walk(&folder, &Exclusions::new(&[]), true, &mut files, &|| true);
+        assert!(files.is_empty());
+        assert!(list_videos(&root, &Exclusions::new(&[]), None, &|| true).is_empty());
         std::fs::remove_dir_all(&folder).unwrap();
     }
 }

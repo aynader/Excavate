@@ -323,36 +323,49 @@ export component WelcomeSearch inherits VerticalLayout {
             Text { text: root.time; font-size: 10.5px * root.k; font-weight: 600; color: Theme.accent; vertical-alignment: center; horizontal-stretch: 0; }
         }
     }
-    for row in root.rows: Rectangle {
-        height: 23px * root.k;
-        HorizontalLayout {
-            padding-left: 9px * root.k;
-            padding-right: 9px * root.k;
-            spacing: 8px * root.k;
-            Glyph {
-                width: 13px * root.k;
-                height: 13px * root.k;
-                y: (parent.height - self.height) / 2;
-                stroke-width: 1.9px * root.k;
-                commands: row.glyph;
-                stroke: Theme.clay;
-            }
-            Rectangle {
-                horizontal-stretch: 1;
-                clip: true;
-                StyledText {
-                    x: 0px;
-                    width: 1000px * root.k;
-                    height: parent.height;
-                    text: row.name;
-                    default-color: Theme.text;
-                    default-font-size: 12px * root.k;
-                    default-font-family: Theme.font;
-                    vertical-alignment: center;
-                    max-lines: 1;
+    // The rows in a box of their own: how many there are as letters are typed never changes the card's size (on a
+    // small screen, a row more or less moved the whole page).
+    Rectangle {
+        vertical-stretch: 1;
+        min-height: 0px;
+        preferred-height: 0px;
+        clip: true;
+        VerticalLayout {
+            y: 0px;
+            height: self.preferred-height;
+            spacing: 3px * root.k;
+            for row in root.rows: Rectangle {
+                height: 23px * root.k;
+                HorizontalLayout {
+                    padding-left: 9px * root.k;
+                    padding-right: 9px * root.k;
+                    spacing: 8px * root.k;
+                    Glyph {
+                        width: 13px * root.k;
+                        height: 13px * root.k;
+                        y: (parent.height - self.height) / 2;
+                        stroke-width: 1.9px * root.k;
+                        commands: row.glyph;
+                        stroke: Theme.clay;
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        clip: true;
+                        StyledText {
+                            x: 0px;
+                            width: 1000px * root.k;
+                            height: parent.height;
+                            text: row.name;
+                            default-color: Theme.text;
+                            default-font-size: 12px * root.k;
+                            default-font-family: Theme.font;
+                            vertical-alignment: center;
+                            max-lines: 1;
+                        }
+                    }
+                    Text { text: row.detail; font-size: 10.5px * root.k; color: Theme.text-3; vertical-alignment: center; horizontal-stretch: 0; }
                 }
             }
-            Text { text: row.detail; font-size: 10.5px * root.k; color: Theme.text-3; vertical-alignment: center; horizontal-stretch: 0; }
         }
     }
 }

@@ -6,22 +6,19 @@
 Press <kbd>Alt</kbd>+<kbd>S</kbd> and search for apps and files on every drive by name, the words inside your documents,
 the text in your images, what your photos and videos show, and what's said in your recordings. Within milliseconds.</p>
 
-
-
 https://github.com/user-attachments/assets/4be85b45-9b3c-4896-8222-ebeabf878860
-
-
 
 ---
 
 Excavate is a search popup for Windows 11 that opens over the taskbar from one shortcut. Each keystroke is answered in
 a few milliseconds from the places you use, then filled in with names from every drive and with what's inside your
-files, images, videos and recordings, all ranked as one list. Everything runs on *your* PC, and nothing of yours leaves
-it.
+files, images, videos and recordings, all ranked as one list. Rename, delete, drag or open what you find right from
+the list. Everything runs on *your* PC, and nothing of yours leaves it.
 
-- **Names on every drive**, from Bedrock, Excavate's own index (built from each drive's own list of files when you allow
-  it once, or folder by folder, then kept up to date as files change), or from
-  [Everything](https://www.voidtools.com) if you'd rather keep it.
+- **Names on every drive**, from Bedrock, Excavate's own index, or from [Everything](https://www.voidtools.com) if
+  you'd rather keep it. Bedrock reads each drive's own list of files through Excavate Bedrock, a small Windows service
+  you allow once, or walks your folders without it, then keeps up as files change. It's also a Rust library of its own
+  ([repository](https://github.com/aynader/Bedrock), [crate](https://crates.io/crates/bedrock-index)).
 - **Inside files**: documents, PDFs, spreadsheets, slides, email and code.
 - **Text in images**: screenshots, scans and photos, read with OCR on the processor, or on the graphics card for nearly
   every language (Thorough).
@@ -36,11 +33,16 @@ themselves while you present ([privacy](docs/PRIVACY.md)).
 
 ## Install
 
-Windows 11, 64-bit. Download the latest zip from [Releases](../../releases), unzip it anywhere, and run
-`excavate.exe`. The first time, a few short steps set it up: the shortcut, how names are found (Bedrock, or Everything,
-installed in one click if you want it), which folders to read, and how closely to read images, recordings and videos
-(Quick, Balanced or Thorough, with how long each takes on your PC). The models download as they're chosen
-([models](docs/MODELS.md)).
+Windows 11, 64-bit. Download `Excavate-<version>-setup.exe` from [Releases](../../releases) and run it. It installs
+Excavate for you alone, without administrator rights, adds it to the Start menu and to Windows' Apps list (which also
+uninstalls it), and starts it. The zip is there too: unzip it anywhere and run `excavate.exe`, which offers to install
+itself the same way.
+
+The first time, a few short steps set it up: the shortcut, how names are found (Bedrock, or Everything, installed in
+one click if you want it), which folders to read, and how closely to read images, recordings and videos (Quick,
+Balanced or Thorough, with how long each takes on your PC). The models download as they're chosen
+([models](docs/MODELS.md)), and Settings → Activity shows the reading as it goes, and how many files were read each
+day.
 
 ### System requirements
 
@@ -58,8 +60,8 @@ parts (the popup's place by the taskbar, its look) may need adjusting.
 Thorough's reading and the Balanced and Thorough image search run on the graphics card; Thorough needs at least 4 GB of
 its memory, and its most accurate image model 8 GB.
 
-Settings live in `%APPDATA%\Excavate\settings.json`; the index, models and logs in `%LOCALAPPDATA%\Excavate`. Deleting
-those two folders removes everything Excavate has kept.
+Excavate installs to `%LOCALAPPDATA%\Programs\Excavate`. Settings live in `%APPDATA%\Excavate\settings.json`; the
+index, models and logs in `%LOCALAPPDATA%\Excavate`. Deleting those two folders removes everything Excavate has kept.
 
 ## Use it
 
@@ -69,21 +71,31 @@ those two folders removes everything Excavate has kept.
 | type | Names, parts of names, initials (`vsc` finds Visual Studio Code), words inside files, or Everything syntax (`ext:pdf dm:thisweek`) |
 | <kbd>Ctrl</kbd>+<kbd>I</kbd>, <kbd>B</kbd>, <kbd>U</kbd>, <kbd>R</kbd> | Match case, whole words, the full path, a regular expression, as in Everything (also the toggles in the search field) |
 | <kbd>↑</kbd> <kbd>↓</kbd> <kbd>PgUp</kbd> <kbd>PgDn</kbd> <kbd>Ctrl</kbd>+<kbd>Home</kbd>/<kbd>End</kbd> | Move through results |
-| <kbd>Enter</kbd> | Open |
+| <kbd>Enter</kbd>, <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>9</kbd> | Open the selected result, or the first to ninth |
 | <kbd>Ctrl</kbd>+<kbd>Enter</kbd> | Show in its folder |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd> | Run as administrator |
 | <kbd>Alt</kbd>+<kbd>Enter</kbd> | Properties |
 | <kbd>Ctrl</kbd>+<kbd>O</kbd> | Open with… |
 | <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> | Copy the file / copy its path |
+| <kbd>F2</kbd> | Rename it in place |
+| <kbd>Del</kbd> | Send it to the Recycle Bin (**Undo** puts it back) |
+| <kbd>Ctrl</kbd>+click, <kbd>Shift</kbd>+click, <kbd>Shift</kbd>+<kbd>↑</kbd> <kbd>↓</kbd> | Select several, to copy, show, delete or drag them out together |
+| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Pin the search (pinned and recent searches show when nothing is typed; <kbd>↑</kbd> brings back the last) |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd> | Why this result came up |
 | <kbd>Tab</kbd>, <kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd> | Filters: All, Apps, Documents, Images, Code, Audio, Video, Folders, Archives |
 | <kbd>Ctrl</kbd>+<kbd>P</kbd> | Preview pane |
 | <kbd>Ctrl</kbd>+<kbd>,</kbd> | Settings |
 | <kbd>Ctrl</kbd>+<kbd>Space</kbd> | Enlarge the selected image (<kbd>↑</kbd> <kbd>↓</kbd> next image, the wheel to zoom, <kbd>Esc</kbd> back) |
+| <kbd>?</kbd> or <kbd>F1</kbd> | Every shortcut and the search syntax |
 | <kbd>Esc</kbd> | Close |
 
 A result found by its contents says where ("In text", "In image", "In video · 1:24", "Said · 3:05") and shows the
 words that matched; the preview shows the part of the file around them, and a video or recording opens at that moment.
-Right-click a result for more.
+Word, Excel and PowerPoint files are previewed by Office's own previewers. Drag a result into another app, a folder or
+the desktop, or right-click it for **More options**, Windows' own menu.
+
+Filter words become chips as you type: `pdfs from last week invoice` searches PDFs changed last week for "invoice".
+<kbd>Backspace</kbd> in an empty search turns the last chip back into words.
 
 The menu at the field's right end orders the results: **Best match**, **Fuzzy match** (for a name half remembered:
 `mikro11` finds `Micro11.iso`), or by name, date, size, path or when you last opened them.
@@ -91,19 +103,20 @@ The menu at the field's right end orders the results: **Best match**, **Fuzzy ma
 Beside Everything's syntax, Excavate answers `content:` (the words inside), `width:`, `height:`, `dimensions:`,
 `length:` (`length:>10:00`), `runcount:` and `daterun:` (what you opened from Excavate); with Bedrock, also `dc:`,
 `da:` and `attrib:`. An experimental switch in Settings → General lets a search start with `>` for the words inside
-files or `<` for what they show or mean (`>v` videos, `>a` recordings, `>pdf` PDFs).
+files or `<` for what they show or mean (`>v` videos, `>a` recordings, `>pdf` PDFs). Every filter and function, with
+examples: [Searching](docs/SEARCH.md).
 
 **Update automatically** (Settings → About) is off until you turn it on. Then Excavate checks this page's releases
 once a day, verifies a new version's signature, and uses it at the next start ([releasing](docs/RELEASING.md)).
 
 ## Build
 
-Windows 11, Rust 1.95+ (`rustup update`), Visual Studio 2022's C++ tools. Everything is optional.
+Windows 11, Rust 1.98+ (`rustup update`), Visual Studio 2022's C++ tools. Everything is optional.
 
 ```bash
 scripts/fetch-pdfium.sh          # once: PDFium for reading PDFs (the build copies it beside the exe)
 scripts/fetch-onnxruntime.sh     # once: ONNX Runtime and DirectML, from Microsoft (likewise)
-cargo build --release            # target/release/excavate.exe, excavate-indexer.exe and excavate-helper.exe
+cargo build --release            # target/release: excavate.exe and the reader, helper, Bedrock service and setup
 cargo test --workspace
 target/release/excavate.exe --bench --bench-out bench.json   # measures the popup on this PC
 ```
@@ -115,11 +128,13 @@ Start with Windows); `excavate-indexer.exe --quit` stops the reader.
 
 ```
 app/          excavate.exe: the popup, the settings and first-run window (ui/*.slint)
-indexer/      excavate-indexer.exe (the reader) and excavate-helper.exe (searches by what images show)
+indexer/      excavate-indexer.exe (the reader), excavate-helper.exe (searches by what images show), excavate-bedrock.exe
+              (Excavate Bedrock, the service that reads the drives' file tables) and excavate-setup.exe (the installer)
 crates/
   config/     settings, paths, exclusions, the reader's status
   content/    the content index (tantivy): schema, tokenizer, writer, reader, snippets
   engine/     Bedrock: the file-name index, the NTFS tables, the change journal, Everything's syntax, fuzzy search
+              (published on its own as bedrock-index)
   everything/ Everything's SDKs, compiled in
   extract/    readers: text and code, Office and OpenDocument, PDF, EPUB, HTML, RTF, email
   mark/       the animated mark
@@ -159,7 +174,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit.
 - [PDFium](https://pdfium.googlesource.com/pdfium/) (BSD/Apache 2.0), built by
   [pdfium-binaries](https://github.com/bblanchon/pdfium-binaries), through pdfium-render: PDFs.
 - SQLite (public domain) through rusqlite: the reader's catalog.
-- Twemoji by Twitter, CC-BY 4.0
+- [Twemoji](https://github.com/twitter/twemoji) by Twitter (CC-BY 4.0): emoji in the demo film.
 - The BIP-39 English word list (bitcoin/bips, MIT): recognizing recovery phrases.
 - Ideas from [EverythingToolbar](https://github.com/srwi/EverythingToolbar) (taskbar placement, its key map) and
   [DigUp](https://github.com/ARahim3/DigUp) (search by what's inside files).
